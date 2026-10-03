@@ -14,6 +14,9 @@ export GST_PLUGIN_FEATURE_RANK="nvh264enc:0,nvautogpuh264enc:0"
 # Rendu camera logiciel sous WSL2 (llvmpipe) : 142 ms/image avec ombres -> la physique tombait
 # a 0.36x temps reel et le canard ne marchait plus. Options ajoutees dans notre fork de
 # microduck_rl (sim/camera.py) : rendu sans ombres/reflets (36 ms) et cadence reduite.
+# Verite terrain (fork) : positions reelles du canard et des balles, pour MESURER (pas decider).
+export DUCK_SIM_GROUNDTRUTH="$HOME/.cache/duck-sim/groundtruth.json"
+export DUCK_SIM_CONTROL="$HOME/.cache/duck-sim/control.json"   # teleporter la balle entre deux essais
 export DUCK_SIM_CAMERA_FLAT=1
 export DUCK_SIM_CAMERA_FPS="${DUCK_SIM_CAMERA_FPS:-10}"
 source "$HOME/.cargo/env"

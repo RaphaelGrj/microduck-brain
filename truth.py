@@ -56,6 +56,21 @@ def teleport(name, x, y, z=0.035, attente=3.0):
     raise TimeoutError(f"{name} n'est pas arrive en ({x:.2f},{y:.2f}) : DUCK_SIM_CONTROL actif ?")
 
 
+def teleport_duck(x=0.0, y=0.0, yaw=0.0, index=0, attente=3.0):
+    """Replace le canard (tronc) en (x, y) monde, cap `yaw` rad, a l'arret : permet d'enchainer des
+    essais depuis le meme point au lieu de deriver vers un mur. A appeler canard debout et immobile."""
+    tmp = CONTROL_PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"teleport_duck": [{"index": index, "pos": [x, y], "yaw": yaw}]}))
+    tmp.replace(CONTROL_PATH)
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < attente:
+        gt = read()
+        if gt and math.dist(gt["ducks"][index]["pos"][:2], (x, y)) < 0.03:
+            return gt
+        time.sleep(0.05)
+    raise TimeoutError(f"le canard n'est pas arrive en ({x:.2f},{y:.2f}) : DUCK_SIM_CONTROL actif ?")
+
+
 def place_devant_pied(name, cote, dx=0.09, dy=0.042, bruit=(0.0, 0.0), duck=0):
     """Pose la balle a la position de tir d'entrainement, DANS LE REPERE ACTUEL du canard
     (x=0.09 devant le tronc, y=-0.042 pied droit / +0.042 pied gauche), plus un decalage `bruit`."""

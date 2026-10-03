@@ -67,7 +67,8 @@ def grab_frame(url: str = FRAME_URL, timeout: float = 5.0) -> np.ndarray:
     return img
 
 
-def detect(img: np.ndarray, couleurs=None, aire_min: float = 60.0, rondeur_min: float = 0.55):
+def detect(img: np.ndarray, couleurs=None, aire_min: float = 60.0, rondeur_min: float = 0.55,
+           rondeur_min_bord: float = 0.0):
     """Renvoie les blobs ronds de chaque couleur demandee, du plus gros au plus petit."""
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     noyau = np.ones((3, 3), np.uint8)
@@ -86,9 +87,12 @@ def detect(img: np.ndarray, couleurs=None, aire_min: float = 60.0, rondeur_min: 
             rondeur = aire / (math.pi * r * r) if r > 0 else 0.0
             bx, by, bw, bh = cv2.boundingRect(cnt)
             touche_bord = bx <= 1 or by <= 1 or bx + bw >= img.shape[1] - 1 or by + bh >= img.shape[0] - 1
-            # Un objet coupe par le bord de l'image n'est pas un disque entier : on ne juge
-            # la rondeur que sur les objets entierement visibles.
-            if rondeur < rondeur_min and not touche_bord:
+            # Un objet coupe par le bord de l'image n'est pas un disque entier : seuil de rondeur
+            # separe (0 par defaut = pas de filtre). On ne peut pas le relever : la balle tronquee au
+            # pied (rondeur 0,28-0,39) et les pieds orange du canard, visibles au bord bas de l'image
+            # tete baissee a fond (0,22-0,35, diag_beak.py), ne se distinguent pas par la rondeur.
+            # C'est le controleur qui rejette ce faux positif (zone occupee par le canard).
+            if rondeur < (rondeur_min_bord if touche_bord else rondeur_min):
                 continue
             out.append(Detection(nom, x, y, r, aire, rondeur, touche_bord))
     return sorted(out, key=lambda d: -d.aire)

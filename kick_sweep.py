@@ -14,6 +14,8 @@ import time
 import truth
 from poc_robotd_client import RobotdClient, SOCK_PATH
 
+import os
+HEAD_PITCH = float(os.environ.get("HEAD_PITCH", "0"))
 DXS = (-0.04, -0.02, 0.0, 0.02, 0.04)   # erreur en avant (m)
 DYS = (-0.03, 0.0, 0.03)                # erreur laterale (m)
 
@@ -26,7 +28,7 @@ def tenir(secs):
     s = None
     while time.monotonic() - t0 < secs:
         s = c.read_state_frame()
-        c.notify("robot.head", {"neck_pitch": 0.0, "head_pitch": 0.0, "head_yaw": 0.0, "head_roll": 0.0})
+        c.notify("robot.head", {"neck_pitch": 0.0, "head_pitch": HEAD_PITCH, "head_yaw": 0.0, "head_roll": 0.0})
         c.notify("robot.move", {"vx": 0.0, "vy": 0.0, "vyaw": 0.0})
     return s
 
@@ -35,6 +37,8 @@ def essai(cote, bruit):
     s = tenir(1.2)
     if s["safety"]["fallen"] or s["policy"] != "stand":
         return None
+    truth.teleport_duck(0.0, 0.0, 0.0)   # arene (run-scene.sh arena) : meme point de depart a chaque essai
+    tenir(0.8)
     try:
         truth.place_devant_pied("testball", cote, bruit=bruit)
     except TimeoutError:
@@ -48,7 +52,7 @@ def essai(cote, bruit):
     vmax, prev, p1s = 0.0, p0, None
     while time.monotonic() - t0 < 3.2:
         c.read_state_frame()
-        c.notify("robot.head", {"neck_pitch": 0.0, "head_pitch": 0.0, "head_yaw": 0.0, "head_roll": 0.0})
+        c.notify("robot.head", {"neck_pitch": 0.0, "head_pitch": HEAD_PITCH, "head_yaw": 0.0, "head_roll": 0.0})
         g = truth.read()
         if g:
             p = g["bodies"]["testball"]
@@ -69,6 +73,8 @@ def essai(cote, bruit):
 
 if len(sys.argv) > 3 and sys.argv[3] == "nominal":   # repetitions au seul point d'entrainement
     DXS, DYS = (0.0,), (0.0,)
+if os.environ.get("KICK_DX"):                          # un seul point : KICK_DX (m, avant) KICK_DY (m, lateral)
+    DXS, DYS = (float(os.environ["KICK_DX"]),), (float(os.environ.get("KICK_DY", "0")),)
 cotes = ["right", "left"] if (sys.argv[1] if len(sys.argv) > 1 else "both") == "both" else [sys.argv[1]]
 rep = int(sys.argv[2]) if len(sys.argv) > 2 else 1
 res = {}
