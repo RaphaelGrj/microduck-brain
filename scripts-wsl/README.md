@@ -6,7 +6,7 @@ Copiés ici depuis `~` pour être reproductibles. Pas de mot de passe, rien d'é
 |---|---|
 | `build-webrtc.sh` / `build-webrtc2.sh` | Compile `gst-plugin-webrtc` (`webrtcsink`) depuis les sources : Pollen ne publie que de l'aarch64, rien pour x86_64. `2` = version 0.15.4 (celle qui marche avec GStreamer 1.28), prefix `~/.local-015`. |
 | `start-duck.sh` | Lance `duck-sim` détaché : sans fenêtre MuJoCo, avec caméra, scène par défaut `testball` (appartement + balle), vérité terrain et téléportation activées. |
-| `run-scene.sh <scène>` | Redémarre `duck-sim` sur une scène du fork : `arena` (sol plan sans murs + balle d'entraînement — **à utiliser pour évaluer une approche**), `testball`, `kick_right`, `kick_left`, `apartment`. |
+| `run-scene.sh <scène>` | Redémarre `duck-sim` sur une scène du fork : `arena_chat` (arène + affiche de ton chat, générée par `make_cat_scene.py`), `arena` (sol plan sans murs + balle d'entraînement — **à utiliser pour évaluer une approche**), `testball`, `kick_right`, `kick_left`, `apartment`. |
 | `restart-duck.sh` | Arrête l'ancien `duck-sim` (`down`). À lancer avant `start-duck.sh`. |
 | `wait-duck.sh` | Attend que le canard soit debout et résume (mediad, console web). |
 | `bin-shim/sudo` | `sudo -n` : `duck-sim down` appelle `sudo systemctl` et restait bloqué sur un mot de passe. |
