@@ -10,6 +10,7 @@ Succes = tir declenche ET balle partie a plus de 15 cm dans les 35 deg du cap du
 Usage : bash ~/run-brain.sh approach_eval.py [essais=6] [relevement_max_deg=40] [graine=1]
 """
 import math
+import os
 import random
 import sys
 import time
@@ -21,6 +22,12 @@ from poc_robotd_client import RobotdClient, SOCK_PATH
 n_essais = int(sys.argv[1]) if len(sys.argv) > 1 else 6
 rel_max = float(sys.argv[2]) if len(sys.argv) > 2 else 40.0
 random.seed(int(sys.argv[3]) if len(sys.argv) > 3 else 1)
+# Variables d'environnement : DEPART="x,y,cap_deg" (point de depart du canard dans le monde, defaut 0,0,0),
+# DIST="min,max" (distance de la balle, defaut 0.5,1.0), CAP_VISE="deg" (voir approach.py)
+_d = [float(v) for v in os.environ.get("DEPART", "0,0,0").split(",")]
+DEPART = (_d[0], _d[1], math.radians(_d[2]))
+VISEE = float(os.environ.get("VISEE", "0"))          # demi-ouverture (deg) de la direction voulue ; 0 = pas de visee
+DIST_MIN, DIST_MAX = [float(v) for v in os.environ.get("DIST", "0.5,1.0").split(",")]
 
 c = RobotdClient(SOCK_PATH)
 c.request("robot.subscribe", {})
@@ -43,10 +50,14 @@ def remettre_a_zero(dist, rel_deg):
             break
     else:
         return False
-    truth.teleport_duck(0.0, 0.0, 0.0)
+    sx, sy, syaw = DEPART
+    truth.teleport_duck(sx, sy, syaw)
     tenir(0.8)
-    b = math.radians(rel_deg)
-    truth.teleport("testball", dist * math.cos(b), dist * math.sin(b))
+    b = syaw + math.radians(rel_deg)
+    try:
+        truth.teleport("testball", sx + dist * math.cos(b), sy + dist * math.sin(b))
+    except TimeoutError:                       # dans un meuble ou un mur (appartement) : on saute l'essai
+        return None
     tenir(0.8)
     return True
 
@@ -73,18 +84,33 @@ def mesurer_tir(gt_avant):
     dx, dy = p1[0] - p0[0], p1[1] - p0[1]
     dist = math.hypot(dx, dy)
     ang = (math.degrees(math.atan2(dy, dx) - yaw0) + 180) % 360 - 180 if dist > 0.02 else float("nan")
-    return vmax, dist, ang
+    ang_w = math.degrees(math.atan2(dy, dx)) if dist > 0.02 else float("nan")
+    return vmax, dist, ang, ang_w
 
 
 bilan = []
 for i in range(n_essais):
-    dist = random.uniform(0.5, 1.0)
+    dist = random.uniform(DIST_MIN, DIST_MAX)
     rel = random.uniform(-rel_max, rel_max)
     print(f"\n##### essai {i + 1}/{n_essais} : balle a {dist:.2f} m, relevement {rel:+.0f} deg #####", flush=True)
-    if not remettre_a_zero(dist, rel):
+    pret = remettre_a_zero(dist, rel)
+    if pret is None:
+        print("placement de la balle impossible (obstacle) : essai saute", flush=True)
+        continue
+    if not pret:
         print("canard pas debout : arret", flush=True)
         break
-    ap = approach.Approche(c, "orange", verite=True, log=lambda m: print(m, flush=True))
+    cap_vise = cap_w = None
+    if VISEE:                                  # direction voulue du ballon : au hasard autour de la ligne canard -> balle
+        s0 = tenir(0.3)
+        gt0 = truth.read()
+        pd, pb = gt0["ducks"][0]["pos"], gt0["bodies"]["testball"]
+        yaw_w = truth.trunk_yaw(gt0["ducks"][0]["quat"])
+        cap_w = math.atan2(pb[1] - pd[1], pb[0] - pd[0]) + math.radians(random.uniform(-VISEE, VISEE))
+        cap_vise = cap_w + (s0["odom"]["yaw"] - yaw_w)        # la meme direction dans le repere de l'odometrie
+        print(f"direction visee : {math.degrees(cap_w):+.0f} deg (monde), "
+              f"{math.degrees(cap_w - math.atan2(pb[1] - pd[1], pb[0] - pd[0])):+.0f} deg de la ligne canard-balle", flush=True)
+    ap = approach.Approche(c, "orange", verite=True, log=lambda m: print(m, flush=True), cap_vise=cap_vise)
     ap.avant_tir = lambda: {"verite": truth.in_trunk_frame(truth.read(), "testball"), "gt": truth.read()}
     t0 = time.monotonic()
     res = ap.run(90.0)
@@ -95,9 +121,14 @@ for i in range(n_essais):
         x, y, _ = av["verite"]
         cote = res["tir"]["cote"]
         ty = 0.042 if cote == "left" else -0.042
-        vmax, d1, ang = mesurer_tir(av["gt"])
+        vmax, d1, ang, ang_w = mesurer_tir(av["gt"])
         ligne.update(cote=cote, err_x=x - 0.07, err_y=y - ty, vmax=vmax, d1=d1, ang=ang, n_ajust=res["tir"]["n_ajust"],
                      ok=(d1 >= 0.15 and not math.isnan(ang) and abs(ang) < 35))
+        if VISEE:
+            err_cap = (ang_w - math.degrees(cap_w) + 180) % 360 - 180
+            ligne["err_cap"] = err_cap
+            ligne["ok"] = d1 >= 0.15 and not math.isnan(ang_w) and abs(err_cap) <= 35
+            print(f"VISEE : ballon parti a {ang_w:+.0f} deg (monde) pour {math.degrees(cap_w):+.0f} voulus -> ecart {err_cap:+.0f} deg", flush=True)
         print(f"RESULTAT : pied {cote}, balle vraie a ({x:+.3f},{y:+.3f}) -> erreur ({(x - 0.07) * 100:+.1f},{(y - ty) * 100:+.1f}) cm ;"
               f" vmax {vmax:.2f} m/s, balle a {d1:.2f} m a 1 s, depart {ang:+.0f} deg -> {'SUCCES' if ligne['ok'] else 'echec'}", flush=True)
     else:

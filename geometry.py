@@ -59,6 +59,20 @@ def balle_dans_tronc(det, cam, hauteur_tronc, focale=vision.FOCAL_PX):
     return out
 
 
+def point_au_sol(px, py, cam, hauteur_tronc, focale=vision.FOCAL_PX):
+    """Position (x, y) dans le repere du tronc du point du SOL vu au pixel (px, py), ou None si le rayon ne
+    descend pas. Sert aux objets qui touchent le sol par le bas de leur boite (chat, personne) : on prend
+    le milieu du bord bas de la boite englobante comme point de contact (approximation de quelques cm)."""
+    r_mat = quat_vers_matrice(cam["quat"])
+    d = _mat_vec(r_mat, rayon_pixel(px, py, focale))
+    if d[2] >= -1e-3:
+        return None
+    t = (-hauteur_tronc - cam["pos"][2]) / d[2]
+    if t <= 0:
+        return None
+    return cam["pos"][0] + t * d[0], cam["pos"][1] + t * d[1]
+
+
 def cap_et_distance(p):
     """(relevement en rad, positif a gauche ; distance au sol en m) d'un point du repere du tronc."""
     return math.atan2(p[1], p[0]), math.hypot(p[0], p[1])

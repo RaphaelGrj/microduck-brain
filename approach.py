@@ -47,7 +47,7 @@ TABLE_PITCH = ((0.09, 1.50), (0.12, 1.37), (0.18, 0.92), (0.25, 0.62), (0.35, 0.
 # le repere du tronc a x = 0,07 m (2 cm plus pres que le point d'entrainement 0,09 : a +2 cm ou plus
 # le pied ne touche rien, a -4 cm le coup est mou) ; en lateral, y = +-0,042 +-3 cm passent.
 CIBLE_X, CIBLE_Y = 0.071, 0.042
-TOL_X = 0.017                              # x dans [0,054 ; 0,088] : a 5 cm le coup est mou, a 9 cm limite haute
+TOL_X_AV, TOL_X_AR = 0.034, 0.016          # x dans [0,055 ; 0,105] : au-dela de 9 cm le tir est partiel mais bien meilleur qu un pas qui pousse la balle (le pied balaye jusqu a ~10 cm)
 TOL_Y_INT, TOL_Y_EXT = 0.02, 0.035       # lateral : cote axe du canard (pied gauche : balle trop a droite) / cote exterieur
 X_MIN_BALLE, Y_MIN_BALLE = 0.05, 0.09    # zone occupee par le canard : aucune balle reelle ne peut y etre
 D_ENTREE_AJUST = 0.35                    # on passe en AJUSTER sous cette distance
@@ -57,6 +57,12 @@ MAX_PROPAGATIONS = 2                     # mesures "a l'odometrie" consecutives 
 T_TETE_NEUTRE = 1.4                      # attente, tete ramenee au neutre, avant de lancer le tir
 
 V_MARCHE, V_ROT, V_COTE = 0.4, 1.5, 0.4  # au-dessus de la zone morte
+
+# Visee : la balle part a ~BIAIS_G du cap du canard (pied gauche ; mesure : 0 a +22 deg selon la position
+# de la balle dans la fenetre) et le canard arrive sur la balle en ligne droite depuis une "rampe de
+# lancement" situee D_RAMPE derriere elle, sur la ligne de tir voulue.
+BIAIS_G = math.radians(10)
+D_RAMPE = 0.45
 
 
 def duree_marche(d):
@@ -86,8 +92,12 @@ def clamp(v, lo, hi):
     return max(lo, min(hi, v))
 
 
+def wrap(a):
+    return (a + math.pi) % (2 * math.pi) - math.pi
+
+
 class Approche:
-    def __init__(self, client, couleur="orange", verite=False, log=print):
+    def __init__(self, client, couleur="orange", verite=False, log=print, cap_vise=None):
         self.c = client
         self.couleur = couleur
         self.log = log
@@ -110,12 +120,19 @@ class Approche:
         self.n_ajust = 0
         self.t_tir = 0.0
         self.avant_tir = None
+        # visee : direction voulue du ballon, en rad dans le repere de l'ODOMETRIE (None = tir droit devant)
+        self.cap_vise = cap_vise
+        self.cote_force = "left" if cap_vise is not None else None    # un seul pied : biais de tir previsible
+        self.stage = None                          # None -> PLACER -> ORIENTER -> OK
+        self.pose_odom = (0.0, 0.0, 0.0)
+        self.balle_odom = None
         self.resultat = {}
 
     # --- boucle bas niveau -------------------------------------------------------------
     def pas(self):
         """Un tour de boucle cadence sur le flux d'etat : renvoie la trame, envoie tete et corps."""
         s = self.c.read_state_frame()
+        self.pose_odom = (s["odom"]["position"][0], s["odom"]["position"][1], s["odom"]["yaw"])
         now = time.monotonic()
         vx = vy = vyaw = 0.0
         yaw, pitch = self.yaw, self.pitch                           # posture de REGARD
@@ -200,6 +217,62 @@ class Approche:
         rx, ry = bx - dx, by - dy
         return math.cos(dpsi) * rx + math.sin(dpsi) * ry, -math.sin(dpsi) * rx + math.cos(dpsi) * ry
 
+    def vers_odom(self, est):
+        ox, oy, oyaw = self.pose_odom
+        x, y = est
+        return ox + math.cos(oyaw) * x - math.sin(oyaw) * y, oy + math.sin(oyaw) * x + math.cos(oyaw) * y
+
+    def planifier_visee(self):
+        bx, by = self.balle_odom
+        phi = self.cap_vise - BIAIS_G
+        c, s_ = math.cos(phi), math.sin(phi)
+        # canard au moment du tir : la balle est a (CIBLE_X, CIBLE_Y) dans son repere (pied gauche)
+        self.p_tir = (bx - (c * CIBLE_X - s_ * CIBLE_Y), by - (s_ * CIBLE_X + c * CIBLE_Y))
+        self.phi = phi
+        self.rampe = (self.p_tir[0] - D_RAMPE * c, self.p_tir[1] - D_RAMPE * s_)
+
+    def etape_visee(self):
+        """Place le canard derriere la balle, face a la ligne de tir, A L'ODOMETRIE (la balle peut etre hors
+        champ pendant le contournement). Renvoie True si une rafale a ete lancee, False si c'est fini."""
+        ox, oy, oyaw = self.pose_odom
+        if self.stage is None:
+            self.planifier_visee()
+            px, py = self.p_tir
+            c, s_ = math.cos(self.phi), math.sin(self.phi)
+            derriere = (ox - px) * c + (oy - py) * s_              # < 0 : en amont du point de tir
+            lateral = -(ox - px) * s_ + (oy - py) * c
+            if math.hypot(self.balle_odom[0] - ox, self.balle_odom[1] - oy) < D_RAMPE or (
+                    derriere < -0.30 and abs(lateral) < 0.12 and abs(wrap(self.phi - oyaw)) < math.radians(30)):
+                self.stage = "OK"
+                self.log("  visee : deja bien place (ou balle trop pres pour contourner)")
+                return False
+            self.stage = "PLACER"
+            self.log(f"--> PLACER (rampe a {math.hypot(self.rampe[0] - ox, self.rampe[1] - oy):.2f} m, "
+                     f"ligne de tir {math.degrees(self.phi):+.0f} deg)")
+        if self.stage == "PLACER":
+            rx, ry = self.rampe[0] - ox, self.rampe[1] - oy
+            x = math.cos(oyaw) * rx + math.sin(oyaw) * ry
+            y = -math.sin(oyaw) * rx + math.cos(oyaw) * ry
+            d, beta = math.hypot(x, y), math.atan2(y, x)
+            if d < 0.20:
+                self.stage = "ORIENTER"
+                self.log("--> ORIENTER")
+            elif abs(beta) > math.radians(25):
+                self.lancer_rafale(0.0, 0.0, math.copysign(V_ROT, beta), clamp(duree_rotation(beta), 0.5, 1.2))
+                return True
+            else:
+                self.lancer_rafale(V_MARCHE, 0.0, 0.0, clamp(duree_marche(0.85 * d), 0.4, 1.2))
+                return True
+        if self.stage == "ORIENTER":
+            e = wrap(self.phi - oyaw)
+            if abs(e) < math.radians(15):
+                self.stage = "OK"
+                self.log(f"  visee : orientation terminee ({math.degrees(e):+.0f} deg d'ecart)")
+                return False
+            self.lancer_rafale(0.0, 0.0, math.copysign(V_ROT, e), clamp(duree_rotation(e), 0.5, 1.2))
+            return True
+        return False
+
     def comparer_verite(self, est):
         if self.verite is None or est is None:
             return ""
@@ -228,6 +301,9 @@ class Approche:
             self.log("--> VISER")
 
         if self.etat == "VISER":
+            if self.cap_vise is not None and self.stage != "OK" and d > 0.40 and self.balle_odom:
+                if self.etape_visee():
+                    return
             if abs(beta) > math.radians(20):
                 T = clamp(duree_rotation(beta), 0.5, 1.2)
                 self.log(f"  balle ({x:+.2f},{y:+.2f}) cap {math.degrees(beta):+.0f} deg, {d:.2f} m : rotation {T:.2f} s{tag}{self.comparer_verite(est)}")
@@ -239,14 +315,24 @@ class Approche:
             return
 
         # AJUSTER : placer la balle dans la fenetre de tir du pied le plus proche
-        if self.cote is None or abs(y) > 0.04:
+        if self.cote_force:
+            self.cote = self.cote_force
+        elif self.cote is None or abs(y) > 0.04:
             self.cote = "left" if y > 0 else "right"
         ty = CIBLE_Y if self.cote == "left" else -CIBLE_Y
         ex, ey = x - CIBLE_X, y - ty
         self.log(f"  [{self.n_ajust}] balle ({x:+.3f},{y:+.3f}) pied {self.cote} erreur ({ex * 100:+.1f},{ey * 100:+.1f}) cm{tag}{self.comparer_verite(est)}")
         e_int = -ey if self.cote == "left" else ey          # > 0 : balle trop pres de l'axe du canard
-        if abs(ex) <= TOL_X and -TOL_Y_EXT <= e_int <= TOL_Y_INT:
-            self.tirer(est, "dans la fenetre")
+        if -TOL_X_AR <= ex <= TOL_X_AV and -TOL_Y_EXT <= e_int <= TOL_Y_INT:
+            if vue:
+                self.tirer(est, "dans la fenetre")
+            else:
+                # Position deduite de l'odometrie seulement : si le dernier pas a poussé la balle, elle n'est plus
+                # la (essai d'evaluation : tir a 11 cm dans le vide). On releve la tete pour regarder plus loin
+                # et on ne tire que sur une mesure visuelle.
+                self.log("  dans la fenetre selon l'odometrie seulement : on regarde plus loin avant de tirer")
+                self.pitch = clamp(self.pitch - 0.4, PITCH_MIN, PITCH_MAX)
+                self.t_pret = max(self.t_pret, time.monotonic() + SETTLE_TETE + 0.3)
             return
         if self.n_ajust >= MAX_AJUSTEMENTS:
             if d < 0.15 and abs(ex) < 0.05 and abs(ey) < 0.05:
@@ -262,9 +348,9 @@ class Approche:
             self.lancer_rafale(0.0, 0.0, math.copysign(V_ROT, beta), 0.5, est)
         elif abs(beta) > math.radians(20) and d > 0.15:          # de travers : on se retourne vers la balle
             self.lancer_rafale(0.0, 0.0, math.copysign(V_ROT, beta), clamp(duree_rotation(beta), 0.5, 1.0), est)
-        elif ex > TOL_X:                                         # en avance de peu : on stoppe un peu court
+        elif ex > TOL_X_AV:                                       # en avance de peu : on stoppe un peu court
             self.lancer_rafale(V_MARCHE, 0.0, 0.0, clamp(duree_marche(0.85 * ex), 0.25, 0.75), est)
-        elif ex < -TOL_X:                                        # trop pres : marche arriere (rien en dessous de 0,5 s)
+        elif ex < -TOL_X_AR:                                      # trop pres : marche arriere (rien en dessous de 0,5 s)
             self.lancer_rafale(-V_MARCHE, 0.0, 0.0, clamp(duree_marche(-ex), 0.5, 0.8), est)
         elif ey > 0:                                             # balle trop a gauche : pas de cote GAUCHE, faible (1 s ~ 5 cm)
             self.lancer_rafale(0.0, V_COTE, 0.0, 1.0, est)
@@ -307,6 +393,9 @@ class Approche:
             det = r[1]
             est = self.estimer(det, s) if det is not None else None
             if est is None:
+                if self.cap_vise is not None and self.stage in ("PLACER", "ORIENTER") and self.balle_odom:
+                    self.etape_visee()                  # contournement a l'odometrie : la balle peut etre hors champ
+                    continue
                 self.balle_perdue(s)
                 continue
             self.manques = self.n_propag = 0
@@ -318,6 +407,11 @@ class Approche:
                 continue
             self.sens_recherche = +1.0 if est[1] >= 0 else -1.0
             self.enregistrer(est, s)
+            nouvelle = self.vers_odom(est)
+            if (self.balle_odom and self.stage in ("PLACER", "ORIENTER")
+                    and math.hypot(nouvelle[0] - self.balle_odom[0], nouvelle[1] - self.balle_odom[1]) > 0.10):
+                self.stage = None                       # la balle n'est pas la ou on croyait : on replanifie
+            self.balle_odom = nouvelle
             self.decider(est)
         if self.etat != "FINI":
             self.log("=== temps ecoule sans tir")
