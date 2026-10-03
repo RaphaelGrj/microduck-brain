@@ -23,6 +23,19 @@
 - **La « voix »** est celle du canard (`robot.sound` : alarm, greet, inquire, peck, chirp, coo, wheee). Des
   phrases parlées passeront par `quacksat` (satellite vocal Assist qui tourne sur le robot), à intégrer plus tard.
 
+## Ton installation : Home Assistant OS sur Raspberry Pi 3B+
+
+- Le Pi 3B+ n'a que 1 Go de RAM : **le cerveau et le pont ne doivent PAS tourner dessus**. Ils tournent sur le PC
+  (WSL) ou sur une autre machine du réseau local et parlent à HA par l'API réseau (port 8123).
+- Utilise l'**adresse IP** du Pi (ou `homeassistant.local`) dans `ha.toml` ; depuis WSL, le nom `.local` (mDNS) ne
+  se résout pas toujours — l'IP est plus sûre. Fixe-lui une adresse (réservation DHCP dans ta box).
+- Le jeton se crée dans l'interface de HA (profil → *Sécurité* → *Jetons d'accès longue durée*).
+- **MQTT** (option propre, pas encore codée) : sous HA OS c'est l'add-on officiel *Mosquitto broker* (Paramètres →
+  Modules complémentaires) + l'intégration MQTT ; léger pour un Pi 3B+. Ça donnerait des entités avec `unique_id`
+  qui survivent au redémarrage de HA et la possibilité de commander le canard depuis HA (boutons).
+- Le PC doit être allumé pour que le canard réagisse (le cerveau est hors du robot). À terme, un petit serveur
+  allumé en permanence (ou le robot lui-même pour la partie réactions simples) serait plus adapté.
+
 ## Mise en route chez toi (ce que je ne peux pas faire à ta place)
 
 1. Dans HA : profil (en bas à gauche) → *Sécurité* → *Jetons d'accès longue durée* → créer un jeton.

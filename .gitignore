@@ -7,3 +7,4 @@ modeles/
 *.onnx
 ha.toml
 *token*
+photos_chat/

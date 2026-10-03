@@ -6,7 +6,7 @@ Le modele n'est PAS dans le depot (poids : ~12 Mo pour YOLOv8n). Il se place dan
 `~/microduck-brain/modeles/yolov8n.onnx` (ou on passe un autre chemin). Formats de sortie geres :
 YOLOv8 / YOLO11 (1, 84, N) et YOLOv5 / v7 (1, N, 85, avec "objectness").
 
-Usage : bash ~/run-brain.sh animaux.py <image.png|jpg> [classe=cat] [modele.onnx]
+Usage : bash ~/run-brain.sh animaux.py <image.png|jpg> [classe=cat] [modele.onnx] [--rogner]
         bash ~/run-brain.sh animaux.py --test          (decodage sur un tenseur synthetique, sans modele)
 """
 import math
@@ -102,11 +102,26 @@ class DetecteurCoco:
         self.net = cv2.dnn.readNetFromONNX(str(modele))
         self.taille = taille
 
-    def detect(self, img, classes=("cat",), seuil=0.35):
-        blob, e, dec = pretraiter(img, self.taille)
+    def detect(self, img, classes=("cat",), seuil=0.35, rogner_noir=False):
+        """`rogner_noir` : retire les bandes noires haut/bas (captures d'ecran de telephone) avant la detection ;
+        les boites sont renvoyees dans les coordonnees de l'image d'origine."""
+        y0 = 0
+        if rogner_noir:
+            lignes = np.where(img.mean(axis=(1, 2)) > 8)[0]
+            if len(lignes):
+                y0 = int(lignes[0])
+                img_utile = img[y0:int(lignes[-1]) + 1]
+            else:
+                img_utile = img
+        else:
+            img_utile = img
+        blob, e, dec = pretraiter(img_utile, self.taille)
         self.net.setInput(blob)
         sortie = self.net.forward()
-        return decoder(sortie, e, dec, img.shape[:2], classes, seuil)
+        objets = decoder(sortie, e, dec, img_utile.shape[:2], classes, seuil)
+        for o in objets:
+            o.y += y0
+        return objets
 
 
 def _test_synthetique():
@@ -142,9 +157,10 @@ def main():
     img = cv2.imread(sys.argv[1])
     if img is None:
         raise SystemExit(f"image illisible : {sys.argv[1]}")
-    classe = sys.argv[2] if len(sys.argv) > 2 else "cat"
-    modele = sys.argv[3] if len(sys.argv) > 3 else MODELE_PAR_DEFAUT
-    objets = DetecteurCoco(modele).detect(img, classes=(classe,))
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    classe = args[1] if len(args) > 1 else "cat"
+    modele = args[2] if len(args) > 2 else MODELE_PAR_DEFAUT
+    objets = DetecteurCoco(modele).detect(img, classes=(classe,), rogner_noir="--rogner" in sys.argv)
     print(f"{len(objets)} {classe} detecte(s)")
     for o in objets:
         print(f"  score {o.score:.2f}  boite x={o.x:.0f} y={o.y:.0f} w={o.w:.0f} h={o.h:.0f}  pied=({o.pied[0]:.0f},{o.pied[1]:.0f})")
