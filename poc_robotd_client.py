@@ -12,7 +12,7 @@ import sys
 import time
 from pathlib import Path
 
-SOCK_PATH = Path(sys.argv[1]) if len(sys.argv) > 1 else Path.home() / ".cache/duck-sim/duck-a.sock"
+SOCK_PATH = Path.home() / ".cache/duck-sim/duck-a.sock"
 
 
 class RobotdClient:
@@ -64,8 +64,9 @@ class RobotdClient:
 
 
 def main():
-    print(f"Connexion a {SOCK_PATH} ...")
-    client = RobotdClient(SOCK_PATH)
+    sock = Path(sys.argv[1]) if len(sys.argv) > 1 else SOCK_PATH
+    print(f"Connexion a {sock} ...")
+    client = RobotdClient(sock)
     print("Connecte.\n")
 
     print("-- robot.subscribe --")
