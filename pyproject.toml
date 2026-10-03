@@ -1,0 +1,12 @@
+[project]
+name = "microduck-brain"
+version = "0.1.0"
+description = "Cerveau comportemental et perception pour Microduck (hors robot)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "numpy>=2.0",
+    "opencv-python-headless>=4.10",
+]
+
+[tool.uv]
+package = false

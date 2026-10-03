@@ -11,7 +11,14 @@ export GST_PLUGIN_PATH="${GST_RS_DIR:-$HOME/.local-015/lib/x86_64-linux-gnu/gstr
 # x264enc mais son flux echoue (sps/pps, not-negotiated). Pollen ne corrige que macOS :
 # on le declasse ici pour retomber sur x264enc (logiciel, suffisant en 640x360).
 export GST_PLUGIN_FEATURE_RANK="nvh264enc:0,nvautogpuh264enc:0"
+# Rendu camera logiciel sous WSL2 (llvmpipe) : 142 ms/image avec ombres -> la physique tombait
+# a 0.36x temps reel et le canard ne marchait plus. Options ajoutees dans notre fork de
+# microduck_rl (sim/camera.py) : rendu sans ombres/reflets (36 ms) et cadence reduite.
+export DUCK_SIM_CAMERA_FLAT=1
+export DUCK_SIM_CAMERA_FPS="${DUCK_SIM_CAMERA_FPS:-10}"
 source "$HOME/.cargo/env"
 cd "$HOME/microduck" || exit 1
-DUCK_SIM_VIEWER=0 DUCK_SIM_CAMERAS="${DUCK_SIM_CAMERAS-a}" DUCK_SIM_RL="$HOME/microduck_rl" DUCK_SIM_SCENE=apartment \
+# Scene par defaut : appartement + balle orange de test a 40 cm (fork). Surcharge : DUCK_SIM_SCENE=apartment
+SCENE_TESTBALL="$HOME/microduck_rl/src/mjlab_microduck/robot/microduck/scene_apartment_testball.xml"
+DUCK_SIM_VIEWER=0 DUCK_SIM_CAMERAS="${DUCK_SIM_CAMERAS-a}" DUCK_SIM_RL="$HOME/microduck_rl" DUCK_SIM_SCENE="${DUCK_SIM_SCENE:-$SCENE_TESTBALL}" \
   setsid scripts/duck-sim > "$HOME/duck-sim.out" 2>&1 < /dev/null &
