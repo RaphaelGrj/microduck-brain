@@ -28,6 +28,7 @@ cerveau_ip = "A_REMPLIR"            # IP de la machine qui fera tourner le cerve
 cerveau_modele = "A_REMPLIR"        # ex. "Raspberry Pi 4 2 Go", "Pi Zero 2 W", "S24+"
 robot_ip = "A_REMPLIR"              # IP du Microduck quand il sera livré
 robot_utilisateur_ssh = "A_REMPLIR"
+etat_hz = 25                        # trames d'état du robot par seconde (10 à 50). Moins = moins de CPU/réseau sur un petit Pi
 
 # ---- 4. Imprimantes surveillées --------------------------------------------------------------------
 # `entite` : le entity_id de l'ÉTAT de l'imprimante dans HA (Outils de développement -> États), ou lance

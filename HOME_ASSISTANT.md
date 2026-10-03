@@ -38,6 +38,14 @@
 - MQTT apporterait : entités avec `unique_id` (elles survivent au redémarrage de HA), appareil « Microduck » regroupé,
   boutons pour commander le canard depuis HA. **Pas encore codé** (en attente de ton oui).
 
+## Tu n'as que des Pi 3B+ : ça suffit pour le pont + cerveau (mesuré), pas pour la vision
+
+Mesuré sur le PC : pont + cerveau = **29 Mo de RAM et 0,4–0,8 % d'un cœur** (10 à 50 trames d'état/s). Un Pi 3B+ (Cortex-A53) est
+plusieurs fois plus lent (estimation ×5–10) : largement assez, avec 1 Go. Les modules concernés n'utilisent que la bibliothèque
+standard + `websockets` et sont compatibles Python 3.11 (celui de Raspberry Pi OS Bookworm). Ce qui **ne** tourne **pas** sur un Pi 3B+ :
+la vision (jeu de balle) et YOLO (chat) — ils restent sur le PC à la demande, ou sur le robot plus tard.
+Fichiers d'installation prêts mais **non testés sur un Pi** : `deploy/pi/` (README, deux services systemd, requirements).
+
 ## Où fait-on tourner le cerveau ? (sans laisser le PC allumé)
 
 Le PC n'est nécessaire que **pendant le développement** (c'est lui qui fait tourner le simulateur). En usage normal, le

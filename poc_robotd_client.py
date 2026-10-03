@@ -7,12 +7,14 @@ Usage : python3 poc_robotd_client.py [chemin_du_socket]
 Defaut : ~/.cache/duck-sim/duck-a.sock (duck-sim en cours d'execution requis)
 """
 import json
+import os
 import socket
 import sys
 import time
 from pathlib import Path
 
-SOCK_PATH = Path.home() / ".cache/duck-sim/duck-a.sock"
+# duck-sim par defaut ; `ROBOTD_SOCK=/run/robotd.sock` (robot) ou le socket d'un tunnel SSH pour un cerveau distant.
+SOCK_PATH = Path(os.environ.get("ROBOTD_SOCK") or Path.home() / ".cache/duck-sim/duck-a.sock")
 
 
 class RobotdClient:
