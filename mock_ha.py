@@ -32,6 +32,16 @@ class MockHA:
             def log_message(self, *a):
                 pass
 
+            def do_GET(self):
+                if self.headers.get("Authorization") != f"Bearer {mock.jeton}":
+                    return self._rep(401, {"message": "Unauthorized"})
+                if self.path == "/api/config":
+                    return self._rep(200, {"version": "2099.1.0-mock", "location_name": "Maison de test"})
+                if self.path == "/api/states":
+                    with mock.verrou:
+                        return self._rep(200, list(mock.etats.values()))
+                self._rep(404, {"message": "inconnu"})
+
             def do_POST(self):
                 if self.headers.get("Authorization") != f"Bearer {mock.jeton}":
                     return self._rep(401, {"message": "Unauthorized"})

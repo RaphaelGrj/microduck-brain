@@ -1,21 +1,58 @@
-# Configuration du pont Home Assistant (pont_ha.py). Copie ce fichier en `ha.toml` (ignore par git) et adapte.
+# ====================================================================================================
+#  CONFIGURATION LOCALE DE MICRODUCK  (modèle SANS secret — le vrai fichier s'appelle `ha.toml`)
+#
+#  `ha.toml` contient le jeton de ta maison : il est dans .gitignore, ne le mets JAMAIS sur GitHub ni dans un
+#  message. Remplace chaque "A_REMPLIR" ; ce que tu laisses tel quel est simplement ignoré.
+#  Ensuite :  bash ~/run-brain.sh pont_ha.py ha.toml --verifier     (teste tout et liste tes imprimantes)
+# ====================================================================================================
 
-url = "http://homeassistant.local:8123"          # adresse de ton Home Assistant
-# Le jeton d'acces longue duree se cree dans HA : profil (en bas a gauche) -> Securite -> Jetons d'acces longue duree.
-# Colle-le TOI-MEME dans ce fichier (une seule ligne, chmod 600) ; il ne doit jamais etre dans ha.toml ni dans git :
-token_file = "~/.config/microduck/ha_token"
-publier_toutes_les_s = 30                         # frequence de rafraichissement des entites sensor.microduck_*
+# ---- 1. Home Assistant (Raspberry Pi 3B+ sous HA OS) -----------------------------------------------
+[home_assistant]
+url   = "http://A_REMPLIR:8123"     # IP du Pi, ex. "http://192.168.1.50:8123" (l'IP est plus sûre que homeassistant.local)
+token = "A_REMPLIR"                 # Jeton d'accès longue durée : HA -> ton profil (en bas à gauche) -> Sécurité
+                                    # -> Jetons d'accès longue durée -> Créer. Il ne s'affiche qu'UNE fois : copie-le ici.
+publier_toutes_les_s = 30           # rafraîchissement des entités sensor.microduck_* (inutile de descendre sous 10)
 
-# Entites dont un CHANGEMENT D'ETAT fait reagir le canard. `reactions` : etat de l'entite -> evenement du cerveau
-#   impression_finie    -> geste "oui" + quack d'accueil        impression_echec -> geste "surpris" + alarme
-#   impression_commencee-> geste "curieux" + son interrogatif   alerte           -> comme impression_echec
-# Les noms des entites et des etats sont a verifier dans HA (Outils de developpement -> Etats) :
-[[surveillance]]
-entite = "sensor.prusa_mk4s_etat_de_l_imprimante"    # EXEMPLE : integration PrusaLink (MK4S, ou MK3S avec Raspberry Pi Zero)
-nom = "MK4S"
-reactions = { finished = "impression_finie", stopped = "impression_echec", error = "impression_echec", attention = "alerte" }
+# ---- 2. MQTT (facultatif : add-on "Mosquitto broker" de HA OS) -------------------------------------
+[mqtt]
+actif = false                       # passe à true une fois Mosquitto installé
+hote = "A_REMPLIR"                  # en général la même IP que Home Assistant
+port = 1883
+utilisateur = "A_REMPLIR"           # un utilisateur créé pour le canard dans HA (Paramètres -> Personnes), pas ton compte admin
+mot_de_passe = "A_REMPLIR"
 
-[[surveillance]]
-entite = "sensor.elegoo_saturn_4_ultra_etat"          # EXEMPLE : integration communautaire elegoo-homeassistant (HACS)
+# ---- 3. Réseau : où tourne quoi (pour que je règle l'architecture) ---------------------------------
+[reseau]
+cerveau_sur = "A_REMPLIR"           # "pc", "pi" (autre Raspberry Pi), "telephone" ou "robot"
+cerveau_ip = "A_REMPLIR"            # IP de la machine qui fera tourner le cerveau (si ce n'est pas le PC)
+cerveau_modele = "A_REMPLIR"        # ex. "Raspberry Pi 4 2 Go", "Pi Zero 2 W", "S24+"
+robot_ip = "A_REMPLIR"              # IP du Microduck quand il sera livré
+robot_utilisateur_ssh = "A_REMPLIR"
+
+# ---- 4. Imprimantes surveillées --------------------------------------------------------------------
+# `entite` : le entity_id de l'ÉTAT de l'imprimante dans HA (Outils de développement -> États), ou lance
+#            `--verifier` qui te liste ce qui ressemble à une imprimante.
+# `type`   : "prusalink" => états connus (finished, stopped, error, attention, printing) déjà gérés.
+#            Pour une autre intégration (Elegoo...), écris `reactions` toi-même une fois que tu as vu les états réels.
+[[imprimante]]
+nom = "Prusa 1"
+type = "prusalink"
+entite = "A_REMPLIR"                # ex. "sensor.prusa_mk4s_etat_de_l_imprimante" (à vérifier chez toi)
+
+[[imprimante]]
+nom = "Prusa 2"
+type = "prusalink"
+entite = "A_REMPLIR"
+
+[[imprimante]]
 nom = "Saturn 4 Ultra"
-reactions = { complete = "impression_finie", failed = "impression_echec", stopped = "impression_echec" }
+type = "elegoo"
+entite = "A_REMPLIR"
+# Après avoir vu les vrais états de l'imprimante dans HA, décommente et adapte (états en minuscules ou comme affichés) :
+# reactions = { complete = "impression_finie", failed = "impression_echec", stopped = "impression_echec" }
+
+# ---- 5. Tes notes (ignorées par le programme) ------------------------------------------------------
+[notes]
+libre = """
+Écris ici ce que tu veux me dire : noms de pièces, habitudes, ce qui doit réveiller / ne pas réveiller le canard...
+"""

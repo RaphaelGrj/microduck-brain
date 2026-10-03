@@ -113,10 +113,12 @@ def test_reconnexion():
     pont.demarrer()
     try:
         assert attendre(lambda: ha.abonnes)
-        for ws in list(ha.abonnes):                                   # coupure cote HA
+        anciens = list(ha.abonnes)
+        for ws in anciens:                                            # coupure cote HA
             ws.close()
-        assert attendre(lambda: any("connexion perdue" in m or "connecte" in m for m in log[1:]))
-        assert attendre(lambda: ha.abonnes, 8.0), "pas de reconnexion : " + str(log)
+        assert attendre(lambda: any("connexion perdue" in m for m in log))
+        # une NOUVELLE connexion abonnee (l'ancienne peut rester un instant dans l'ensemble)
+        assert attendre(lambda: any(ws not in anciens for ws in list(ha.abonnes)), 8.0), "pas de reconnexion : " + str(log)
         ha.set_state("sensor.prusa_mk4s", "finished")
         assert attendre(lambda: pont.source() == ["impression_finie:MK4S"]), log
     finally:
@@ -151,7 +153,59 @@ def test_cerveau():
     print("cerveau : OK (finie -> celebre + greet, echec -> alerte + alarm, l'alerte reveille)")
 
 
+def test_config_et_verifier():
+    """Format a sections : champs non remplis ignores, reactions par defaut, jeton jamais affiche ; --verifier."""
+    import tempfile
+    from pathlib import Path
+    ha = mock_ha.MockHA(JETON)
+    toml = f'''
+[home_assistant]
+url = "{ha.url}"
+url_ws = "{ha.url_ws}"
+token = "{JETON}"
+[mqtt]
+actif = true
+hote = "127.0.0.1"
+port = {ha.rest.server_address[1]}
+[[imprimante]]
+nom = "Prusa 1"
+type = "prusalink"
+entite = "sensor.prusa_1_etat"
+[[imprimante]]
+nom = "Prusa 2"
+type = "prusalink"
+entite = "A_REMPLIR"
+[[imprimante]]
+nom = "Saturn"
+type = "elegoo"
+entite = "sensor.saturn_etat"
+reactions = {{ complete = "impression_finie" }}
+'''
+    with tempfile.TemporaryDirectory() as d:
+        chemin = Path(d) / "ha.toml"
+        chemin.write_text(toml)
+        cfg = pont_ha.lire_config(chemin)
+    assert cfg["url"] == ha.url and [s["nom"] for s in cfg["surveillance"]] == ["Prusa 1", "Saturn"], cfg["surveillance"]
+    assert cfg["ignorees"] == ["Prusa 2"]
+    assert cfg["surveillance"][0]["reactions"]["finished"] == "impression_finie"      # defauts prusalink
+    assert cfg["surveillance"][1]["reactions"] == {"complete": "impression_finie"}
+    assert pont_ha.lire_jeton(cfg) == JETON
+    assert pont_ha.lire_config(Path(__file__).parent / "ha.exemple.toml")["url"] is None   # le modele vide est refuse proprement
+    ha.set_state("sensor.prusa_1_etat", "idle", {"friendly_name": "Prusa 1 etat"})
+    ha.set_state("sensor.salon_temperature", "21", {"friendly_name": "Salon"})
+    sortie = []
+    res = pont_ha.verifier(cfg, JETON, log=sortie.append)
+    assert res["rest"] and res["ws"] and res["mqtt"] is True and res["version"].endswith("mock"), res
+    assert [e[0] for e in res["entites"]] == ["sensor.prusa_1_etat"], res["entites"]       # le capteur du salon n'est pas liste
+    assert JETON not in "\n".join(sortie), "le jeton ne doit jamais apparaitre"
+    mauvais = pont_ha.verifier(cfg, "MAUVAIS", log=sortie.append)
+    assert not mauvais["rest"] and any("jeton refuse" in m for m in sortie)
+    ha.arreter()
+    print("config + verifier : OK (champs A_REMPLIR ignores, imprimantes listees, jeton jamais affiche, mauvais jeton explique)")
+
+
 if __name__ == "__main__":
+    test_config_et_verifier()
     test_evenements()
     test_publication()
     test_jeton_refuse()

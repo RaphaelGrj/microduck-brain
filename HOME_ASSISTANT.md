@@ -25,25 +25,49 @@
 
 ## Ton installation : Home Assistant OS sur Raspberry Pi 3B+
 
-- Le Pi 3B+ n'a que 1 Go de RAM : **le cerveau et le pont ne doivent PAS tourner dessus**. Ils tournent sur le PC
-  (WSL) ou sur une autre machine du réseau local et parlent à HA par l'API réseau (port 8123).
-- Utilise l'**adresse IP** du Pi (ou `homeassistant.local`) dans `ha.toml` ; depuis WSL, le nom `.local` (mDNS) ne
-  se résout pas toujours — l'IP est plus sûre. Fixe-lui une adresse (réservation DHCP dans ta box).
-- Le jeton se crée dans l'interface de HA (profil → *Sécurité* → *Jetons d'accès longue durée*).
-- **MQTT** (option propre, pas encore codée) : sous HA OS c'est l'add-on officiel *Mosquitto broker* (Paramètres →
-  Modules complémentaires) + l'intégration MQTT ; léger pour un Pi 3B+. Ça donnerait des entités avec `unique_id`
-  qui survivent au redémarrage de HA et la possibilité de commander le canard depuis HA (boutons).
-- Le PC doit être allumé pour que le canard réagisse (le cerveau est hors du robot). À terme, un petit serveur
-  allumé en permanence (ou le robot lui-même pour la partie réactions simples) serait plus adapté.
+- **Le Pi 3B+ n'a que 1 Go de RAM** : le cerveau et le pont ne doivent PAS tourner dessus (voir « Où fait-on tourner le
+  cerveau ? » plus bas). Ils parlent à HA par l'API réseau (port 8123).
+- Utilise l'**adresse IP** du Pi dans la config (le nom `homeassistant.local` ne se résout pas toujours depuis WSL) et
+  fixe-lui une adresse (réservation DHCP dans ta box).
+- **Mosquitto (MQTT) sur le même Pi : oui, c'est raisonnable.** C'est un broker très léger (de l'ordre de quelques Mo
+  de RAM pour un usage domestique ; je ne l'ai pas mesuré sur ton Pi). Ce qui use un Pi 3B+ sous HA OS, c'est HA
+  lui-même (souvent la moitié de la RAM), les autres add-ons et l'**usure de la carte SD** (base de données) — pas
+  Mosquitto. Pour surveiller : ajoute l'intégration *System Monitor* (RAM, CPU, disque) avant et après l'installation.
+  Garde-fous : peu de messages (le pont publie sur changement, jamais plus d'une fois toutes les 10 s), pas de
+  messages « retained » inutiles. Si la RAM dépasse ~85 %, on revient au mode REST (déjà fonctionnel, sans broker).
+- MQTT apporterait : entités avec `unique_id` (elles survivent au redémarrage de HA), appareil « Microduck » regroupé,
+  boutons pour commander le canard depuis HA. **Pas encore codé** (en attente de ton oui).
+
+## Où fait-on tourner le cerveau ? (sans laisser le PC allumé)
+
+Le PC n'est nécessaire que **pendant le développement** (c'est lui qui fait tourner le simulateur). En usage normal, le
+cerveau et le pont doivent tourner sur une machine allumée en permanence. Options, de la plus adaptée à la moins :
+
+| Option | Verdict |
+|---|---|
+| **Un autre Raspberry Pi** (4 ou 5 idéal ; un Pi 3 / Zero 2 W suffit pour le pont seul) | **Recommandé.** Linux complet, 24 h/24, quelques watts. Le pont (Python + `websockets`) est minuscule ; la vision (couleur) tient sur un Pi 4 ; YOLO pour le chat est plus lent (~0,3–1 s/image à estimer). |
+| **Le robot lui-même** (RK3566, 1 Go, comme `quacksat`) | Possible pour le pont et les réactions simples (pas de réseau entre cerveau et `robotd`), mais la RAM est partagée avec les démons ; à décider quand le robot sera là. |
+| **Ton S24+** (Termux) | **Déconseillé comme hôte** : Android suspend les applications en arrière-plan (économie de batterie), le cerveau s'arrêterait sans prévenir. Très bien comme **télécommande / notifications** via l'appli Home Assistant. |
+| Le Pi 3B+ de HA OS (add-on) | Non : 1 Go déjà bien occupé par HA. |
+
+**Comment un cerveau distant atteint le robot** : `robotd` n'écoute que sur un socket local du robot. Un cerveau sur un autre
+Pi s'y connecte par un **tunnel SSH de socket Unix** (`ssh -L` redirige un socket distant vers un socket local ; le robot a
+déjà SSH, c'est ainsi que `quacksat` s'y déploie). Le code actuel (`RobotdClient`) parle à un socket Unix : il n'y a rien à
+changer côté cerveau. **À valider sur le vrai robot** (pas encore livré).
+
+## Le fichier de configuration (ce que tu remplis)
+
+`~/microduck-brain/ha.toml`, soit `\\wsl.localhost\Ubuntu\home\raphael\microduck-brain\ha.toml` depuis Windows. Il est **ignoré par git**
+(`.gitignore`) et en droits `600`. Sections : `[home_assistant]` (IP, jeton), `[mqtt]`, `[reseau]` (où tourne quoi),
+`[[imprimante]]` (une par imprimante), `[notes]` (libre). Tout ce qui reste à `A_REMPLIR` est ignoré. Le programme
+**avertit** si ce fichier n'est pas ignoré par git, et n'affiche jamais le jeton.
 
 ## Mise en route chez toi (ce que je ne peux pas faire à ta place)
 
-1. Dans HA : profil (en bas à gauche) → *Sécurité* → *Jetons d'accès longue durée* → créer un jeton.
-2. Le coller **toi-même** dans `~/.config/microduck/ha_token` (une ligne, `chmod 600`). Il n'est jamais dans le
-   dépôt, ni dans `ha.toml`, ni dans les logs.
-3. Copier `ha.exemple.toml` en `ha.toml`, mettre l'URL de HA et les **vrais noms d'entités et d'états**
-   (HA → *Outils de développement* → *États* : chercher l'imprimante et noter les valeurs qu'elle prend en fin
-   d'impression, en échec, etc.).
+1. Dans HA : profil (en bas à gauche) → *Sécurité* → *Jetons d'accès longue durée* → créer un jeton (il ne s'affiche qu'une fois).
+2. Remplir `ha.toml` (IP du Pi, jeton, et laisser les imprimantes à `A_REMPLIR` pour l'instant).
+3. `bash ~/run-brain.sh pont_ha.py ha.toml --verifier` : teste l'URL, le jeton, le WebSocket, le broker MQTT, et **liste les
+   entités qui ressemblent à une imprimante** : il suffit de recopier leurs noms dans `[[imprimante]]`.
 4. `bash ~/run-brain.sh pont_ha.py ha.toml` (le simulateur ou le robot doit tourner).
 
 Intégrations HA à installer pour les imprimantes (déjà existantes, non écrites par nous) :
@@ -59,7 +83,8 @@ Validé (`python test_ha.py`, contre `mock_ha.py`, un **faux** HA qui imite l'AP
 transitions d'état → événements (et seulement elles : même état, `unavailable`, entité non surveillée,
 état sans réaction ignorés ; insensible à la casse), deux imprimantes, jeton refusé (message clair, jeton jamais
 écrit dans les logs), publication des entités, chute remontée, appel de service, reconnexion après coupure,
-réactions du cerveau (celebre/alerte, l'alerte réveille la sieste).
+réactions du cerveau (celebre/alerte, l'alerte réveille la sieste), lecture de la config à sections (champs
+`A_REMPLIR` ignorés) et commande `--verifier` (REST, WebSocket, broker, liste d'entités, mauvais jeton expliqué).
 
 Validé aussi **contre `duck-sim`** (`python demo_ha.py`, faux HA + pont + cerveau + canard simulé) : impression
 qui démarre → état `info` (tête +0,37 rad), qui se termine → `celebre` (geste « oui »), échec → `alerte`
