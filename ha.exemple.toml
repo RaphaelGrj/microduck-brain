@@ -1,0 +1,21 @@
+# Configuration du pont Home Assistant (pont_ha.py). Copie ce fichier en `ha.toml` (ignore par git) et adapte.
+
+url = "http://homeassistant.local:8123"          # adresse de ton Home Assistant
+# Le jeton d'acces longue duree se cree dans HA : profil (en bas a gauche) -> Securite -> Jetons d'acces longue duree.
+# Colle-le TOI-MEME dans ce fichier (une seule ligne, chmod 600) ; il ne doit jamais etre dans ha.toml ni dans git :
+token_file = "~/.config/microduck/ha_token"
+publier_toutes_les_s = 30                         # frequence de rafraichissement des entites sensor.microduck_*
+
+# Entites dont un CHANGEMENT D'ETAT fait reagir le canard. `reactions` : etat de l'entite -> evenement du cerveau
+#   impression_finie    -> geste "oui" + quack d'accueil        impression_echec -> geste "surpris" + alarme
+#   impression_commencee-> geste "curieux" + son interrogatif   alerte           -> comme impression_echec
+# Les noms des entites et des etats sont a verifier dans HA (Outils de developpement -> Etats) :
+[[surveillance]]
+entite = "sensor.prusa_mk4s_etat_de_l_imprimante"    # EXEMPLE : integration PrusaLink (MK4S, ou MK3S avec Raspberry Pi Zero)
+nom = "MK4S"
+reactions = { finished = "impression_finie", stopped = "impression_echec", error = "impression_echec", attention = "alerte" }
+
+[[surveillance]]
+entite = "sensor.elegoo_saturn_4_ultra_etat"          # EXEMPLE : integration communautaire elegoo-homeassistant (HACS)
+nom = "Saturn 4 Ultra"
+reactions = { complete = "impression_finie", failed = "impression_echec", stopped = "impression_echec" }

@@ -51,6 +51,11 @@ def remettre_a_zero(dist, rel_deg):
     else:
         return False
     sx, sy, syaw = DEPART
+    for nom, pos in (("ball_0", (3.0, -2.2)), ("ball_1", (3.4, -2.4)), ("ball_2", (3.8, -2.0))):
+        try:                                   # l'appartement a ses propres balles (une orange dans le salon) : on les range
+            truth.teleport(nom, *pos)          # dans la salle de bain pour qu'elles ne soient pas prises pour la cible
+        except (KeyError, TimeoutError):
+            pass
     truth.teleport_duck(sx, sy, syaw)
     tenir(0.8)
     b = syaw + math.radians(rel_deg)

@@ -59,6 +59,13 @@ class Ctx:
         self.client.request("robot.do", {"skill": "sit_toggle"})
         self.sitting = not self.sitting
 
+    def sound(self, tag):
+        """La voix du canard (robot.sound) : alarm, greet, inquire, peck, chirp, coo, wheee."""
+        try:
+            self.client.request("robot.sound", {"tag": tag})
+        except Exception as e:      # un robot sans voix refuse : on ne bloque jamais un geste pour un son
+            print(f"  (son {tag} refuse : {e})", flush=True)
+
     def calme(self):
         self.head((0.0, 0.0, 0.0, 0.0))
         self.move()
@@ -127,11 +134,16 @@ class Wander(Etat):
 class Geste(Etat):
     """Etat qui joue un geste de gestures.py (tete) avec recul optionnel."""
 
-    def __init__(self, nom_etat, geste, recul=False):
+    def __init__(self, nom_etat, geste, recul=False, son=None):
         self.nom = nom_etat
         self.geste = geste
         self.recul = recul
+        self.son = son              # etiquette de robot.sound jouee a l'entree (la voix du canard)
         self._duree, self._fn = gestures.GESTES[geste]
+
+    def entre(self, brain):
+        if self.son:
+            brain.ctx.sound(self.son)
 
     def duree(self, brain):
         return self._duree + 0.5
@@ -174,6 +186,14 @@ class Nap(Etat):
 
 class Brain:
     SEUIL_SIESTE = 0.25
+    # evenement de la maison -> (etat de reaction, hausse d'eveil)
+    REACTIONS_MAISON = {
+        "impression_finie": ("celebre", 0.4),
+        "impression_echec": ("alerte", 0.7),
+        "impression_commencee": ("info", 0.1),
+        "alerte": ("alerte", 0.7),
+        "info": ("info", 0.2),
+    }
 
     def __init__(self, client, humeur=None, seed=None):
         self.ctx = Ctx(client)
@@ -184,6 +204,10 @@ class Brain:
             "wander": Wander(), "nap": Nap(),
             "startle": Geste("startle", "surpris", recul=True),
             "curious": Geste("curious", "curieux"),
+            # reactions aux notifications de la maison (Home Assistant, voir pont_ha.py)
+            "celebre": Geste("celebre", "oui", son="greet"),       # impression terminee
+            "alerte": Geste("alerte", "surpris", son="alarm"),     # impression ratee, alarme
+            "info": Geste("info", "curieux", son="inquire"),       # information a signaler
         }
         self.courant = self.etats["chill"]
         self.t_etat = 0.0
@@ -200,6 +224,14 @@ class Brain:
     def _traite_evenements(self):
         while self.evenements:
             nom = self.evenements.pop(0)
+            base, _, detail = nom.partition(":")     # "impression_echec:MK4S" -> ("impression_echec", "MK4S")
+            if base in self.REACTIONS_MAISON:
+                # une notification que l'habitant a demandee n'est pas un caprice : elle interrompt la sieste
+                etat, eveil = self.REACTIONS_MAISON[base]
+                self.humeur.eveil = min(1.0, self.humeur.eveil + eveil)
+                print(f"[{self.t_global:6.1f}s] notification maison : {nom}", flush=True)
+                self._bascule(etat)
+                continue
             if self.courant.nom == "nap":
                 continue  # ne jamais insister : on dort, l'evenement est perdu
             if nom == "bruit":
@@ -256,7 +288,9 @@ class Brain:
         self.ctx.calme()
 
 
-def run(client, duree, humeur=None, evenements=None, seed=None):
+def run(client, duree, humeur=None, evenements=None, seed=None, source=None, a_chaque_tick=None):
+    """`source()` : appelee a chaque trame, renvoie les noms d'evenements arrives depuis l'exterieur (pont
+    Home Assistant...). `a_chaque_tick(brain, state)` : crochet facultatif (publication d'etat...)."""
     brain = Brain(client, humeur=humeur, seed=seed)
     evenements = sorted(evenements or [])
     last_t = None
@@ -269,7 +303,12 @@ def run(client, duree, humeur=None, evenements=None, seed=None):
             last_t = t
             while evenements and evenements[0][0] <= time.monotonic() - t0:
                 brain.evenement(evenements.pop(0)[1])
+            if source:
+                for nom in source():
+                    brain.evenement(nom)
             brain.tick(state, dt)
+            if a_chaque_tick:
+                a_chaque_tick(brain, state)
     finally:
         brain.arret()
     return brain
