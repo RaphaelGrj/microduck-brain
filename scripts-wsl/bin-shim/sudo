@@ -1,0 +1,4 @@
+#!/bin/sh
+# sudo non interactif : echoue immediatement si un mot de passe est requis, au lieu
+# d'attendre indefiniment. Utilise uniquement par start-duck.sh (via PATH).
+exec /usr/bin/sudo -n "$@"
