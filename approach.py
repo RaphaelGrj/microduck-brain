@@ -53,6 +53,7 @@ X_MIN_BALLE, Y_MIN_BALLE = 0.05, 0.09    # zone occupee par le canard : aucune b
 D_ENTREE_AJUST = 0.35                    # on passe en AJUSTER sous cette distance
 D_SORTIE_AJUST = 0.45                    # et on repasse en VISER au-dela (balle repoussee)
 MAX_AJUSTEMENTS = 10
+X_SWING = 0.13                           # en dessous, le pied qui avance peut pousser la balle
 MAX_PROPAGATIONS = 2                     # mesures "a l'odometrie" consecutives avant de chercher
 T_TETE_NEUTRE = 1.4                      # attente, tete ramenee au neutre, avant de lancer le tir
 
@@ -122,6 +123,7 @@ class Approche:
         self.avant_tir = None
         # visee : direction voulue du ballon, en rad dans le repere de l'ODOMETRIE (None = tir droit devant)
         self.cap_vise = cap_vise
+        self.x_vis = 9.9                           # x de la derniere mesure VISUELLE de la balle
         self.cote_force = "left" if cap_vise is not None else None    # un seul pied : biais de tir previsible
         self.stage = None                          # None -> PLACER -> ORIENTER -> OK
         self.pose_odom = (0.0, 0.0, 0.0)
@@ -324,12 +326,12 @@ class Approche:
         self.log(f"  [{self.n_ajust}] balle ({x:+.3f},{y:+.3f}) pied {self.cote} erreur ({ex * 100:+.1f},{ey * 100:+.1f}) cm{tag}{self.comparer_verite(est)}")
         e_int = -ey if self.cote == "left" else ey          # > 0 : balle trop pres de l'axe du canard
         if -TOL_X_AR <= ex <= TOL_X_AV and -TOL_Y_EXT <= e_int <= TOL_Y_INT:
-            if vue:
-                self.tirer(est, "dans la fenetre")
+            if vue or self.x_vis > X_SWING:
+                self.tirer(est, "dans la fenetre" if vue else "dans la fenetre (odometrie, balle hors de la zone de pas)")
             else:
-                # Position deduite de l'odometrie seulement : si le dernier pas a poussé la balle, elle n'est plus
-                # la (essai d'evaluation : tir a 11 cm dans le vide). On releve la tete pour regarder plus loin
-                # et on ne tire que sur une mesure visuelle.
+                # Position deduite de l'odometrie seulement ET derniere vue de la balle dans la zone de pas du pied
+                # (x < X_SWING) : si le pas l'a poussee, elle n'est plus la (essai d'evaluation : tir a 11 cm dans
+                # le vide). On releve la tete pour regarder plus loin et on ne tire que sur une mesure visuelle.
                 self.log("  dans la fenetre selon l'odometrie seulement : on regarde plus loin avant de tirer")
                 self.pitch = clamp(self.pitch - 0.4, PITCH_MIN, PITCH_MAX)
                 self.t_pret = max(self.t_pret, time.monotonic() + SETTLE_TETE + 0.3)
@@ -406,6 +408,7 @@ class Approche:
                 self.log("  balle coupee par le bord de l'image : on recentre la tete")
                 continue
             self.sens_recherche = +1.0 if est[1] >= 0 else -1.0
+            self.x_vis = est[0]
             self.enregistrer(est, s)
             nouvelle = self.vers_odom(est)
             if (self.balle_odom and self.stage in ("PLACER", "ORIENTER")
@@ -419,9 +422,28 @@ class Approche:
         self.resultat["duree"] = time.monotonic() - t0
         return self.resultat
 
+    def diagnostic_perte(self, s):
+        """Avec --verite : image + position REELLE de la balle + posture de tete a chaque perte de vue."""
+        if self.verite is None:
+            return
+        try:
+            import cv2
+            self.n_pertes = getattr(self, "n_pertes", 0) + 1
+            gt = self.verite.read()
+            x, y, _ = self.verite.in_trunk_frame(gt, "testball")
+            img = vision.grab_frame()
+            nom = f"/home/raphael/perte_{self.n_pertes:02d}.png"
+            cv2.imwrite(nom, vision.annotate(img, vision.detect(img, couleurs=["orange"], aire_min=10)))
+            j = [round(v, 2) for v in s["joints"][5:9]]
+            self.log(f"  [perte {self.n_pertes}] balle reelle ({x:+.2f},{y:+.2f}) etat {self.etat} tete commandee "
+                     f"(yaw {self.yaw:+.2f}, pitch {self.pitch:+.2f}) joints {j} -> {nom}")
+        except Exception as e:
+            self.log(f"  (diagnostic de perte impossible : {e})")
+
     def balle_perdue(self, s):
         """Pas de detection exploitable apres stabilisation. Tout pres du pied, la balle est sortie du
         champ : on la suit a l'odometrie. Sinon (ou si ca dure) on la cherche en tournant."""
+        self.diagnostic_perte(s)
         if self.etat == "AJUSTER" and self.mesure and self.n_propag < MAX_PROPAGATIONS:
             self.n_propag += 1
             est = self.propager(s)

@@ -48,6 +48,11 @@ transitions d'état → événements (et seulement elles : même état, `unavail
 écrit dans les logs), publication des entités, chute remontée, appel de service, reconnexion après coupure,
 réactions du cerveau (celebre/alerte, l'alerte réveille la sieste).
 
+Validé aussi **contre `duck-sim`** (`python demo_ha.py`, faux HA + pont + cerveau + canard simulé) : impression
+qui démarre → état `info` (tête +0,37 rad), qui se termine → `celebre` (geste « oui »), échec → `alerte`
+(geste « surpris », amplitude de tête 0,48 rad) ; `robot.sound` accepté par `robotd` (greet / alarm / inquire) ;
+`sensor.microduck_*` publiés. *Le son n'est pas écouté* dans la simulation : on voit seulement que `robotd` l'accepte.
+
 **Pas validé** : contre un vrai Home Assistant (formats copiés de la documentation, pas testés sur ton instance) ;
 noms d'entités et d'états réels des imprimantes ; comportement quand `quacksat` tourne en même temps.
 

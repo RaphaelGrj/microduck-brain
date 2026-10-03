@@ -62,9 +62,11 @@ class Ctx:
     def sound(self, tag):
         """La voix du canard (robot.sound) : alarm, greet, inquire, peck, chirp, coo, wheee."""
         try:
-            self.client.request("robot.sound", {"tag": tag})
-        except Exception as e:      # un robot sans voix refuse : on ne bloque jamais un geste pour un son
-            print(f"  (son {tag} refuse : {e})", flush=True)
+            r = self.client.request("robot.sound", {"tag": tag})
+            if isinstance(r, dict) and "error" in r:     # un robot sans voix refuse (JSON-RPC error, pas d'exception)
+                print(f"  (son {tag} refuse : {r['error']})", flush=True)
+        except Exception as e:      # on ne bloque jamais un geste pour un son
+            print(f"  (son {tag} impossible : {e})", flush=True)
 
     def calme(self):
         self.head((0.0, 0.0, 0.0, 0.0))
