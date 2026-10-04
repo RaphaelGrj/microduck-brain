@@ -433,7 +433,60 @@ def test_mqtt():
           "calme restaure, mauvais mot de passe)")
 
 
+def test_satellite_vocal():
+    """Conversation vocale (assist_satellite) : un seul ecoute_on / ecoute_off par conversation ; le cerveau n'envoie
+    plus rien pendant, garde les notifications pour apres, et reprend seul si la fin se perd."""
+    ha = mock_ha.MockHA(JETON)
+    ha.set_state("assist_satellite.canard", "idle")
+    pont = pont_ha.PontHA({**CFG, "url": ha.url, "url_ws": ha.url_ws, "satellite_vocal": "assist_satellite.canard"},
+                          JETON, log=lambda m: None)
+    pont.demarrer()
+    try:
+        assert attendre(lambda: ha.abonnes)
+        evs = []
+        for etat in ("listening", "processing", "responding", "idle"):
+            ha.set_state("assist_satellite.canard", etat)
+        assert attendre(lambda: evs.extend(pont.source()) or evs == ["ecoute_on", "ecoute_off"]), evs
+    finally:
+        pont.stop()
+        ha.arreter()
+
+    class Client:
+        def __init__(self):
+            self.appels = []
+
+        def notify(self, *a):
+            self.appels.append(a)
+
+        def request(self, methode, params=None, *a, **k):
+            self.appels.append((methode, params))
+            return {}
+    c = Client()
+    b = brain.Brain(c, seed=1)
+    etat = {"safety": {"fallen": False}}
+    b.evenement("ecoute_on")
+    b.tick(etat, 0.02)
+    assert b.courant.nom == "ecoute"
+    c.appels.clear()
+    b.evenement("impression_finie:MK4S")                             # arrive pendant que quelqu'un parle
+    for _ in range(100):
+        b.tick(etat, 0.02)
+    assert c.appels == [], f"le cerveau doit se taire pendant une conversation : {c.appels[:3]}"
+    b.evenement("ecoute_off")
+    b.tick(etat, 0.02)
+    b.tick(etat, 0.02)
+    assert b.courant.nom == "celebre", b.courant.nom                  # la notification est rejouee apres
+    b._bascule("chill")
+    b.evenement("ecoute_on")
+    b.tick(etat, 0.02)
+    for _ in range(int((brain.Ecoute.DUREE_MAX + 1) / 0.02)):        # fin de conversation perdue
+        b.tick(etat, 0.02)
+    assert b.courant.nom != "ecoute", "le cerveau doit reprendre seul apres DUREE_MAX"
+    print("satellite vocal : OK (une conversation = on/off, silence total, notifications differees, reprise de secours)")
+
+
 if __name__ == "__main__":
+    test_satellite_vocal()
     test_mqtt()
     test_presence()
     test_accueil_retour()

@@ -318,6 +318,28 @@ class RegardeChat(Etat):
         brain.ctx.head(self.tete)
 
 
+class Ecoute(Etat):
+    """Une conversation vocale est en cours (quacksat, satellite Assist de HA) : le cerveau se tait et ne commande PLUS
+    RIEN (robotd : le dernier ecrit gagne ; quacksat balance la tete en reflechissant et peut faire marcher le canard a la
+    demande). Une seule consigne a l'entree : arreter la promenade en cours. Sortie sur ecoute_off, ou au bout de
+    DUREE_MAX si le signal de fin se perd (satellite devenu indisponible)."""
+    nom = "ecoute"
+    DUREE_MAX = 90.0
+
+    def entre(self, brain):
+        brain.ctx.move()
+        brain.ctx.pose(None)
+
+    def duree(self, brain):
+        return self.DUREE_MAX
+
+    def pas(self, brain, t):
+        pass
+
+    def sort(self, brain):
+        pass                                    # pas de consigne de tete au milieu d'une reponse de quacksat
+
+
 class Accueil(Etat):
     """Un habitant rentre a la maison (presence Home Assistant, voir pont_ha.py). L'accueil depend de la familiarite
     (memoire.py : reservee au debut, chaleureuse avec le temps) et de la duree de l'absence (simple signe s'il est sorti
@@ -408,6 +430,7 @@ class Brain:
             "info": Geste("info", "curieux", son="inquire"),       # information a signaler
             "regarde_chat": RegardeChat(),                         # le chat vient d'apparaitre
             "accueil": Accueil(),                                  # un habitant rentre (presence HA)
+            "ecoute": Ecoute(),                                    # conversation vocale en cours (quacksat)
             # vocabulaire M9 (gestes de tete scriptes) : initiatives RARES, voir RARES / _choisit_suivant
             "etirement": Geste("etirement", "etirement", son="coo"),
             "ebouriffe": Geste("ebouriffe", "ebouriffe"),
@@ -423,6 +446,7 @@ class Brain:
         self.t_etat = 0.0
         self.fin_etat = self.courant.duree(self)
         self.evenements = []
+        self.differes = []                      # notifications arrivees pendant une conversation : rejouees apres
         self.journal = []  # (t_global, nom_etat, energie, eveil)
         self.t_global = 0.0
         self.tombe = False
@@ -443,6 +467,18 @@ class Brain:
                     self.ctx.silence = actif
                     print(f"[{self.t_global:6.1f}s] mode calme {'ACTIVE' if actif else 'desactive'}", flush=True)
                     self._bascule("nap" if actif else ("etirement" if self.courant.nom == "nap" else "chill"))
+                continue
+            if base in ("ecoute_on", "ecoute_off"):
+                # conversation vocale (satellite Assist) : on se tait ; a la fin, on reprend et on rejoue ce qui attendait
+                if base == "ecoute_on" and self.courant.nom != "ecoute":
+                    print(f"[{self.t_global:6.1f}s] conversation vocale : le cerveau se tait", flush=True)
+                    self._bascule("ecoute")
+                elif base == "ecoute_off" and self.courant.nom == "ecoute":
+                    print(f"[{self.t_global:6.1f}s] fin de conversation ({len(self.differes)} evenement(s) en attente)", flush=True)
+                    self._bascule("nap" if self.mode_calme else "chill")
+                continue
+            if self.courant.nom == "ecoute" and base != "depart":
+                self.differes.append(nom)       # ni son ni geste pendant que quelqu'un parle au canard
                 continue
             if base in ("retour", "depart"):
                 # presence d'un habitant (person.* dans HA) : "retour:Nom|absence_s", "depart:Nom"
@@ -510,6 +546,9 @@ class Brain:
         return self.rng.choices(noms, weights=[poids[n] for n in noms])[0]
 
     def _bascule(self, nom):
+        if self.courant.nom == "ecoute" and nom != "ecoute" and self.differes:
+            self.evenements.extend(self.differes)      # fin de conversation (ou delai depasse) : on rejoue ce qui attendait
+            self.differes = []
         if nom in self.RARES:
             self.derniere_fois[nom] = self.t_global
         self.courant.sort(self)

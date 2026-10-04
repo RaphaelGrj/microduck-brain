@@ -38,6 +38,7 @@ from pathlib import Path
 from websockets.sync.client import connect
 
 ETATS_IGNORES = {"unavailable", "unknown", "", "none"}
+ETATS_CONVERSATION = {"listening", "processing", "responding"}    # assist_satellite.* ; "idle" = fin de conversation
 
 
 class ErreurAuth(Exception):
@@ -79,6 +80,7 @@ def lire_config(chemin):
         "reseau": brut.get("reseau", {}),
         "surveillance": list(brut.get("surveillance", [])),
         "interrupteur_calme": ha.get("interrupteur_calme"),
+        "satellite_vocal": ha.get("satellite_vocal"),
         "ignorees": [],
     }
     for hab in brut.get("habitant", []):        # presence HA (person.*) -> accueil au retour
@@ -288,6 +290,12 @@ class PontHA:
         self.calme = None if est_vide(cfg.get("interrupteur_calme")) else cfg["interrupteur_calme"]
         if self.calme:                          # regle de vie : interrupteur "calme" (input_boolean dans HA)
             self.surveillance[self.calme] = {"nom": "calme", "reactions": {"on": "calme_on", "off": "calme_off"}}
+        # Satellite vocal (quacksat en mode wyoming = entite assist_satellite.* dans HA) : pendant une conversation, le
+        # cerveau se tait et ne commande plus rien (quacksat pilote la tete et peut faire marcher le canard).
+        self.satellite = None if est_vide(cfg.get("satellite_vocal")) else cfg["satellite_vocal"]
+        self._ecoute = False
+        if self.satellite:
+            self.surveillance[self.satellite] = {"nom": "satellite", "satellite": True}
         self.instantane = {}                    # derniere photo de l'etat du canard, ecrite par le cerveau
         self._derniers = {}                     # entite -> (etat, instant de la derniere publication)
         self._threads = []
@@ -298,6 +306,13 @@ class PontHA:
         if nouveau is None or nouveau.lower() in ETATS_IGNORES or nouveau == ancien:
             return
         s = self.surveillance[entite]
+        if s.get("satellite"):
+            actif = nouveau.lower() in ETATS_CONVERSATION
+            if actif != self._ecoute:
+                self._ecoute = actif
+                self.log(f"[HA] satellite vocal : {nouveau} -> conversation {'en cours' if actif else 'terminee'}")
+                self.evenements.put("ecoute_on" if actif else "ecoute_off")
+            return
         if s.get("habitant"):
             # person.* : "home", "not_home" ou le nom d'une zone ("Travail"...). Un passage par unavailable (redemarrage
             # de HA) ou la premiere apparition ne sont ni un retour ni un depart.
@@ -462,12 +477,16 @@ def verifier(cfg, jeton, log=print):
                     res["entites"].append((e["entity_id"], e["state"], nom))
                 if e["entity_id"].startswith("person."):
                     res.setdefault("personnes", []).append((e["entity_id"], e["state"], nom))
+                if e["entity_id"].startswith("assist_satellite."):
+                    res.setdefault("satellites", []).append((e["entity_id"], e["state"], nom))
             log(f"[INFO] {len(res['entites'])} entite(s) qui ressemblent a une imprimante (recopie `entite` dans ha.toml) :")
             for ent, etat, nom in res["entites"][:60]:
                 log(f"         {ent}  =  {etat}   ({nom})")
             log(f"[INFO] {len(res.get('personnes', []))} personne(s) (section [[habitant]] de ha.toml) :")
             for ent, etat, nom in res.get("personnes", []):
                 log(f"         {ent}  =  {etat}   ({nom})")
+            for ent, etat, nom in res.get("satellites", []):
+                log(f"[INFO] satellite vocal : {ent} = {etat} ({nom}) -> `satellite_vocal` dans [home_assistant]")
         except Exception as e:
             log(f"[ECHEC] liste des entites : {type(e).__name__}: {e}")
     mq = cfg.get("mqtt") or {}
