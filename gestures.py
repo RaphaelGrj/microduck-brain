@@ -86,14 +86,15 @@ def eternuement(t):
 
 # --- Gestes du CORPS (robot.pose : z / roulis / tangage du tronc debout, lisses par robotd) -------------------------
 # Le "Content (tremoussement)" de la phase 1 : on croyait qu'il fallait du RL (mouvement de tout le corps), mais
-# robotd accepte une pose du corps debout. Amplitudes PROVISOIRES, a regler avec diag_pose.py.
-CONTENT_ROULIS, CONTENT_HZ = 0.2, 2.0
+# robotd accepte une pose du corps debout. Mesure (diag_pose.py, duck-sim) : roulis et tangage suivis (~1:1, 0,15 rad
+# -> 8 deg), la hauteur z est ignoree par la politique debout ; en oscillation a 2 Hz, +-0,3 rad -> +-11 deg, sans chute.
+CONTENT_ROULIS, CONTENT_HZ = 0.25, 2.0
 
 
 def content_corps(t):
-    """-> (z, roulis, tangage) : petite flexion et dandinement du tronc, qui s'eteint."""
+    """-> (z, roulis, tangage) : dandinement du tronc (~ +-9 deg), qui s'eteint."""
     k = _smooth(t, 0.0, 0.3) * (1.0 - _smooth(t, 2.0, 2.4))
-    return (-0.01 * k, CONTENT_ROULIS * k * math.sin(2 * math.pi * CONTENT_HZ * t), 0.0)
+    return (0.0, CONTENT_ROULIS * k * math.sin(2 * math.pi * CONTENT_HZ * t), 0.0)
 
 
 def content(t):

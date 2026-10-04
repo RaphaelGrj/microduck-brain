@@ -146,7 +146,8 @@ class LookAround(Etat):
 
 # Vitesses AU-DESSUS de la zone morte de la politique de marche (ZONE_MORTE.md) : en dessous, les jambes restent figees.
 V_PROMENADE, V_ROTATION = 0.4, 1.5
-LIBRE_MIN = 0.45                 # on n'avance pas si le ToF voit un obstacle a moins de 45 cm devant
+LIBRE_MIN = 0.45                 # on n'avance pas si le ToF voit un obstacle (ou un vide) a moins de 45 cm devant
+TETE_PROMENADE = 0.3             # inclinaison de tete en marchant (rad) : voir le sol, donc les marches, assez tot
 
 
 class TurnInPlace(Etat):
@@ -198,7 +199,12 @@ class Wander(Etat):
         return self.duree_s
 
     def pas(self, brain, t):
-        brain.ctx.head((0.0, 0.0, 0.0, 0.0))
+        # Tete un peu baissee : le canard regarde ou il met les pattes. Tete au neutre, les rayons du ToF touchent le sol
+        # trop loin et le bord d'une estrade n'est vu qu'une fois passe (essai_vide.py : 0/3 au neutre, 3/3 a 0,3 rad).
+        brain.ctx.head((0.0, TETE_PROMENADE, 0.0, 0.0))
+        if t < 0.4:
+            brain.ctx.move()                                 # on laisse la tete se placer avant de juger le sol
+            return
         if self.virage is not None:                          # d'abord tourner vers la zone la plus nouvelle
             brain.virage_cible, self.virage = self.virage, None
             brain.fin_etat = brain.t_etat
