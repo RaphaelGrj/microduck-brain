@@ -27,6 +27,14 @@ random.seed(int(sys.argv[3]) if len(sys.argv) > 3 else 1)
 _d = [float(v) for v in os.environ.get("DEPART", "0,0,0").split(",")]
 DEPART = (_d[0], _d[1], math.radians(_d[2]))
 VISEE = float(os.environ.get("VISEE", "0"))          # demi-ouverture (deg) de la direction voulue ; 0 = pas de visee
+# OBSTACLES=1 : la scene est l'appartement -> placements valides seulement (voir obstacles.py)
+OBST = None
+TAPIS = (-3.3, -1.7, -1.5, -0.5)               # tapis rouge du salon (camouflage de la balle orange)
+if os.environ.get("OBSTACLES"):
+    import obstacles
+    OBST = obstacles.charger()
+    if obstacles.dedans(DEPART[:2], OBST, marge=0.12):
+        raise SystemExit(f"point de depart dans un obstacle : {obstacles.dedans(DEPART[:2], OBST, marge=0.12)}")
 DIST_MIN, DIST_MAX = [float(v) for v in os.environ.get("DIST", "0.5,1.0").split(",")]
 
 c = RobotdClient(SOCK_PATH)
@@ -64,6 +72,10 @@ def remettre_a_zero(dist, rel_deg):
     except TimeoutError:                       # dans un meuble ou un mur (appartement) : on saute l'essai
         return None
     tenir(0.8)
+    gt = truth.read()
+    p = gt["bodies"]["testball"]
+    if math.dist(p[:2], (sx + dist * math.cos(b), sy + dist * math.sin(b))) > 0.02 or not 0.03 <= p[2] <= 0.04:
+        return None                            # repoussee ou tombee : placement invalide
     return True
 
 
@@ -97,6 +109,19 @@ bilan = []
 for i in range(n_essais):
     dist = random.uniform(DIST_MIN, DIST_MAX)
     rel = random.uniform(-rel_max, rel_max)
+    if OBST is not None:                       # appartement : balle ni dans un meuble ni masquee (banc d'essai, pas cerveau)
+        for _ in range(200):
+            b = DEPART[2] + math.radians(rel)
+            pb = (DEPART[0] + dist * math.cos(b), DEPART[1] + dist * math.sin(b))
+            if not obstacles.dedans(pb, OBST) and not obstacles.ligne_libre(DEPART[:2], pb, OBST):
+                break
+            dist = random.uniform(DIST_MIN, DIST_MAX)
+            rel = random.uniform(-rel_max, rel_max)
+        else:
+            print("aucune position de balle valide autour de ce point de depart", flush=True)
+            break
+        sur_tapis = TAPIS[0] <= pb[0] <= TAPIS[1] and TAPIS[2] <= pb[1] <= TAPIS[3]
+        print(f"(placement verifie : rien entre le canard et la balle{' ; balle SUR LE TAPIS rouge' if sur_tapis else ''})", flush=True)
     print(f"\n##### essai {i + 1}/{n_essais} : balle a {dist:.2f} m, relevement {rel:+.0f} deg #####", flush=True)
     pret = remettre_a_zero(dist, rel)
     if pret is None:

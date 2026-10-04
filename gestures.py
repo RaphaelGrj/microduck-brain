@@ -54,12 +54,45 @@ def fatigue(t):
     return (0.0, 0.7 * k, 0.0, 0.0)
 
 
+# --- Vocabulaire "M9" (machine a etats officielle, docs/ideas/autonomous_behavior.md) : versions TETE SEULE, scriptees.
+def etirement(t):
+    # Stretch : le cou s'allonge vers le haut, tenu, avec une legere torsion, puis on relache.
+    k = _smooth(t, 0.0, 0.8) * (1.0 - _smooth(t, 2.2, 3.0))
+    return (-0.3 * k, -0.45 * k, 0.15 * k * math.sin(2 * math.pi * t / 1.5), 0.0)
+
+
+def ebouriffe(t):
+    # Ruffle : petite secousse rapide de la tete (roulis + lacet), qui s'eteint.
+    k = 1.0 - _smooth(t, 0.8, 1.4)
+    return (0.0, 0.0, 0.25 * k * math.sin(2 * math.pi * t / 0.18), 0.3 * k * math.sin(2 * math.pi * t / 0.22))
+
+
+def lissage(t):
+    # Preen : la tete va vers un cote et vers le bas (les plumes du flanc), petits coups de bec, puis l'autre cote.
+    cote = 1.0 if t < 2.0 else -1.0
+    k = _smooth(t % 2.0, 0.0, 0.5) * (1.0 - _smooth(t % 2.0, 1.6, 2.0))
+    bec = 0.08 * math.sin(2 * math.pi * t / 0.3)
+    return (0.0, (0.55 + bec) * k, 0.9 * cote * k, 0.0)
+
+
+def eternuement(t):
+    # Sneeze : la tete se redresse (inspiration), puis plonge d'un coup, et revient.
+    if t < 0.6:
+        return (0.0, -0.35 * _smooth(t, 0.0, 0.6), 0.0, 0.0)
+    k = 1.0 - _smooth(t, 0.75, 1.3)
+    return (0.0, 0.55 * k, 0.0, 0.0)
+
+
 GESTES = {
     "non": (2.4, non),
     "oui": (1.2, oui),
     "curieux": (2.5, curieux),
     "surpris": (1.6, surpris),
     "fatigue": (2.0, fatigue),
+    "etirement": (3.0, etirement),
+    "ebouriffe": (1.4, ebouriffe),
+    "lissage": (4.0, lissage),
+    "eternuement": (1.4, eternuement),
 }
 
 

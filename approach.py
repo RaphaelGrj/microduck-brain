@@ -47,6 +47,11 @@ TABLE_PITCH = ((0.09, 1.50), (0.12, 1.37), (0.18, 0.92), (0.25, 0.62), (0.35, 0.
 # le repere du tronc a x = 0,07 m (2 cm plus pres que le point d'entrainement 0,09 : a +2 cm ou plus
 # le pied ne touche rien, a -4 cm le coup est mou) ; en lateral, y = +-0,042 +-3 cm passent.
 CIBLE_X, CIBLE_Y = 0.071, 0.042
+# Pied droit : au balayage (kick_sweep.py) il ne reussit qu'a x ~ 7 cm, pas a 9 -> limite haute plus basse.
+TOL_X_AV_PIED = {"left": 0.034, "right": 0.012}
+# Pas qui ne poussent pas la balle (diag_pousse.py, arene) : un micro-pas de 0,25 s (1 a 2,5 cm) ne la touche jamais,
+# meme a 12 cm ; un pas de 0,4 s (4 a 7 cm) la pousse a 12 cm, pas a 15 cm.
+X_MICRO_PAS, T_MICRO_PAS, X_APRES_PAS_MIN = 0.16, 0.25, 0.13
 TOL_X_AV, TOL_X_AR = 0.034, 0.016          # x dans [0,055 ; 0,105] : au-dela de 9 cm le tir est partiel mais bien meilleur qu un pas qui pousse la balle (le pied balaye jusqu a ~10 cm)
 TOL_Y_INT, TOL_Y_EXT = 0.02, 0.035       # lateral : cote axe du canard (pied gauche : balle trop a droite) / cote exterieur
 X_MIN_BALLE, Y_MIN_BALLE = 0.05, 0.09    # zone occupee par le canard : aucune balle reelle ne peut y etre
@@ -325,7 +330,8 @@ class Approche:
         ex, ey = x - CIBLE_X, y - ty
         self.log(f"  [{self.n_ajust}] balle ({x:+.3f},{y:+.3f}) pied {self.cote} erreur ({ex * 100:+.1f},{ey * 100:+.1f}) cm{tag}{self.comparer_verite(est)}")
         e_int = -ey if self.cote == "left" else ey          # > 0 : balle trop pres de l'axe du canard
-        if -TOL_X_AR <= ex <= TOL_X_AV and -TOL_Y_EXT <= e_int <= TOL_Y_INT:
+        tol_av = TOL_X_AV_PIED.get(self.cote, TOL_X_AV)
+        if -TOL_X_AR <= ex <= tol_av and -TOL_Y_EXT <= e_int <= TOL_Y_INT:
             if vue or self.x_vis > X_SWING:
                 self.tirer(est, "dans la fenetre" if vue else "dans la fenetre (odometrie, balle hors de la zone de pas)")
             else:
@@ -350,8 +356,12 @@ class Approche:
             self.lancer_rafale(0.0, 0.0, math.copysign(V_ROT, beta), 0.5, est)
         elif abs(beta) > math.radians(20) and d > 0.15:          # de travers : on se retourne vers la balle
             self.lancer_rafale(0.0, 0.0, math.copysign(V_ROT, beta), clamp(duree_rotation(beta), 0.5, 1.0), est)
-        elif ex > TOL_X_AV:                                       # en avance de peu : on stoppe un peu court
-            self.lancer_rafale(V_MARCHE, 0.0, 0.0, clamp(duree_marche(0.85 * ex), 0.25, 0.75), est)
+        elif ex > tol_av:
+            if x < X_MICRO_PAS:                                  # tout pres : micro-pas, qui ne pousse jamais la balle
+                self.lancer_rafale(V_MARCHE, 0.0, 0.0, T_MICRO_PAS, est)
+            else:                                                # plus loin : un pas qui ne l'amene pas sous 13 cm
+                d = min(0.85 * ex, x - X_APRES_PAS_MIN)
+                self.lancer_rafale(V_MARCHE, 0.0, 0.0, clamp(duree_marche(d), T_MICRO_PAS, 0.75), est)
         elif ex < -TOL_X_AR:                                      # trop pres : marche arriere (rien en dessous de 0,5 s)
             self.lancer_rafale(-V_MARCHE, 0.0, 0.0, clamp(duree_marche(-ex), 0.5, 0.8), est)
         elif ey > 0:                                             # balle trop a gauche : pas de cote GAUCHE, faible (1 s ~ 5 cm)

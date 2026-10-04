@@ -110,27 +110,57 @@ class LookAround(Etat):
         brain.ctx.head((0.0, 0.1 * math.sin(2 * math.pi * t / 3.0), yaw, 0.0))
 
 
+# Vitesses AU-DESSUS de la zone morte de la politique de marche (ZONE_MORTE.md) : en dessous, les jambes restent figees.
+V_PROMENADE, V_ROTATION = 0.4, 1.5
+LIBRE_MIN = 0.45                 # on n'avance pas si le ToF voit un obstacle a moins de 45 cm devant
+
+
 class TurnInPlace(Etat):
+    """Tourne sur place ; du cote le plus degage si le ToF le dit (ou si Wander vient de buter), sinon au hasard."""
     nom = "turn"
 
     def entre(self, brain):
-        self.signe = brain.rng.choice((-1.0, 1.0))
+        prefere = getattr(brain, "cote_degage", None)
+        self.signe = prefere if prefere else brain.rng.choice((-1.0, 1.0))
+        brain.cote_degage = None
+        self.duree_s = brain.rng.uniform(1.0, 1.8)          # ~50 a 90 deg
 
     def duree(self, brain):
-        return 1.5
+        return self.duree_s
 
     def pas(self, brain, t):
-        brain.ctx.move(vyaw=0.4 * self.signe)
+        brain.ctx.head((0.0, 0.0, 0.0, 0.0))                 # tete neutre : tete baissee, la rotation est morte
+        brain.ctx.move(vyaw=V_ROTATION * self.signe)
 
 
 class Wander(Etat):
+    """Promenade en ligne droite, SEULEMENT si le capteur de distance voit de la place devant. Sans ToF frais : on ne
+    bouge pas (prudence). Obstacle a moins de LIBRE_MIN : on s'arrete, on note le cote le plus degage, et on passe a
+    `turn`."""
     nom = "wander"
 
+    def entre(self, brain):
+        self.duree_s = brain.rng.uniform(2.5, 6.0)
+        self.arrets = 0
+
     def duree(self, brain):
-        return 2.5
+        return self.duree_s
 
     def pas(self, brain, t):
-        brain.ctx.move(vx=0.1)
+        brain.ctx.head((0.0, 0.0, 0.0, 0.0))
+        tof = brain.ctx.extras.get("tof")
+        lib = tof.libre(brain.ctx.state) if tof is not None and brain.ctx.state is not None else None
+        if lib is None:
+            brain.ctx.move()                                 # aveugle : on reste sur place
+            return
+        if lib["devant"] < LIBRE_MIN:
+            brain.ctx.move()
+            brain.cote_degage = 1.0 if lib["gauche"] >= lib["droite"] else -1.0
+            brain.obstacle_vu = brain.obstacle_vu + 1 if hasattr(brain, "obstacle_vu") else 1
+            brain.fin_etat = brain.t_etat                    # fin de la promenade : on va tourner
+            brain.suivant_force = "turn"
+            return
+        brain.ctx.move(vx=V_PROMENADE)
 
 
 class Geste(Etat):
@@ -219,6 +249,8 @@ class RegardeChat(Etat):
 
 class Brain:
     SEUIL_SIESTE = 0.25
+    RARES = {"lissage": 0.015, "ebouriffe": 0.01, "etirement": 0.008, "eternuement": 0.005}   # poids face a ~1 pour le reste
+    DELAI_RARE = 300.0
     # evenement de la maison -> (etat de reaction, hausse d'eveil)
     REACTIONS_MAISON = {
         "impression_finie": ("celebre", 0.4),
@@ -243,7 +275,13 @@ class Brain:
             "alerte": Geste("alerte", "surpris", son="alarm"),     # impression ratee, alarme
             "info": Geste("info", "curieux", son="inquire"),       # information a signaler
             "regarde_chat": RegardeChat(),                         # le chat vient d'apparaitre
+            # vocabulaire M9 (gestes de tete scriptes) : initiatives RARES, voir RARES / _choisit_suivant
+            "etirement": Geste("etirement", "etirement", son="coo"),
+            "ebouriffe": Geste("ebouriffe", "ebouriffe"),
+            "lissage": Geste("lissage", "lissage"),
+            "eternuement": Geste("eternuement", "eternuement", son="peck"),
         }
+        self.derniere_fois = {}                 # etat rare -> t_global de la derniere fois
         self.courant = self.etats["chill"]
         self.t_etat = 0.0
         self.fin_etat = self.courant.duree(self)
@@ -280,17 +318,31 @@ class Brain:
                 self._bascule("curious")
 
     def _choisit_suivant(self):
+        force = getattr(self, "suivant_force", None)
+        if force:
+            self.suivant_force = None
+            return force
         h = self.humeur
         if h.energie < self.SEUIL_SIESTE:
             return "nap"
+        if self.courant.nom == "nap":
+            self.derniere_fois["etirement"] = self.t_global
+            return "etirement"                  # on s'etire en se reveillant
         if self.courant.nom != "chill":
             return "chill"
         poids = {"look": 0.4, "turn": 0.2 + 0.3 * h.energie,
                  "wander": 0.15 + 0.4 * h.energie * (0.5 + h.eveil)}
+        # Initiative rare et surprenante (principe Pollen : un duo surprise est un plaisir, un juke-box non) :
+        # faible probabilite, et jamais deux fois le meme geste en moins de DELAI_RARE secondes.
+        for nom, p in self.RARES.items():
+            if self.t_global - self.derniere_fois.get(nom, -1e9) >= self.DELAI_RARE:
+                poids[nom] = p
         noms = list(poids)
         return self.rng.choices(noms, weights=[poids[n] for n in noms])[0]
 
     def _bascule(self, nom):
+        if nom in self.RARES:
+            self.derniere_fois[nom] = self.t_global
         self.courant.sort(self)
         self.courant = self.etats[nom]
         self.courant.entre(self)
