@@ -502,7 +502,7 @@ def verifier(cfg, jeton, log=print):
             log(f"[OK] MQTT : {mq['hote']}:{mq.get('port', 1883)} accepte les identifiants du canard" if res["mqtt_auth"]
                 else "[ECHEC] MQTT : le broker repond mais refuse les identifiants (utilisateur / mot de passe dans [mqtt])")
     for nom in cfg.get("ignorees", []):
-        log(f"[A FAIRE] '{nom}' ignore(e) :  pas encore renseignee")
+        log(f"[A FAIRE] '{nom}' ignore(e) : `entite` pas encore renseignee")
     return res
 
 
