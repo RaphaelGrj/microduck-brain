@@ -565,6 +565,8 @@ class Brain:
         """Un pas du cerveau, a appeler une fois par trame robot.state."""
         self.ctx.state = state
         self.ctx.bec()
+        if self.ctx.extras.get("tof") is not None:
+            self.ctx.extras["tof"].noter_etat(state)     # pose de tete datee, pour placer chaque trame ToF a son instant
         self.t_global += dt
         if state.get("safety", {}).get("fallen"):
             if not self.tombe:
