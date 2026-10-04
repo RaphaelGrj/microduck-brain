@@ -48,7 +48,7 @@ TABLE_PITCH = ((0.09, 1.50), (0.12, 1.37), (0.18, 0.92), (0.25, 0.62), (0.35, 0.
 # le pied ne touche rien, a -4 cm le coup est mou) ; en lateral, y = +-0,042 +-3 cm passent.
 CIBLE_X, CIBLE_Y = 0.071, 0.042
 # Pied droit : au balayage (kick_sweep.py) il ne reussit qu'a x ~ 7 cm, pas a 9 -> limite haute plus basse.
-TOL_X_AV_PIED = {"left": 0.034, "right": 0.012}
+TOL_X_AV_PIED = {"left": 0.025, "right": 0.012}   # gauche : au-dela de ~9,6 cm le coup est mou (evaluation appartement)
 # Pas qui ne poussent pas la balle (diag_pousse.py, arene) : un micro-pas de 0,25 s (1 a 2,5 cm) ne la touche jamais,
 # meme a 12 cm ; un pas de 0,4 s (4 a 7 cm) la pousse a 12 cm, pas a 15 cm.
 X_MICRO_PAS, T_MICRO_PAS, X_APRES_PAS_MIN = 0.16, 0.25, 0.13
