@@ -55,6 +55,14 @@ TOL_X_AR_PIED = {"left": 0.016, "right": 0.008}   # pied droit : coup mou a 5,5 
 X_MICRO_PAS, T_MICRO_PAS, X_APRES_PAS_MIN = 0.16, 0.25, 0.13
 TOL_X_AV, TOL_X_AR = 0.034, 0.016          # x dans [0,055 ; 0,105] : au-dela de 9 cm le tir est partiel mais bien meilleur qu un pas qui pousse la balle (le pied balaye jusqu a ~10 cm)
 TOL_Y_INT, TOL_Y_EXT = 0.02, 0.035       # lateral : cote axe du canard (pied gauche : balle trop a droite) / cote exterieur
+# Profils de tir : fenetre (cible x, tolerances avant/arriere par pied) selon la politique chargee dans les slots
+# kick_left / kick_right. "officiel" = ball_kick_*.onnx de Pollen (mesures ci-dessus) ; "tolerant" = notre kick
+# reentraine avec une balle de 8 a 15 cm devant (fork, BallKickTolerant) : fenetre PROVISOIRE, a remplacer par le
+# balayage kick_tol_eval.sh. Choix : Approche(profil=...) ou variable MICRODUCK_TIR.
+PROFILS_TIR = {
+    "officiel": {"cible_x": CIBLE_X, "tol_av": TOL_X_AV_PIED, "tol_ar": TOL_X_AR_PIED},
+    "tolerant": {"cible_x": 0.115, "tol_av": {"left": 0.025, "right": 0.025}, "tol_ar": {"left": 0.025, "right": 0.025}},
+}
 X_MIN_BALLE, Y_MIN_BALLE = 0.05, 0.09    # zone occupee par le canard : aucune balle reelle ne peut y etre
 D_ENTREE_AJUST = 0.35                    # on passe en AJUSTER sous cette distance
 D_SORTIE_AJUST = 0.45                    # et on repasse en VISER au-dela (balle repoussee)
@@ -104,10 +112,13 @@ def wrap(a):
 
 
 class Approche:
-    def __init__(self, client, couleur="orange", verite=False, log=print, cap_vise=None):
+    def __init__(self, client, couleur="orange", verite=False, log=print, cap_vise=None, profil=None):
         self.c = client
         self.couleur = couleur
         self.log = log
+        import os
+        self.profil = profil or os.environ.get("MICRODUCK_TIR", "officiel")
+        self.tir = PROFILS_TIR[self.profil]
         self.verite = None
         if verite:
             import truth
@@ -235,7 +246,8 @@ class Approche:
         phi = self.cap_vise - BIAIS_G
         c, s_ = math.cos(phi), math.sin(phi)
         # canard au moment du tir : la balle est a (CIBLE_X, CIBLE_Y) dans son repere (pied gauche)
-        self.p_tir = (bx - (c * CIBLE_X - s_ * CIBLE_Y), by - (s_ * CIBLE_X + c * CIBLE_Y))
+        cx = self.tir["cible_x"]
+        self.p_tir = (bx - (c * cx - s_ * CIBLE_Y), by - (s_ * cx + c * CIBLE_Y))
         self.phi = phi
         self.rampe = (self.p_tir[0] - D_RAMPE * c, self.p_tir[1] - D_RAMPE * s_)
 
@@ -328,11 +340,11 @@ class Approche:
         elif self.cote is None or abs(y) > 0.04:
             self.cote = "left" if y > 0 else "right"
         ty = CIBLE_Y if self.cote == "left" else -CIBLE_Y
-        ex, ey = x - CIBLE_X, y - ty
+        ex, ey = x - self.tir["cible_x"], y - ty
         self.log(f"  [{self.n_ajust}] balle ({x:+.3f},{y:+.3f}) pied {self.cote} erreur ({ex * 100:+.1f},{ey * 100:+.1f}) cm{tag}{self.comparer_verite(est)}")
         e_int = -ey if self.cote == "left" else ey          # > 0 : balle trop pres de l'axe du canard
-        tol_av = TOL_X_AV_PIED.get(self.cote, TOL_X_AV)
-        tol_ar = TOL_X_AR_PIED.get(self.cote, TOL_X_AR)
+        tol_av = self.tir["tol_av"].get(self.cote, TOL_X_AV)
+        tol_ar = self.tir["tol_ar"].get(self.cote, TOL_X_AR)
         if -tol_ar <= ex <= tol_av and -TOL_Y_EXT <= e_int <= TOL_Y_INT:
             if vue or self.x_vis > X_SWING:
                 self.tirer(est, "dans la fenetre" if vue else "dans la fenetre (odometrie, balle hors de la zone de pas)")

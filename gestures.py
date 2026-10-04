@@ -84,7 +84,30 @@ def eternuement(t):
     return (0.0, 0.55 * k, 0.0, 0.0)
 
 
+# --- Gestes du CORPS (robot.pose : z / roulis / tangage du tronc debout, lisses par robotd) -------------------------
+# Le "Content (tremoussement)" de la phase 1 : on croyait qu'il fallait du RL (mouvement de tout le corps), mais
+# robotd accepte une pose du corps debout. Amplitudes PROVISOIRES, a regler avec diag_pose.py.
+CONTENT_ROULIS, CONTENT_HZ = 0.2, 2.0
+
+
+def content_corps(t):
+    """-> (z, roulis, tangage) : petite flexion et dandinement du tronc, qui s'eteint."""
+    k = _smooth(t, 0.0, 0.3) * (1.0 - _smooth(t, 2.0, 2.4))
+    return (-0.01 * k, CONTENT_ROULIS * k * math.sin(2 * math.pi * CONTENT_HZ * t), 0.0)
+
+
+def content(t):
+    """Tete : contre-balancement du roulis (la tete reste a peu pres droite, comme un canard qui se dandine) et
+    petit hochement."""
+    k = _smooth(t, 0.0, 0.3) * (1.0 - _smooth(t, 2.0, 2.4))
+    return (0.0, 0.12 * k * math.sin(2 * math.pi * 2 * CONTENT_HZ * t), 0.0,
+            -0.6 * CONTENT_ROULIS * k * math.sin(2 * math.pi * CONTENT_HZ * t))
+
+
+GESTES_CORPS = {"content": content_corps}       # geste -> f(t) de pose du corps, en plus de la tete (GESTES)
+
 GESTES = {
+    "content": (2.4, content),
     "non": (2.4, non),
     "oui": (1.2, oui),
     "curieux": (2.5, curieux),

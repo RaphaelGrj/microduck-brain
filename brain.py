@@ -56,9 +56,23 @@ class Ctx:
     def move(self, vx=0.0, vy=0.0, vyaw=0.0):
         self.client.notify("robot.move", {"vx": vx, "vy": vy, "vyaw": vyaw})
 
+    def pose(self, p=None):
+        """Pose du corps debout (robot.pose : z m, roulis rad, tangage rad), lissee par robotd. None = retour au neutre
+        (active=false, une seule fois) : un client qui laisse une pose active la laisse au robot."""
+        if p is None:
+            if getattr(self, "pose_active", False):
+                self.client.notify("robot.pose", {"z": 0.0, "roll": 0.0, "pitch": 0.0, "active": False})
+                self.pose_active = False
+            return
+        self.client.notify("robot.pose", {"z": p[0], "roll": p[1], "pitch": p[2], "active": True})
+        self.pose_active = True
+
     def toggle_sit(self):
         self.client.request("robot.do", {"skill": "sit_toggle"})
         self.sitting = not self.sitting
+
+    # duree d'ouverture du bec par son (s) : le bec bouge avec la voix (robot.mouth, que seul le cerveau pilote)
+    BEC_S = {"chirp": 0.25, "peck": 0.15, "greet": 0.5, "coo": 0.6, "inquire": 0.45, "alarm": 0.8, "wheee": 1.2}
 
     def sound(self, tag):
         """La voix du canard (robot.sound) : alarm, greet, inquire, peck, chirp, coo, wheee. Muette en mode calme."""
@@ -68,12 +82,29 @@ class Ctx:
             r = self.client.request("robot.sound", {"tag": tag})
             if isinstance(r, dict) and "error" in r:     # un robot sans voix refuse (JSON-RPC error, pas d'exception)
                 print(f"  (son {tag} refuse : {r['error']})", flush=True)
+                return
         except Exception as e:      # on ne bloque jamais un geste pour un son
             print(f"  (son {tag} impossible : {e})", flush=True)
+            return
+        self.bec_t0, self.bec_fin = time.monotonic(), time.monotonic() + self.BEC_S.get(tag, 0.4)
+
+    def bec(self):
+        """A chaque trame : bec qui bat pendant le son (~8 Hz), puis refermé une fois. robot.mouth est une consigne
+        continue (la derniere valeur reste) : on ne l'envoie que pendant le son et a la fermeture."""
+        fin = getattr(self, "bec_fin", None)
+        if fin is None:
+            return
+        now = time.monotonic()
+        if now >= fin:
+            self.client.notify("robot.mouth", {"open": 0.0})
+            self.bec_fin = None
+            return
+        self.client.notify("robot.mouth", {"open": 0.45 + 0.35 * math.cos(2 * math.pi * 8.0 * (now - self.bec_t0))})
 
     def calme(self):
         self.head((0.0, 0.0, 0.0, 0.0))
         self.move()
+        self.pose(None)
 
 
 class Etat:
@@ -212,6 +243,9 @@ class Geste(Etat):
 
     def pas(self, brain, t):
         brain.ctx.head(self._fn(min(t, self._duree)) if t < self._duree else (0, 0, 0, 0))
+        corps = gestures.GESTES_CORPS.get(self.geste)
+        if corps is not None:
+            brain.ctx.pose(corps(t) if t < self._duree else None)
         if self.recul and t <= 0.5:
             brain.ctx.move(vx=-0.1)
 
@@ -307,7 +341,7 @@ class Accueil(Etat):
         if familiarite >= 0.6:
             seq.append(("curieux", "coo"))
         if absence_s is not None and absence_s >= cls.ABSENCE_LONGUE_S:
-            seq.append(("ebouriffe", "wheee"))                # tremoussement de joie apres une longue absence
+            seq.append(("content", "wheee"))                  # tremoussement de joie apres une longue absence
         return seq
 
     def entre(self, brain):
@@ -321,26 +355,28 @@ class Accueil(Etat):
         t = 0.0
         for geste, son in self.sequence(familiarite, self.absence_s):
             d, fn = gestures.GESTES[geste]
-            self.etapes.append((t, d, fn, son))
+            self.etapes.append((t, d, fn, son, gestures.GESTES_CORPS.get(geste)))
             t += d + 0.3
         self.total = t
         self.joues = set()
         print(f"[{brain.t_global:6.1f}s] accueil de {self.qui} (familiarite {familiarite:.2f}, absence "
               f"{'?' if self.absence_s is None else f'{self.absence_s / 60:.0f} min'}) : "
-              f"{' + '.join(s for *_, s in self.etapes)}", flush=True)
+              f"{' + '.join(e[3] for e in self.etapes)}", flush=True)
 
     def duree(self, brain):
         return self.total + 0.3
 
     def pas(self, brain, t):
-        tete = (0, 0, 0, 0)
-        for i, (t0, d, fn, son) in enumerate(self.etapes):
+        tete, corps = (0, 0, 0, 0), None
+        for i, (t0, d, fn, son, fn_corps) in enumerate(self.etapes):
             if t0 <= t < t0 + d:
                 if i not in self.joues:
                     self.joues.add(i)
                     brain.ctx.sound(son)
                 tete = fn(t - t0)
+                corps = fn_corps(t - t0) if fn_corps else None
         brain.ctx.head(tete)
+        brain.ctx.pose(corps)
 
 
 class Brain:
@@ -367,7 +403,7 @@ class Brain:
             "startle": Geste("startle", "surpris", recul=True),
             "curious": Geste("curious", "curieux"),
             # reactions aux notifications de la maison (Home Assistant, voir pont_ha.py)
-            "celebre": Geste("celebre", "oui", son="greet"),       # impression terminee
+            "celebre": Geste("celebre", "content", son="greet"),   # impression terminee : tremoussement de joie
             "alerte": Geste("alerte", "surpris", son="alarm"),     # impression ratee, alarme
             "info": Geste("info", "curieux", son="inquire"),       # information a signaler
             "regarde_chat": RegardeChat(),                         # le chat vient d'apparaitre
@@ -489,6 +525,7 @@ class Brain:
     def tick(self, state, dt):
         """Un pas du cerveau, a appeler une fois par trame robot.state."""
         self.ctx.state = state
+        self.ctx.bec()
         self.t_global += dt
         if state.get("safety", {}).get("fallen"):
             if not self.tombe:

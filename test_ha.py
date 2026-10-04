@@ -142,6 +142,10 @@ def test_cerveau():
     b.evenement("impression_finie:MK4S")
     b._traite_evenements()
     assert b.courant.nom == "celebre" and ("robot.sound", {"tag": "greet"}) in c.appels, (b.courant.nom, c.appels)
+    for i in range(int(b.fin_etat / 0.02) + 2):                      # le tremoussement : pose du corps, puis relachee
+        b.courant.pas(b, i * 0.02)
+    poses = [a[2] for a in c.appels if a[:2] == ("notify", "robot.pose")]
+    assert max(abs(p["roll"]) for p in poses) > 0.1 and poses[-1]["active"] is False, poses[-3:]
     b.evenement("impression_echec:Saturn")
     b._traite_evenements()
     assert b.courant.nom == "alerte" and ("robot.sound", {"tag": "alarm"}) in c.appels
