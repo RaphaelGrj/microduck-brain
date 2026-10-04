@@ -411,11 +411,19 @@ class Brain:
         self.t_global += dt
         if state.get("safety", {}).get("fallen"):
             if not self.tombe:
-                print(f"[{self.t_global:6.1f}s] CHUTE : cerveau en pause", flush=True)
+                print(f"[{self.t_global:6.1f}s] CHUTE : cerveau en pause (robotd se charge du relevement)", flush=True)
             self.tombe = True
             self.ctx.calme()
             return
-        self.tombe = False
+        if self.tombe and state.get("policy") == "stand":
+            # De nouveau debout (la sequence limp_fall de robotd l'a releve) : il s'ebroue, comme un canard qui se
+            # remet d'une glissade, puis reprend sa vie. Pas en mode calme (silence et immobilite d'abord).
+            self.tombe = False
+            print(f"[{self.t_global:6.1f}s] releve apres la chute", flush=True)
+            if not self.mode_calme:
+                self._bascule("ebouriffe")
+        if self.tombe:
+            return                              # pas encore la politique 'stand' : on attend sans rien commander
         if state.get("odom") and self.t_global - self._t_explo >= 0.5:
             self._t_explo = self.t_global
             self.exploration.noter(state["odom"]["position"][0], state["odom"]["position"][1], self.t_global)
