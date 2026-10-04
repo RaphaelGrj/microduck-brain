@@ -60,8 +60,13 @@ TOL_Y_INT, TOL_Y_EXT = 0.02, 0.035       # lateral : cote axe du canard (pied ga
 # reentraine avec une balle de 8 a 15 cm devant (fork, BallKickTolerant) : fenetre PROVISOIRE, a remplacer par le
 # balayage kick_tol_eval.sh. Choix : Approche(profil=...) ou variable MICRODUCK_TIR.
 PROFILS_TIR = {
-    "officiel": {"cible_x": CIBLE_X, "tol_av": TOL_X_AV_PIED, "tol_ar": TOL_X_AR_PIED},
-    "tolerant": {"cible_x": 0.115, "tol_av": {"left": 0.025, "right": 0.025}, "tol_ar": {"left": 0.025, "right": 0.025}},
+    "officiel": {"cible_x": {"left": CIBLE_X, "right": CIBLE_X}, "tol_av": TOL_X_AV_PIED, "tol_ar": TOL_X_AR_PIED},
+    "tolerant": {"cible_x": {"left": 0.115, "right": 0.115}, "tol_av": {"left": 0.025, "right": 0.025},
+                 "tol_ar": {"left": 0.025, "right": 0.025}},
+    # pied droit reentraine (balayage kick_tol_eval.sh, it. 1250 : 28/36 de 7 a 15 cm, contre 14/36 pour l'officiel,
+    # 13/18 au-dela de 12 cm contre 1/18), pied gauche encore officiel
+    "tolerant_droit": {"cible_x": {"left": CIBLE_X, "right": 0.11}, "tol_av": {"left": 0.025, "right": 0.035},
+                       "tol_ar": {"left": 0.016, "right": 0.03}},
 }
 X_MIN_BALLE, Y_MIN_BALLE = 0.05, 0.09    # zone occupee par le canard : aucune balle reelle ne peut y etre
 D_ENTREE_AJUST = 0.35                    # on passe en AJUSTER sous cette distance
@@ -246,7 +251,7 @@ class Approche:
         phi = self.cap_vise - BIAIS_G
         c, s_ = math.cos(phi), math.sin(phi)
         # canard au moment du tir : la balle est a (CIBLE_X, CIBLE_Y) dans son repere (pied gauche)
-        cx = self.tir["cible_x"]
+        cx = self.tir["cible_x"]["left"]                 # la visee tire du pied gauche
         self.p_tir = (bx - (c * cx - s_ * CIBLE_Y), by - (s_ * cx + c * CIBLE_Y))
         self.phi = phi
         self.rampe = (self.p_tir[0] - D_RAMPE * c, self.p_tir[1] - D_RAMPE * s_)
@@ -340,7 +345,7 @@ class Approche:
         elif self.cote is None or abs(y) > 0.04:
             self.cote = "left" if y > 0 else "right"
         ty = CIBLE_Y if self.cote == "left" else -CIBLE_Y
-        ex, ey = x - self.tir["cible_x"], y - ty
+        ex, ey = x - self.tir["cible_x"][self.cote], y - ty
         self.log(f"  [{self.n_ajust}] balle ({x:+.3f},{y:+.3f}) pied {self.cote} erreur ({ex * 100:+.1f},{ey * 100:+.1f}) cm{tag}{self.comparer_verite(est)}")
         e_int = -ey if self.cote == "left" else ey          # > 0 : balle trop pres de l'axe du canard
         tol_av = self.tir["tol_av"].get(self.cote, TOL_X_AV)

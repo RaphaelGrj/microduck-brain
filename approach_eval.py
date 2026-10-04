@@ -152,14 +152,14 @@ for i in range(n_essais):
         cote = res["tir"]["cote"]
         ty = 0.042 if cote == "left" else -0.042
         vmax, d1, ang, ang_w = mesurer_tir(av["gt"])
-        ligne.update(cote=cote, err_x=x - ap.tir["cible_x"], err_y=y - ty, vmax=vmax, d1=d1, ang=ang, n_ajust=res["tir"]["n_ajust"],
+        ligne.update(cote=cote, err_x=x - ap.tir["cible_x"][cote], err_y=y - ty, vmax=vmax, d1=d1, ang=ang, n_ajust=res["tir"]["n_ajust"],
                      ok=(d1 >= 0.15 and not math.isnan(ang) and abs(ang) < 35))
         if VISEE:
             err_cap = (ang_w - math.degrees(cap_w) + 180) % 360 - 180
             ligne["err_cap"] = err_cap
             ligne["ok"] = d1 >= 0.15 and not math.isnan(ang_w) and abs(err_cap) <= 35
             print(f"VISEE : ballon parti a {ang_w:+.0f} deg (monde) pour {math.degrees(cap_w):+.0f} voulus -> ecart {err_cap:+.0f} deg", flush=True)
-        print(f"RESULTAT : pied {cote}, balle vraie a ({x:+.3f},{y:+.3f}) -> erreur ({(x - ap.tir["cible_x"]) * 100:+.1f},{(y - ty) * 100:+.1f}) cm ;"
+        print(f"RESULTAT : pied {cote}, balle vraie a ({x:+.3f},{y:+.3f}) -> erreur ({(x - ap.tir["cible_x"][cote]) * 100:+.1f},{(y - ty) * 100:+.1f}) cm ;"
               f" vmax {vmax:.2f} m/s, balle a {d1:.2f} m a 1 s, depart {ang:+.0f} deg -> {'SUCCES' if ligne['ok'] else 'echec'}", flush=True)
     else:
         ligne["ok"] = False
