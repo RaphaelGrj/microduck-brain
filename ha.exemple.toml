@@ -11,6 +11,8 @@
 url   = "http://A_REMPLIR:8123"     # IP du Pi, ex. "http://192.168.1.50:8123" (l'IP est plus sûre que homeassistant.local)
 token = "A_REMPLIR"                 # Jeton d'accès longue durée : HA -> ton profil (en bas à gauche) -> Sécurité
                                     # -> Jetons d'accès longue durée -> Créer. Il ne s'affiche qu'UNE fois : copie-le ici.
+interrupteur_calme = "input_boolean.microduck_calme"   # regle de vie : a creer dans HA (Entrees -> Interrupteur) ;
+                                    # actif = le canard s'assoit, se tait et ne bouge plus (nuit, visite, film...)
 publier_toutes_les_s = 30           # rafraîchissement des entités sensor.microduck_* (inutile de descendre sous 10)
 
 # ---- 2. MQTT (facultatif : add-on "Mosquitto broker" de HA OS) -------------------------------------

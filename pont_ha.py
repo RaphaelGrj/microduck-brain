@@ -66,6 +66,7 @@ def lire_config(chemin):
         "mqtt": brut.get("mqtt", {}),
         "reseau": brut.get("reseau", {}),
         "surveillance": list(brut.get("surveillance", [])),
+        "interrupteur_calme": ha.get("interrupteur_calme"),
         "ignorees": [],
     }
     for imp in brut.get("imprimante", []):
@@ -175,6 +176,9 @@ class PontHA:
         self.evenements = queue.SimpleQueue()
         self.arret = threading.Event()
         self.surveillance = {s["entite"]: s for s in cfg["surveillance"]}
+        self.calme = None if est_vide(cfg.get("interrupteur_calme")) else cfg["interrupteur_calme"]
+        if self.calme:                          # regle de vie : interrupteur "calme" (input_boolean dans HA)
+            self.surveillance[self.calme] = {"nom": "calme", "reactions": {"on": "calme_on", "off": "calme_off"}}
         self.instantane = {}                    # derniere photo de l'etat du canard, ecrite par le cerveau
         self._derniers = {}                     # entite -> (etat, instant de la derniere publication)
         self._threads = []
@@ -187,7 +191,21 @@ class PontHA:
         reaction = {k.lower(): v for k, v in s.get("reactions", {}).items()}.get(nouveau.lower())
         self.log(f"[HA] {entite}: {ancien} -> {nouveau}" + (f"  => {reaction}" if reaction else ""))
         if reaction:
-            self.evenements.put(f"{reaction}:{s.get('nom', entite)}")
+            self.evenements.put(reaction if entite == self.calme else f"{reaction}:{s.get('nom', entite)}")
+
+    def lire_calme_initial(self):
+        """Au demarrage, applique l'etat ACTUEL de l'interrupteur calme (sinon un canard relance la nuit ferait du bruit)."""
+        if not self.calme:
+            return
+        try:
+            etat = self.client._get(f"/api/states/{self.calme}").get("state")
+            if etat in ("on", "off"):
+                self.evenements.put("calme_on" if etat == "on" else "calme_off")
+        except urllib.error.HTTPError as e:
+            self.log(f"[HA] interrupteur {self.calme} introuvable ({e.code}) : cree-le dans HA (Parametres -> Appareils et "
+                     "services -> Entrees -> Interrupteur)" if e.code == 404 else f"[HA] interrupteur calme : HTTP {e.code}")
+        except Exception as e:
+            self.log(f"[HA] interrupteur calme illisible : {type(e).__name__}")
 
     def source(self):
         """A passer a brain.run(source=...) : evenements arrives depuis la derniere trame."""
@@ -247,6 +265,7 @@ class PontHA:
                     self._derniers[entite] = (etat, now)   # pas de rafale d'erreurs : on reessaiera a la prochaine periode
 
     def demarrer(self):
+        self.lire_calme_initial()
         entites = set(self.surveillance)
         for cible in (lambda: self.client.ecouter(entites, self._sur_changement, self.arret), self._publier):
             t = threading.Thread(target=cible, daemon=True)

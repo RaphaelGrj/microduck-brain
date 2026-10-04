@@ -204,7 +204,84 @@ reactions = {{ complete = "impression_finie" }}
     print("config + verifier : OK (champs A_REMPLIR ignores, imprimantes listees, jeton jamais affiche, mauvais jeton explique)")
 
 
+def test_calme():
+    """Interrupteur calme : etat initial lu au demarrage, on/off -> evenements ; cerveau : sieste, silence, pas de promenade."""
+    ha = mock_ha.MockHA(JETON)
+    ha.set_state("input_boolean.microduck_calme", "on")             # deja actif au demarrage du pont
+    pont = pont_ha.PontHA({**CFG, "url": ha.url, "url_ws": ha.url_ws, "interrupteur_calme": "input_boolean.microduck_calme"},
+                          JETON, log=lambda m: None)
+
+    pont.client._get = lambda chemin: ha.etats[chemin.rsplit("/", 1)[1]]
+    pont.demarrer()
+    try:
+        assert attendre(lambda: ha.abonnes)
+        assert pont.source() == ["calme_on"], "etat initial non applique"
+        ha.set_state("input_boolean.microduck_calme", "off")
+        assert attendre(lambda: pont.source() == ["calme_off"])
+    finally:
+        pont.stop()
+        ha.arreter()
+
+    class Client:
+        def __init__(self):
+            self.appels = []
+
+        def notify(self, *a):
+            self.appels.append(a)
+
+        def request(self, methode, params=None, *a, **k):
+            self.appels.append((methode, params))
+            return {}
+    c = Client()
+    b = brain.Brain(c, seed=1)
+    etat = {"safety": {"fallen": False}}
+    b.evenement("calme_on")
+    for _ in range(int(120 / 0.02)):                               # 2 minutes de mode calme
+        b.tick(etat, 0.02)
+    noms = {n for _, n, _, _ in b.journal}
+    assert noms <= {"nap"}, noms
+    b.evenement("impression_finie:MK4S")                            # une notification reste visible, mais muette
+    b.tick(etat, 0.02)
+    assert b.courant.nom == "celebre"
+    assert not any(a[0] == "robot.sound" for a in c.appels), "aucun son en mode calme"
+    b.evenement("calme_off")
+    b.tick(etat, 0.02)
+    assert not b.mode_calme
+    print("mode calme : OK (etat initial lu, on/off, sieste prolongee, aucun son, notifications muettes)")
+
+
+def test_accueil_familiarite():
+    import tempfile
+    from pathlib import Path
+    from memoire import Memoire
+
+    class Client:
+        def __init__(self):
+            self.sons = []
+
+        def notify(self, *a):
+            pass
+
+        def request(self, methode, params=None, *a, **k):
+            if methode == "robot.sound":
+                self.sons.append(params["tag"])
+            return {}
+    with tempfile.TemporaryDirectory() as d:
+        m = Memoire(Path(d) / "m.json")
+        sons = []
+        for _ in range(8):
+            m.rencontre("chat")
+            c = Client()
+            b = brain.Brain(c, seed=1, extras={"chat": object(), "memoire": m})
+            b.etats["regarde_chat"].entre(b)
+            sons.append(c.sons[-1])
+    assert sons[0] == "inquire" and sons[-1] == "coo" and "greet" in sons, sons
+    print(f"accueil selon la familiarite : OK ({' -> '.join(dict.fromkeys(sons))} au fil des rencontres)")
+
+
 if __name__ == "__main__":
+    test_calme()
+    test_accueil_familiarite()
     test_config_et_verifier()
     test_evenements()
     test_publication()

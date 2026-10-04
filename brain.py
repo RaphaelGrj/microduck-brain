@@ -60,7 +60,9 @@ class Ctx:
         self.sitting = not self.sitting
 
     def sound(self, tag):
-        """La voix du canard (robot.sound) : alarm, greet, inquire, peck, chirp, coo, wheee."""
+        """La voix du canard (robot.sound) : alarm, greet, inquire, peck, chirp, coo, wheee. Muette en mode calme."""
+        if getattr(self, "silence", False):
+            return
         try:
             r = self.client.request("robot.sound", {"tag": tag})
             if isinstance(r, dict) and "error" in r:     # un robot sans voix refuse (JSON-RPC error, pas d'exception)
@@ -191,7 +193,7 @@ class Nap(Etat):
     nom = "nap"
 
     def entre(self, brain):
-        self.assis = False
+        self.assis = brain.ctx.sitting           # deja assis (sieste prolongee en mode calme) : on ne se rassoit pas
         self.leve = False
         self.total = 2.0 + 4.0 + brain.rng.uniform(8.0, 14.0) + 4.0
 
@@ -200,18 +202,18 @@ class Nap(Etat):
 
     def pas(self, brain, t):
         ctx = brain.ctx
-        if t < 2.0:
+        if t < 2.0 and not self.assis:
             ctx.head(gestures.fatigue(t))
         elif not self.assis:
             ctx.toggle_sit()
             self.assis = True
-        elif t >= self.total - 4.0 and not self.leve:
+        elif t >= self.total - 4.0 and not self.leve and not brain.mode_calme:
             ctx.toggle_sit()
             self.leve = True
             ctx.head((0, 0, 0, 0))
 
     def sort(self, brain):
-        if brain.ctx.sitting:
+        if brain.ctx.sitting and not brain.mode_calme:
             brain.ctx.toggle_sit()
         brain.ctx.calme()
 
@@ -222,14 +224,21 @@ class RegardeChat(Etat):
     ensuite ces angles a chaque trame pour tenir le regard."""
     nom = "regarde_chat"
 
+    # familiarite (memoire.py) -> (son, duree du regard) : mefiant au debut, chaleureux avec le temps
+    ACCUEIL = ((0.3, "inquire", 8.0), (0.6, "greet", 7.0), (1.01, "coo", 6.0))
+
     def entre(self, brain):
-        brain.ctx.sound("inquire")
+        mem = brain.ctx.extras.get("memoire")
+        self.familiarite = mem.familiarite("chat") if mem is not None else 0.0
+        _, son, self.duree_s = next(a for a in self.ACCUEIL if self.familiarite < a[0])
+        brain.ctx.sound(son)
+        self.son = son
         self.tete = (0.0, 0.0, 0.0, 0.0)
         self.t_vise = None
         self.n_look = 0
 
     def duree(self, brain):
-        return 8.0
+        return self.duree_s
 
     def pas(self, brain, t):
         veille, s = brain.ctx.extras.get("chat"), brain.ctx.state
@@ -282,6 +291,7 @@ class Brain:
             "eternuement": Geste("eternuement", "eternuement", son="peck"),
         }
         self.derniere_fois = {}                 # etat rare -> t_global de la derniere fois
+        self.mode_calme = False                 # interrupteur "calme" de Home Assistant (regle de vie)
         self.courant = self.etats["chill"]
         self.t_etat = 0.0
         self.fin_etat = self.courant.duree(self)
@@ -298,6 +308,15 @@ class Brain:
         while self.evenements:
             nom = self.evenements.pop(0)
             base, _, detail = nom.partition(":")     # "impression_echec:MK4S" -> ("impression_echec", "MK4S")
+            if base in ("calme_on", "calme_off"):
+                # Regle de vie : interrupteur "calme" (veille, silence, sieste forcee). Prioritaire sur tout.
+                actif = base == "calme_on"
+                if actif != self.mode_calme:
+                    self.mode_calme = actif
+                    self.ctx.silence = actif
+                    print(f"[{self.t_global:6.1f}s] mode calme {'ACTIVE' if actif else 'desactive'}", flush=True)
+                    self._bascule("nap" if actif else ("etirement" if self.courant.nom == "nap" else "chill"))
+                continue
             if base in self.REACTIONS_MAISON:
                 # une notification que l'habitant a demandee n'est pas un caprice : elle interrompt la sieste
                 etat, eveil = self.REACTIONS_MAISON[base]
@@ -322,6 +341,8 @@ class Brain:
         if force:
             self.suivant_force = None
             return force
+        if self.mode_calme:
+            return "nap"                        # sieste prolongee, assis, sans bruit, tant que l'interrupteur est actif
         h = self.humeur
         if h.energie < self.SEUIL_SIESTE:
             return "nap"
