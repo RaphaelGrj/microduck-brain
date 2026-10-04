@@ -117,7 +117,14 @@ def wrap(a):
 
 
 class Approche:
-    def __init__(self, client, couleur="orange", verite=False, log=print, cap_vise=None, profil=None):
+    def __init__(self, client, couleur="orange", verite=False, log=print, cap_vise=None, profil=None, cible_vise=None,
+                 arret=None):
+        """`cible_vise` (x, y repere de l'odometrie) : tirer VERS ce point (un joueur) ; la direction est calculee depuis
+        la balle quand on la localise. `arret()` : appelee a chaque tour, True = abandon immediat (mode calme...)."""
+        if cible_vise is not None and cap_vise is None:
+            cap_vise = 0.0                       # provisoire : remplace dans planifier_visee
+        self.cible_vise = cible_vise
+        self.arret = arret
         self.c = client
         self.couleur = couleur
         self.log = log
@@ -248,6 +255,8 @@ class Approche:
 
     def planifier_visee(self):
         bx, by = self.balle_odom
+        if self.cible_vise is not None:          # vers le joueur, depuis la balle
+            self.cap_vise = math.atan2(self.cible_vise[1] - by, self.cible_vise[0] - bx)
         phi = self.cap_vise - BIAIS_G
         c, s_ = math.cos(phi), math.sin(phi)
         # canard au moment du tir : la balle est a (CIBLE_X, CIBLE_Y) dans son repere (pied gauche)
@@ -411,6 +420,12 @@ class Approche:
         self.pas()
         while time.monotonic() - t0 < duree_max and self.etat != "FINI":
             s = self.pas()
+            if self.arret is not None and self.arret():
+                self.log("=== interrompu")
+                self.c.notify("robot.move", {"vx": 0.0, "vy": 0.0, "vyaw": 0.0})
+                self.resultat["etat"] = "INTERROMPU"
+                self.resultat["duree"] = time.monotonic() - t0
+                return self.resultat
             if self.etat == "TIR":                    # tete au neutre pendant T_TETE_NEUTRE, puis coup
                 if time.monotonic() >= self.t_tir:
                     self.declencher_tir()
