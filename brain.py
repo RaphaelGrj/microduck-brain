@@ -19,6 +19,7 @@ import sys
 import time
 
 import gestures
+from exploration import Exploration
 
 DT_DEFAUT = 0.02  # une trame robot.state = 20 ms
 
@@ -122,10 +123,18 @@ class TurnInPlace(Etat):
     nom = "turn"
 
     def entre(self, brain):
+        virage = getattr(brain, "virage_cible", None)        # demande par l'exploration : un angle precis
         prefere = getattr(brain, "cote_degage", None)
-        self.signe = prefere if prefere else brain.rng.choice((-1.0, 1.0))
+        if virage:
+            self.signe = math.copysign(1.0, virage)
+            self.duree_s = min(2.0, max(0.6, abs(math.degrees(virage)) / 50.0))   # ~50 deg/s a vyaw = 1,5
+            brain.virage_cible = None
+            brain.suivant_force = "wander"                   # puis on part dans la direction choisie
+            brain.cap_choisi = True
+        else:
+            self.signe = prefere if prefere else brain.rng.choice((-1.0, 1.0))
+            self.duree_s = brain.rng.uniform(1.0, 1.8)      # ~50 a 90 deg
         brain.cote_degage = None
-        self.duree_s = brain.rng.uniform(1.0, 1.8)          # ~50 a 90 deg
 
     def duree(self, brain):
         return self.duree_s
@@ -144,17 +153,36 @@ class Wander(Etat):
     def entre(self, brain):
         self.duree_s = brain.rng.uniform(2.5, 6.0)
         self.arrets = 0
+        self.virage = None
+        # Exploration : avant de partir, regarder si une direction mene vers des zones moins visitees (sauf si on vient
+        # justement de tourner pour ca).
+        if brain.explo_actif and brain.ctx.state is not None and not getattr(brain, "cap_choisi", False):
+            o = brain.ctx.state["odom"]
+            ecart = brain.exploration.meilleur_ecart(o["position"][0], o["position"][1], o["yaw"], brain.t_global)
+            if abs(ecart) >= math.radians(30):
+                self.virage = ecart
+        brain.cap_choisi = False
 
     def duree(self, brain):
         return self.duree_s
 
     def pas(self, brain, t):
         brain.ctx.head((0.0, 0.0, 0.0, 0.0))
+        if self.virage is not None:                          # d'abord tourner vers la zone la plus nouvelle
+            brain.virage_cible, self.virage = self.virage, None
+            brain.fin_etat = brain.t_etat
+            brain.suivant_force = "turn"
+            brain.ctx.move()
+            return
         tof = brain.ctx.extras.get("tof")
         lib = tof.libre(brain.ctx.state) if tof is not None and brain.ctx.state is not None else None
         if lib is None:
             brain.ctx.move()                                 # aveugle : on reste sur place
             return
+        if lib["devant"] < 9.0 and brain.ctx.state.get("odom"):    # obstacle vu devant : on le note dans la grille
+            o = brain.ctx.state["odom"]
+            brain.exploration.obstacle(o["position"][0] + lib["devant"] * math.cos(o["yaw"]),
+                                       o["position"][1] + lib["devant"] * math.sin(o["yaw"]), brain.t_global)
         if lib["devant"] < LIBRE_MIN:
             brain.ctx.move()
             brain.cote_degage = 1.0 if lib["gauche"] >= lib["droite"] else -1.0
@@ -292,6 +320,9 @@ class Brain:
         }
         self.derniere_fois = {}                 # etat rare -> t_global de la derniere fois
         self.mode_calme = False                 # interrupteur "calme" de Home Assistant (regle de vie)
+        self.exploration = Exploration()        # memoire des zones visitees (novelty grid du M9)
+        self.explo_actif = self.ctx.extras.get("exploration", True)
+        self._t_explo = -1.0
         self.courant = self.etats["chill"]
         self.t_etat = 0.0
         self.fin_etat = self.courant.duree(self)
@@ -385,6 +416,9 @@ class Brain:
             self.ctx.calme()
             return
         self.tombe = False
+        if state.get("odom") and self.t_global - self._t_explo >= 0.5:
+            self._t_explo = self.t_global
+            self.exploration.noter(state["odom"]["position"][0], state["odom"]["position"][1], self.t_global)
 
         self._traite_evenements()
         self.humeur.avance(dt, self.courant.nom)

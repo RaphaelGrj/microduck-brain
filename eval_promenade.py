@@ -81,7 +81,7 @@ def tick(b, state):
 
 with contextlib.redirect_stdout(io.StringIO()):
     b = brain.run(c, DUREE, humeur=brain.Humeur(energie=1.0, eveil=0.6), a_chaque_tick=tick, seed=5,
-                  extras={"tof": capteur})
+                  extras={"tof": capteur, "exploration": os.environ.get("EXPLO", "1") != "0"})
 parcours = sum(math.dist(traj[i][1], traj[i - 1][1]) for i in range(1, len(traj)))
 dmin, nom = min(dist_obstacle(p) for _, p, _ in traj)
 contacts = sum(1 for _, p, _ in traj if dist_obstacle(p)[0] < 0.10)
@@ -90,4 +90,6 @@ total = sum(etats.values())
 print(f"distance parcourue : {parcours:.2f} m ; arrets devant obstacle : {getattr(b, 'obstacle_vu', 0)} ; chutes : {chutes}")
 print(f"plus petite distance du centre du canard a un obstacle : {dmin:.2f} m ({nom}) ; "
       f"echantillons en contact (< 10 cm) : {contacts}/{len(traj)}")
+cases = {(math.floor(p[0] / 0.25), math.floor(p[1] / 0.25)) for _, p, _ in traj}
+print(f"cases de 25 cm visitees : {len(cases)} (exploration {'active' if os.environ.get('EXPLO', '1') != '0' else 'coupee'})")
 print("temps par etat : " + ", ".join(f"{k} {100 * v / total:.0f} %" for k, v in sorted(etats.items(), key=lambda kv: -kv[1])))
