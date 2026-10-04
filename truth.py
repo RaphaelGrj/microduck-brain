@@ -65,8 +65,9 @@ def teleport_duck(x=0.0, y=0.0, yaw=0.0, index=0, attente=3.0):
     t0 = time.monotonic()
     while time.monotonic() - t0 < attente:
         gt = read()
-        if gt and math.dist(gt["ducks"][index]["pos"][:2], (x, y)) < 0.03:
-            return gt
+        if gt and math.dist(gt["ducks"][index]["pos"][:2], (x, y)) < 0.03 and \
+                abs((trunk_yaw(gt["ducks"][index]["quat"]) - yaw + math.pi) % (2 * math.pi) - math.pi) < math.radians(3):
+            return gt          # position ET cap appliques (sinon un canard deja en (x, y) repondait avant de tourner)
         time.sleep(0.05)
     raise TimeoutError(f"le canard n'est pas arrive en ({x:.2f},{y:.2f}) : DUCK_SIM_CONTROL actif ?")
 

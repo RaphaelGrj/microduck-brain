@@ -186,6 +186,37 @@ class Nap(Etat):
         brain.ctx.calme()
 
 
+class RegardeChat(Etat):
+    """Le chat vient d'apparaitre : petit son interrogatif, puis on le suit des yeux quelques secondes. La position du
+    chat vient de la veille (chat.py) ; c'est robotd qui calcule l'orientation de la tete (`robot.look`), on renvoie
+    ensuite ces angles a chaque trame pour tenir le regard."""
+    nom = "regarde_chat"
+
+    def entre(self, brain):
+        brain.ctx.sound("inquire")
+        self.tete = (0.0, 0.0, 0.0, 0.0)
+        self.t_vise = None
+        self.n_look = 0
+
+    def duree(self, brain):
+        return 8.0
+
+    def pas(self, brain, t):
+        veille, s = brain.ctx.extras.get("chat"), brain.ctx.state
+        if veille is not None and s is not None:
+            e = veille.estimation
+            if e is not None and e[0] != self.t_vise:
+                self.t_vise = e[0]
+                cible = veille.cible_regard(s["odom"]["position"][2])
+                if cible:
+                    r = brain.ctx.client.request("robot.look", {"x": float(cible[0]), "y": float(cible[1]), "z": float(cible[2])})
+                    h = (r.get("result") or {}).get("head") if isinstance(r, dict) else None
+                    if h:
+                        self.tete = (h["neck_pitch"], h["head_pitch"], h["head_yaw"], h["head_roll"])
+                        self.n_look += 1
+        brain.ctx.head(self.tete)
+
+
 class Brain:
     SEUIL_SIESTE = 0.25
     # evenement de la maison -> (etat de reaction, hausse d'eveil)
@@ -197,8 +228,9 @@ class Brain:
         "info": ("info", 0.2),
     }
 
-    def __init__(self, client, humeur=None, seed=None):
+    def __init__(self, client, humeur=None, seed=None, extras=None):
         self.ctx = Ctx(client)
+        self.ctx.extras = extras or {}          # perceptions externes partagees (ex. {"chat": VeilleChat})
         self.humeur = humeur or Humeur()
         self.rng = random.Random(seed)
         self.etats = {
@@ -210,6 +242,7 @@ class Brain:
             "celebre": Geste("celebre", "oui", son="greet"),       # impression terminee
             "alerte": Geste("alerte", "surpris", son="alarm"),     # impression ratee, alarme
             "info": Geste("info", "curieux", son="inquire"),       # information a signaler
+            "regarde_chat": RegardeChat(),                         # le chat vient d'apparaitre
         }
         self.courant = self.etats["chill"]
         self.t_etat = 0.0
@@ -239,7 +272,10 @@ class Brain:
             if nom == "bruit":
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.5)
                 self._bascule("startle")
-            elif nom in ("chat", "personne"):
+            elif nom == "chat":
+                self.humeur.eveil = min(1.0, self.humeur.eveil + 0.3)
+                self._bascule("regarde_chat" if "chat" in self.ctx.extras else "curious")
+            elif nom == "personne":
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.3)
                 self._bascule("curious")
 
@@ -290,10 +326,10 @@ class Brain:
         self.ctx.calme()
 
 
-def run(client, duree, humeur=None, evenements=None, seed=None, source=None, a_chaque_tick=None):
+def run(client, duree, humeur=None, evenements=None, seed=None, source=None, a_chaque_tick=None, extras=None):
     """`source()` : appelee a chaque trame, renvoie les noms d'evenements arrives depuis l'exterieur (pont
     Home Assistant...). `a_chaque_tick(brain, state)` : crochet facultatif (publication d'etat...)."""
-    brain = Brain(client, humeur=humeur, seed=seed)
+    brain = Brain(client, humeur=humeur, seed=seed, extras=extras)
     evenements = sorted(evenements or [])
     last_t = None
     t0 = time.monotonic()

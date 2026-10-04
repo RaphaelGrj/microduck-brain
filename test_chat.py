@@ -48,5 +48,33 @@ def test():
     print("veille du chat : OK (confirmation, nouvelle apparition seulement, delai de grace, memoire des apparitions)")
 
 
+def test_memoire():
+    import json
+    import tempfile
+    from pathlib import Path
+    from memoire import Memoire
+    h = Horloge()
+    h.t = 1_700_000_000.0
+    with tempfile.TemporaryDirectory() as d:
+        chemin = Path(d) / "m.json"
+        m = Memoire(chemin, horloge=h)
+        assert m.familiarite("chat") == 0.0 and m.heure_habituelle("chat") is None
+        for _ in range(3):
+            m.rencontre("chat")
+        f3 = m.familiarite("chat")
+        assert 0.35 < f3 < 0.40, f3                     # 1 - 0.85**3 = 0.386
+        h.t += 14 * 86400                               # deux semaines sans le voir : moitie
+        assert abs(m.familiarite("chat") - f3 / 2) < 1e-6
+        m2 = Memoire(chemin, horloge=h)                 # relue depuis le disque
+        assert m2.donnees["etres"]["chat"]["rencontres"] == 3 and m2.heure_habituelle("chat") is not None
+        assert json.loads(chemin.read_text())["etres"]["chat"]["rencontres"] == 3
+        s = SuiviChat(confirmations=1, horloge=h)
+        s.sur_apparition = lambda t: m2.rencontre("chat")
+        s.mise_a_jour(CHAT)
+        assert m2.donnees["etres"]["chat"]["rencontres"] == 4, "une apparition est memorisee"
+    print("memoire : OK (rencontres, familiarite qui monte puis s'oublie en 2 semaines, relecture du disque)")
+
+
 if __name__ == "__main__":
     test()
+    test_memoire()
