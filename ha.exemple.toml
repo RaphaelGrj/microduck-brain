@@ -16,6 +16,9 @@ interrupteur_calme = "input_boolean.microduck_calme"   # regle de vie : a creer 
 publier_toutes_les_s = 30           # rafraîchissement des entités sensor.microduck_* (inutile de descendre sous 10)
 
 # ---- 2. MQTT (facultatif : add-on "Mosquitto broker" de HA OS) -------------------------------------
+# Avec MQTT, HA crée tout seul un appareil "Microduck" (entités éditables, gardées au redémarrage, "indisponible"
+# si le cerveau s'arrête) et un interrupteur switch.microduck_calme : l'input_boolean ci-dessus devient inutile.
+# Sans MQTT, l'état du canard passe par l'API REST (rien à installer, mais entités plus fragiles).
 [mqtt]
 actif = false                       # passe à true une fois Mosquitto installé
 hote = "A_REMPLIR"                  # en général la même IP que Home Assistant

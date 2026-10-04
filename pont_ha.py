@@ -15,9 +15,11 @@ le jeton n'est jamais affiche ni ecrit dans un journal. Variante : jeton dans HA
 `python pont_ha.py ha.toml --verifier` teste l'URL, le jeton, la joignabilite du broker MQTT et LISTE les entites
 d'imprimante trouvees dans HA (pour recopier leurs vrais noms dans la config).
 
-Limite connue : les entites creees par REST n'ont pas d'`unique_id` (pas editables dans l'interface de HA)
-et disparaissent au redemarrage de HA jusqu'a la prochaine publication (< 1 min ici). La version "propre"
-passe par MQTT discovery (a faire si un broker est disponible).
+Deux facons de publier l'etat du canard :
+  - REST (par defaut, rien a installer) : entites sans `unique_id` (pas editables dans l'interface de HA), qui
+    disparaissent au redemarrage de HA jusqu'a la prochaine publication (< 1 min ici) ;
+  - MQTT discovery (`[mqtt] actif = true`, add-on Mosquitto) : appareil "Microduck" cree automatiquement, entites
+    editables et persistantes, "indisponible" si le cerveau s'arrete, interrupteur calme fourni (`switch.microduck_calme`).
 
 Usage : bash ~/run-brain.sh pont_ha.py [ha.toml] [duree_s]
         bash ~/run-brain.sh pont_ha.py ha.toml --verifier
@@ -183,6 +185,98 @@ class HAClient:
         return self._post(f"/api/services/{domaine}/{service}", donnees or {})
 
 
+class PublieurMQTT:
+    """Entites du canard par MQTT discovery (add-on Mosquitto de HA) : creees automatiquement sous un appareil
+    "Microduck", editables dans l'interface (unique_id), conservees au redemarrage de HA (messages retenus), et
+    "indisponibles" si le cerveau s'arrete ou perd le reseau (testament MQTT). Expose aussi l'interrupteur calme
+    (`switch.microduck_calme`) : plus besoin de creer l'input_boolean a la main."""
+    PREFIXE = "microduck"
+    DECOUVERTE = "homeassistant"
+    APPAREIL = {"identifiers": ["microduck"], "name": "Microduck", "manufacturer": "Pollen Robotics", "model": "Microduck"}
+    CLES_CONFIG = ("unit_of_measurement", "device_class", "icon")
+
+    def __init__(self, mq, log=print, sur_evenement=None):
+        import paho.mqtt.client as mqtt
+        self.log = log
+        self.sur_evenement = sur_evenement      # callback(nom) : "calme_on" / "calme_off" vers le cerveau
+        self.annonces = set()
+        self.connecte = False
+        self.calme_lu = False
+        self.dispo = f"{self.PREFIXE}/disponible"
+        self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="microduck-cerveau")
+        if not est_vide(mq.get("utilisateur")):
+            self.client.username_pw_set(mq["utilisateur"], None if est_vide(mq.get("mot_de_passe")) else mq["mot_de_passe"])
+        self.client.will_set(self.dispo, "offline", retain=True)
+        self.client.on_connect = self._sur_connexion
+        self.client.on_disconnect = self._sur_deconnexion
+        self.client.on_message = self._sur_message
+        self.client.reconnect_delay_set(1, 30)
+        self.hote, self.port = mq["hote"], int(mq.get("port", 1883))
+        self.client.connect_async(self.hote, self.port, keepalive=30)
+        self.client.loop_start()
+
+    def _sur_connexion(self, client, userdata, flags, code, proprietes=None):
+        if code.is_failure:
+            self.log(f"[MQTT] connexion refusee par {self.hote}:{self.port} ({code}) : verifie utilisateur / mot de passe")
+            return
+        self.connecte = True
+        self.annonces.clear()                   # on re-annonce tout apres une reconnexion (broker redemarre sans persistance)
+        client.publish(self.dispo, "online", retain=True)
+        self._annoncer("switch", "calme", {
+            "name": "calme", "icon": "mdi:sleep", "command_topic": f"{self.PREFIXE}/calme/set",
+            "state_topic": f"{self.PREFIXE}/calme/etat"})
+        client.subscribe([(f"{self.PREFIXE}/calme/set", 1), (f"{self.PREFIXE}/calme/etat", 1)])
+        self.log(f"[MQTT] connecte a {self.hote}:{self.port} (decouverte Home Assistant)")
+
+    def _sur_deconnexion(self, client, userdata, drapeaux, code, proprietes=None):
+        if self.connecte:
+            self.log(f"[MQTT] deconnecte ({code}) ; reconnexion automatique")
+        self.connecte = False
+
+    def _sur_message(self, client, userdata, msg):
+        charge = msg.payload.decode(errors="replace").strip().upper()
+        if charge not in ("ON", "OFF"):
+            return
+        if msg.topic.endswith("/calme/set"):
+            client.publish(f"{self.PREFIXE}/calme/etat", charge, retain=True)
+        elif self.calme_lu:
+            return                              # notre propre etat qui revient : deja traite
+        self.calme_lu = True                    # au demarrage, l'etat retenu restaure le mode calme d'avant
+        if self.sur_evenement:
+            self.sur_evenement("calme_on" if charge == "ON" else "calme_off")
+
+    def _annoncer(self, composant, objet, config):
+        config = {**config, "unique_id": f"microduck_{objet}", "object_id": f"microduck_{objet}",
+                  "availability_topic": self.dispo, "device": self.APPAREIL}
+        self.client.publish(f"{self.DECOUVERTE}/{composant}/{self.PREFIXE}/{objet}/config", json.dumps(config), retain=True)
+        self.annonces.add(f"{composant}.{objet}")
+
+    def publier(self, entite, etat, attributs):
+        """entite "sensor.microduck_batterie" -> topics microduck/batterie/... ; False si le broker n'est pas joignable."""
+        if not self.connecte:
+            return False
+        composant, objet = entite.split(".", 1)
+        objet = objet.removeprefix("microduck_")
+        base = f"{self.PREFIXE}/{objet}"
+        if f"{composant}.{objet}" not in self.annonces:
+            config = {"name": attributs.get("friendly_name", objet).removeprefix("Microduck - "),
+                      "state_topic": f"{base}/etat", "json_attributes_topic": f"{base}/attributs"}
+            config.update({k: attributs[k] for k in self.CLES_CONFIG if k in attributs})
+            if composant == "binary_sensor":
+                config.update({"payload_on": "on", "payload_off": "off"})
+            self._annoncer(composant, objet, config)
+        autres = {k: v for k, v in attributs.items() if k not in self.CLES_CONFIG and k != "friendly_name"}
+        self.client.publish(f"{base}/etat", str(etat), retain=True)
+        self.client.publish(f"{base}/attributs", json.dumps(autres), retain=True)
+        return True
+
+    def arreter(self):
+        if self.connecte:
+            self.client.publish(self.dispo, "offline", retain=True).wait_for_publish(2)
+        self.client.disconnect()
+        self.client.loop_stop()
+
+
 class PontHA:
     def __init__(self, cfg, jeton, log=print):
         self.cfg = cfg
@@ -197,6 +291,7 @@ class PontHA:
         self.instantane = {}                    # derniere photo de l'etat du canard, ecrite par le cerveau
         self._derniers = {}                     # entite -> (etat, instant de la derniere publication)
         self._threads = []
+        self.mqtt = None                        # PublieurMQTT si [mqtt] actif = true (sinon publication REST)
 
     # evenements maison -> cerveau
     def _sur_changement(self, entite, ancien, nouveau, duree_ancien=None):
@@ -286,6 +381,10 @@ class PontHA:
                 if avant and avant[0] == etat and now - avant[1] < periode:
                     continue                    # inchange et publie recemment : on ne spamme pas HA
                 try:
+                    if self.mqtt is not None:
+                        if self.mqtt.publier(entite, etat, attrs):
+                            self._derniers[entite] = (etat, now)
+                        continue                # broker injoignable : paho se reconnecte seul, on republiera
                     self.client.pousser_etat(entite, etat, attrs)
                     self._derniers[entite] = (etat, now)
                 except (urllib.error.URLError, OSError) as e:
@@ -293,6 +392,9 @@ class PontHA:
                     self._derniers[entite] = (etat, now)   # pas de rafale d'erreurs : on reessaiera a la prochaine periode
 
     def demarrer(self):
+        mq = self.cfg.get("mqtt") or {}
+        if mq.get("actif") and not est_vide(mq.get("hote")):
+            self.mqtt = PublieurMQTT(mq, self.log, sur_evenement=self.evenements.put)
         self.lire_calme_initial()
         entites = set(self.surveillance)
         for cible in (lambda: self.client.ecouter(entites, self._sur_changement, self.arret), self._publier):
@@ -302,6 +404,27 @@ class PontHA:
 
     def stop(self):
         self.arret.set()
+        if self.mqtt is not None:
+            self.mqtt.arreter()
+
+
+def tester_identifiants_mqtt(mq, delai=6.0):
+    """Vraie connexion MQTT (sans rien publier) : True si le broker accepte l'utilisateur / mot de passe."""
+    import paho.mqtt.client as mqtt
+    fini, ok = threading.Event(), []
+    cli = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="microduck-verifier")
+    if not est_vide(mq.get("utilisateur")):
+        cli.username_pw_set(mq["utilisateur"], None if est_vide(mq.get("mot_de_passe")) else mq["mot_de_passe"])
+    cli.on_connect = lambda c, u, f, code, p=None: (ok.append(not code.is_failure), fini.set())
+    try:
+        cli.connect(mq["hote"], int(mq.get("port", 1883)), keepalive=10)
+        cli.loop_start()
+        fini.wait(delai)
+        cli.disconnect()
+        cli.loop_stop()
+    except OSError:
+        return False
+    return bool(ok and ok[0])
 
 
 MOTS_IMPRIMANTE = ("prusa", "elegoo", "saturn", "printer", "imprim", "mk3", "mk4", "resin", "print")
@@ -352,10 +475,13 @@ def verifier(cfg, jeton, log=print):
         try:
             socket.create_connection((mq["hote"], int(mq.get("port", 1883))), timeout=4).close()
             res["mqtt"] = True
-            log(f"[OK] MQTT : le broker repond sur {mq['hote']}:{mq.get('port', 1883)} (identifiants non testes)")
         except OSError as e:
             res["mqtt"] = False
             log(f"[ECHEC] MQTT : {mq['hote']}:{mq.get('port', 1883)} injoignable ({e}) : add-on Mosquitto demarre ?")
+        if res["mqtt"]:
+            res["mqtt_auth"] = tester_identifiants_mqtt(mq)
+            log(f"[OK] MQTT : {mq['hote']}:{mq.get('port', 1883)} accepte les identifiants du canard" if res["mqtt_auth"]
+                else "[ECHEC] MQTT : le broker repond mais refuse les identifiants (utilisateur / mot de passe dans [mqtt])")
     for nom in cfg.get("ignorees", []):
         log(f"[A FAIRE] imprimante '{nom}' ignoree : `entite` pas encore renseignee")
     return res

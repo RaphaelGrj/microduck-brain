@@ -157,7 +157,9 @@ def test_config_et_verifier():
     """Format a sections : champs non remplis ignores, reactions par defaut, jeton jamais affiche ; --verifier."""
     import tempfile
     from pathlib import Path
+    import mock_mqtt
     ha = mock_ha.MockHA(JETON)
+    br = mock_mqtt.MockMQTT("canard", "mdp_test")
     toml = f'''
 [home_assistant]
 url = "{ha.url}"
@@ -166,7 +168,9 @@ token = "{JETON}"
 [mqtt]
 actif = true
 hote = "127.0.0.1"
-port = {ha.rest.server_address[1]}
+port = {br.port}
+utilisateur = "canard"
+mot_de_passe = "mdp_test"
 [[imprimante]]
 nom = "Prusa 1"
 type = "prusalink"
@@ -195,7 +199,9 @@ reactions = {{ complete = "impression_finie" }}
     ha.set_state("sensor.salon_temperature", "21", {"friendly_name": "Salon"})
     sortie = []
     res = pont_ha.verifier(cfg, JETON, log=sortie.append)
-    assert res["rest"] and res["ws"] and res["mqtt"] is True and res["version"].endswith("mock"), res
+    assert res["rest"] and res["ws"] and res["mqtt"] is True and res["mqtt_auth"] and res["version"].endswith("mock"), res
+    assert not pont_ha.tester_identifiants_mqtt({**cfg["mqtt"], "mot_de_passe": "faux"}), "mauvais mot de passe accepte"
+    br.arreter()
     assert [e[0] for e in res["entites"]] == ["sensor.prusa_1_etat"], res["entites"]       # le capteur du salon n'est pas liste
     assert JETON not in "\n".join(sortie), "le jeton ne doit jamais apparaitre"
     mauvais = pont_ha.verifier(cfg, "MAUVAIS", log=sortie.append)
@@ -366,7 +372,65 @@ def test_accueil_retour():
     print("accueil au retour : OK (reserve -> chaleureux, signe apres 5 min, joie apres une journee, calme, sieste)")
 
 
+def test_mqtt():
+    """MQTT discovery contre le faux broker : annonces retenues (unique_id, appareil), etats, interrupteur calme
+    (commande, etat restaure au redemarrage), testament "offline" a la coupure, mauvais mot de passe explique."""
+    import json
+    import mock_mqtt
+    ha = mock_ha.MockHA(JETON)
+    br = mock_mqtt.MockMQTT("canard", "secret_de_test")
+    mq = {"actif": True, "hote": "127.0.0.1", "port": br.port, "utilisateur": "canard", "mot_de_passe": "secret_de_test"}
+    log = []
+    pont = pont_ha.PontHA({**CFG, "url": ha.url, "url_ws": ha.url_ws, "mqtt": mq}, JETON, log=log.append)
+    pont.photographier(FauxBrain(), faux_etat())
+    pont.demarrer()
+    try:
+        cfg_bat = "homeassistant/sensor/microduck/batterie/config"
+        assert attendre(lambda: cfg_bat in br.retenus, 5.0), (log, list(br.retenus))
+        c = json.loads(br.retenus[cfg_bat])
+        assert c["unique_id"] == "microduck_batterie" and c["device"]["name"] == "Microduck", c
+        assert c["device_class"] == "battery" and c["unit_of_measurement"] == "%" and c["name"] == "batterie", c
+        assert br.retenus["microduck/batterie/etat"] == b"87"
+        assert json.loads(br.retenus["microduck/batterie/attributs"]) == {"volts": 7.9}
+        assert br.retenus["microduck/disponible"] == b"online"
+        assert json.loads(br.retenus["homeassistant/binary_sensor/microduck/tombe/config"])["payload_on"] == "on"
+        assert "homeassistant/switch/microduck/calme/config" in br.retenus
+        assert "sensor.microduck_batterie" not in ha.etats, "avec MQTT, pas de publication REST en double"
+        br.publier("microduck/calme/set", "ON")                              # l'interrupteur dans HA
+        assert attendre(lambda: pont.source() == ["calme_on"]), log
+        assert attendre(lambda: br.retenus.get("microduck/calme/etat") == b"ON")
+        time.sleep(0.3)
+        assert pont.source() == [], "l'echo de notre propre etat ne doit pas rejouer l'evenement"
+        br.couper_clients()                                                 # coupure reseau brutale
+        assert attendre(lambda: ("microduck/disponible", b"offline", True) in br.messages), "testament non publie"
+        assert attendre(lambda: br.retenus.get("microduck/disponible") == b"online", 8.0), "pas de reconnexion"
+    finally:
+        pont.stop()
+    assert attendre(lambda: br.retenus["microduck/disponible"] == b"offline"), "arret propre : indisponible"
+    # redemarrage du cerveau : le mode calme retenu est restaure
+    pont = pont_ha.PontHA({**CFG, "url": ha.url, "url_ws": ha.url_ws, "mqtt": mq}, JETON, log=log.append)
+    pont.demarrer()
+    try:
+        assert attendre(lambda: pont.source() == ["calme_on"], 5.0), "mode calme non restaure au demarrage"
+    finally:
+        pont.stop()
+    log.clear()
+    pont = pont_ha.PontHA({**CFG, "url": ha.url, "url_ws": ha.url_ws, "mqtt": {**mq, "mot_de_passe": "MAUVAIS"}},
+                          JETON, log=log.append)
+    pont.demarrer()
+    try:
+        assert attendre(lambda: any("connexion refusee" in m for m in log), 5.0), log
+        assert "MAUVAIS" not in "".join(log) and "secret_de_test" not in "".join(log)
+    finally:
+        pont.stop()
+        br.arreter()
+        ha.arreter()
+    print("mqtt : OK (decouverte retenue, appareil Microduck, interrupteur calme, testament, reconnexion, "
+          "calme restaure, mauvais mot de passe)")
+
+
 if __name__ == "__main__":
+    test_mqtt()
     test_presence()
     test_accueil_retour()
     test_calme()

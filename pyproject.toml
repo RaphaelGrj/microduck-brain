@@ -6,6 +6,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "numpy>=2.0",
     "opencv-python-headless>=4.10",
+    "paho-mqtt>=2.1",
     "websockets>=17.1",
 ]
 
