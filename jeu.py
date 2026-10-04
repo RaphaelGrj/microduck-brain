@@ -24,13 +24,16 @@ import geometry
 import vision
 from poc_robotd_client import RobotdClient, SOCK_PATH
 
-CLASSE = {"chat": "cat", "personne": "person"}
+# Classes YOLO acceptees par joueur. Le chat vu de biais est souvent pris pour un chien par le petit YOLO (affiche de
+# l'arene a 37 deg : "dog 0,50", aucun "cat") : sans chien a la maison, "dog" compte comme le chat.
+CLASSES = {"chat": ("cat", "dog"), "personne": ("person",)}
 ABANDON_S = 20.0             # joueur introuvable aussi longtemps : il est parti, on ne le poursuit pas
 D_MIN_CHAT = 0.8             # jamais de passe vers un chat a moins de 80 cm de la balle
 # lacets de tete pour chercher le joueur (rad de commande, ~1,3 rad de regard par rad) : la camera ne voit que +-22 deg,
 # donc des pas de 0,3 (~23 deg) sans trou (jeu_eval : avec 0 / +-0,9 un chat a 25-40 deg n'etait jamais vu)
-BALAYAGE = (0.0, 0.3, -0.3, 0.6, -0.6, 0.9, -0.9)
-SEUIL_RECHERCHE = 0.4
+BALAYAGE = (0.0, 0.3, 0.6, 0.9, -0.3, -0.6, -0.9)   # d'un cote puis de l'autre : petits pas de tete
+SEUIL_RECHERCHE = 0.3       # de biais, l'affiche du chat sort entre 0,41 et 0,50 : un seuil a 0,4 la ratait une fois sur deux
+SEUIL_SUR = 0.5              # en dessous, la detection doit etre confirmee sur une deuxieme image
 TETE_PITCH = 0.15            # un peu baissee : un chat assis et une personne debout restent dans le champ
 ATTENTE_RETOUR_S = 6.0
 
@@ -39,7 +42,7 @@ class Partie:
     def __init__(self, client, joueur="chat", log=print, arret=None, detecteur=None, verite=False):
         self.c = client
         self.joueur = joueur
-        self.classe = CLASSE[joueur]
+        self.classes = CLASSES[joueur]
         self.log = log
         self.arret = arret or (lambda: False)
         self.det = detecteur or animaux.DetecteurCoco()
@@ -58,16 +61,28 @@ class Partie:
         return s
 
     def regarder(self, yaw):
-        """Tete tournee de `yaw`, stabilisee ; renvoie la position du joueur (odometrie) ou None."""
-        s = self.tenir(0.7, (yaw, TETE_PITCH))
+        """Tete tournee de `yaw`, stabilisee ; renvoie la position du joueur (odometrie) ou None. Le temps de
+        stabilisation suit le deplacement de tete (+ ~0,2 s de retard de l'image) : un grand saut de -0,3 a +0,6 en
+        0,7 s donnait une image prise tete encore en route (chat a 37 deg jamais vu)."""
+        s = self.tenir(0.6 + 0.5 * abs(yaw - getattr(self, "yaw_tete", 0.0)), (yaw, TETE_PITCH))
+        self.yaw_tete = yaw
         try:
-            objets = self.det.detect(vision.grab_frame(), classes=(self.classe,), seuil=SEUIL_RECHERCHE)
+            objets = self.det.detect(vision.grab_frame(), classes=self.classes, seuil=SEUIL_RECHERCHE)
         except Exception as e:
             self.log(f"  (image indisponible : {e})")
             return None
         if not objets:
             return None
         o = max(objets, key=lambda q: q.score)
+        if o.score < SEUIL_SUR:                              # detection faible : confirmee sur une autre image
+            s = self.tenir(0.25, (yaw, TETE_PITCH))
+            try:
+                autres = self.det.detect(vision.grab_frame(), classes=self.classes, seuil=SEUIL_RECHERCHE)
+            except Exception:
+                return None
+            if not autres:
+                return None
+            o = max(autres, key=lambda q: q.score)
         p = geometry.point_au_sol(o.pied[0], o.pied[1], s["frames"]["camera"], s["odom"]["position"][2])
         if p is None:
             return None
@@ -85,8 +100,10 @@ class Partie:
                 pos = self.regarder(yaw)
                 if pos is not None:
                     self.tenir(0.5)                         # tete au neutre avant de repartir
+                    self.yaw_tete = 0.0
                     return pos
             self.tenir(approach.duree_rotation(math.pi / 2), vyaw=approach.V_ROT)
+            self.yaw_tete = -0.9
             self.tenir(0.6)
         return None
 
