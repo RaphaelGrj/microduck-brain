@@ -49,6 +49,7 @@ TABLE_PITCH = ((0.09, 1.50), (0.12, 1.37), (0.18, 0.92), (0.25, 0.62), (0.35, 0.
 CIBLE_X, CIBLE_Y = 0.071, 0.042
 # Pied droit : au balayage (kick_sweep.py) il ne reussit qu'a x ~ 7 cm, pas a 9 -> limite haute plus basse.
 TOL_X_AV_PIED = {"left": 0.025, "right": 0.012}   # gauche : au-dela de ~9,6 cm le coup est mou (evaluation appartement)
+TOL_X_AR_PIED = {"left": 0.016, "right": 0.008}   # pied droit : coup mou a 5,5 cm, 18/18 entre 6,5 et 8,5 cm (balayage fin)
 # Pas qui ne poussent pas la balle (diag_pousse.py, arene) : un micro-pas de 0,25 s (1 a 2,5 cm) ne la touche jamais,
 # meme a 12 cm ; un pas de 0,4 s (4 a 7 cm) la pousse a 12 cm, pas a 15 cm.
 X_MICRO_PAS, T_MICRO_PAS, X_APRES_PAS_MIN = 0.16, 0.25, 0.13
@@ -331,7 +332,8 @@ class Approche:
         self.log(f"  [{self.n_ajust}] balle ({x:+.3f},{y:+.3f}) pied {self.cote} erreur ({ex * 100:+.1f},{ey * 100:+.1f}) cm{tag}{self.comparer_verite(est)}")
         e_int = -ey if self.cote == "left" else ey          # > 0 : balle trop pres de l'axe du canard
         tol_av = TOL_X_AV_PIED.get(self.cote, TOL_X_AV)
-        if -TOL_X_AR <= ex <= tol_av and -TOL_Y_EXT <= e_int <= TOL_Y_INT:
+        tol_ar = TOL_X_AR_PIED.get(self.cote, TOL_X_AR)
+        if -tol_ar <= ex <= tol_av and -TOL_Y_EXT <= e_int <= TOL_Y_INT:
             if vue or self.x_vis > X_SWING:
                 self.tirer(est, "dans la fenetre" if vue else "dans la fenetre (odometrie, balle hors de la zone de pas)")
             else:
@@ -362,7 +364,7 @@ class Approche:
             else:                                                # plus loin : un pas qui ne l'amene pas sous 13 cm
                 d = min(0.85 * ex, x - X_APRES_PAS_MIN)
                 self.lancer_rafale(V_MARCHE, 0.0, 0.0, clamp(duree_marche(d), T_MICRO_PAS, 0.75), est)
-        elif ex < -TOL_X_AR:                                      # trop pres : marche arriere (rien en dessous de 0,5 s)
+        elif ex < -tol_ar:                                      # trop pres : marche arriere (rien en dessous de 0,5 s)
             self.lancer_rafale(-V_MARCHE, 0.0, 0.0, clamp(duree_marche(-ex), 0.5, 0.8), est)
         elif ey > 0:                                             # balle trop a gauche : pas de cote GAUCHE, faible (1 s ~ 5 cm)
             self.lancer_rafale(0.0, V_COTE, 0.0, 1.0, est)
