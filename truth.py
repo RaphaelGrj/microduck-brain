@@ -56,6 +56,14 @@ def teleport(name, x, y, z=0.035, attente=3.0):
     raise TimeoutError(f"{name} n'est pas arrive en ({x:.2f},{y:.2f}) : DUCK_SIM_CONTROL actif ?")
 
 
+def coucher_duck(x=0.0, y=0.0, yaw=0.0, pitch=math.pi / 2, roll=0.0, z=0.07, index=0):
+    """Couche le canard (essais de relevement) : pitch +pi/2 = sur le ventre, -pi/2 = sur le dos ; roll = sur le cote."""
+    tmp = CONTROL_PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"teleport_duck": [{"index": index, "pos": [x, y], "yaw": yaw, "pitch": pitch,
+                                                  "roll": roll, "z": z}]}))
+    tmp.replace(CONTROL_PATH)
+
+
 def teleport_duck(x=0.0, y=0.0, yaw=0.0, index=0, attente=3.0):
     """Replace le canard (tronc) en (x, y) monde, cap `yaw` rad, a l'arret : permet d'enchainer des
     essais depuis le meme point au lieu de deriver vers un mur. A appeler canard debout et immobile."""
