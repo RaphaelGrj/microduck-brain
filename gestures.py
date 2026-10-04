@@ -63,8 +63,9 @@ def etirement(t):
 
 def ebouriffe(t):
     # Ruffle : petite secousse rapide de la tete (roulis + lacet), qui s'eteint.
-    k = 1.0 - _smooth(t, 0.8, 1.4)
-    return (0.0, 0.0, 0.25 * k * math.sin(2 * math.pi * t / 0.18), 0.3 * k * math.sin(2 * math.pi * t / 0.22))
+    # ~2,5 Hz : a 5 Hz la tete ne suit pas (amplitude mesuree 0,02-0,08 rad)
+    k = 1.0 - _smooth(t, 1.0, 1.6)
+    return (0.0, 0.0, 0.45 * k * math.sin(2 * math.pi * t / 0.38), 0.4 * k * math.sin(2 * math.pi * t / 0.42))
 
 
 def lissage(t):
@@ -90,7 +91,7 @@ GESTES = {
     "surpris": (1.6, surpris),
     "fatigue": (2.0, fatigue),
     "etirement": (3.0, etirement),
-    "ebouriffe": (1.4, ebouriffe),
+    "ebouriffe": (1.6, ebouriffe),
     "lissage": (4.0, lissage),
     "eternuement": (1.4, eternuement),
 }

@@ -62,7 +62,9 @@ for x in (-3.1, -3.4):
 
 # 2. promenade
 print(f"\n=== promenade autonome {DUREE:.0f} s depuis la cuisine ===", flush=True)
-truth.teleport_duck(-3.0, 1.2, math.radians(90))
+import os
+_dep = [float(v) for v in os.environ.get("DEPART", "-3.0,1.2,90").split(",")]
+truth.teleport_duck(_dep[0], _dep[1], math.radians(_dep[2]))
 tenir(1.0)
 traj, etats = [], {}
 t_prec = [0.0]
