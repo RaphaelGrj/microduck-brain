@@ -17,7 +17,8 @@ import truth
 from poc_robotd_client import RobotdClient, SOCK_PATH
 
 CHAT = (1.2, 0.0)
-DEPARTS = [(0.0, -0.9, 0.0), (0.0, 0.9, 0.0), (0.3, -0.7, 0.6), (0.3, 0.7, -0.6), (-0.3, 0.0, 0.0), (0.2, -1.0, 1.2)]
+DEPARTS = [(0.0, -0.9, 0.0), (0.0, 0.9, 0.0), (-0.3, -0.6, -0.5), (-0.3, 0.6, 0.5), (-0.5, 0.0, 0.0), (0.2, -1.0, 1.2),
+           (-0.2, -1.2, 1.0), (-0.2, 1.2, -1.0)]
 
 n = int(sys.argv[1]) if len(sys.argv) > 1 else 6
 random.seed(int(sys.argv[2]) if len(sys.argv) > 2 else 1)
@@ -30,8 +31,11 @@ for k in range(n):
     p.tenir(1.0)
     truth.teleport_duck(x0, y0, yaw0)
     p.tenir(0.8)
-    d, b = random.uniform(0.5, 0.8), math.radians(random.uniform(-30, 30))
-    bx, by = x0 + d * math.cos(yaw0 + b), y0 + d * math.sin(yaw0 + b)
+    while True:                                      # balle a 0,5-0,8 m du canard ET a plus d'1 m du chat (sinon le
+        d, b = random.uniform(0.5, 0.8), math.radians(random.uniform(-40, 40))   # garde-fou refuse, a juste titre)
+        bx, by = x0 + d * math.cos(yaw0 + b), y0 + d * math.sin(yaw0 + b)
+        if math.hypot(bx - CHAT[0], by - CHAT[1]) >= 1.0:
+            break
     try:
         truth.teleport("testball", bx, by)
     except TimeoutError:

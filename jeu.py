@@ -27,7 +27,10 @@ from poc_robotd_client import RobotdClient, SOCK_PATH
 CLASSE = {"chat": "cat", "personne": "person"}
 ABANDON_S = 20.0             # joueur introuvable aussi longtemps : il est parti, on ne le poursuit pas
 D_MIN_CHAT = 0.8             # jamais de passe vers un chat a moins de 80 cm de la balle
-BALAYAGE = (0.0, 0.9, -0.9)  # lacets de tete pour chercher le joueur (rad de commande)
+# lacets de tete pour chercher le joueur (rad de commande, ~1,3 rad de regard par rad) : la camera ne voit que +-22 deg,
+# donc des pas de 0,3 (~23 deg) sans trou (jeu_eval : avec 0 / +-0,9 un chat a 25-40 deg n'etait jamais vu)
+BALAYAGE = (0.0, 0.3, -0.3, 0.6, -0.6, 0.9, -0.9)
+SEUIL_RECHERCHE = 0.4
 TETE_PITCH = 0.15            # un peu baissee : un chat assis et une personne debout restent dans le champ
 ATTENTE_RETOUR_S = 6.0
 
@@ -58,7 +61,7 @@ class Partie:
         """Tete tournee de `yaw`, stabilisee ; renvoie la position du joueur (odometrie) ou None."""
         s = self.tenir(0.7, (yaw, TETE_PITCH))
         try:
-            objets = self.det.detect(vision.grab_frame(), classes=(self.classe,), seuil=0.5)
+            objets = self.det.detect(vision.grab_frame(), classes=(self.classe,), seuil=SEUIL_RECHERCHE)
         except Exception as e:
             self.log(f"  (image indisponible : {e})")
             return None
