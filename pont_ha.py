@@ -4,7 +4,8 @@
   Maison -> canard : on ecoute les changements d'ETAT des entites listees dans `ha.toml` (imprimantes 3D :
       PrusaLink pour les Prusa, integration Elegoo pour la Saturn 4 Ultra...). Une transition vers un etat
       qui a une reaction (finished, stopped, error...) devient un evenement du cerveau ("impression_finie:MK4S")
-      que `brain.py` joue en geste + voix du canard.
+      que `brain.py` joue en geste + voix du canard. Presence des habitants (`person.*`) : "retour:Nom|absence_s" et
+      "depart:Nom" -> accueil au retour, plus chaleureux avec la familiarite et apres une longue absence.
   Canard -> maison : l'etat du robot (batterie, chute, politique active, position, etat d'esprit du cerveau)
       est publie comme entites `sensor.microduck_*` (REST `POST /api/states/...`).
 
@@ -47,6 +48,15 @@ REACTIONS_PAR_TYPE = {       # etats connus par type d'integration ; pour les au
 }
 
 
+def duree_etat(ancien, nouveau):
+    """Combien de temps l'ancien etat a dure (s), d'apres les `last_changed` de HA ; None si inconnu."""
+    from datetime import datetime
+    try:
+        return (datetime.fromisoformat(nouveau["last_changed"]) - datetime.fromisoformat(ancien["last_changed"])).total_seconds()
+    except (TypeError, KeyError, ValueError):
+        return None
+
+
 def est_vide(v):
     """Vrai pour une valeur non renseignee : absente, vide ou encore le texte "A_REMPLIR..." du modele."""
     return v is None or str(v).strip() == "" or "A_REMPLIR" in str(v)
@@ -69,6 +79,11 @@ def lire_config(chemin):
         "interrupteur_calme": ha.get("interrupteur_calme"),
         "ignorees": [],
     }
+    for hab in brut.get("habitant", []):        # presence HA (person.*) -> accueil au retour
+        if est_vide(hab.get("entite")) or est_vide(hab.get("nom")):
+            cfg["ignorees"].append(hab.get("nom", "?"))
+            continue
+        cfg["surveillance"].append({"entite": hab["entite"], "nom": hab["nom"], "habitant": True})
     for imp in brut.get("imprimante", []):
         if est_vide(imp.get("entite")):
             cfg["ignorees"].append(imp.get("nom", "?"))
@@ -137,7 +152,7 @@ class HAClient:
                         if d["entity_id"] in entites:
                             ancien = (d.get("old_state") or {}).get("state")
                             nouveau = (d.get("new_state") or {}).get("state")
-                            callback(d["entity_id"], ancien, nouveau)
+                            callback(d["entity_id"], ancien, nouveau, duree_etat(d.get("old_state"), d.get("new_state")))
             except ErreurAuth as e:
                 self.log(f"[HA] jeton refuse ({e}) : verifie le fichier de jeton ; nouvel essai dans 60 s")
                 attente = 60.0
@@ -184,10 +199,23 @@ class PontHA:
         self._threads = []
 
     # evenements maison -> cerveau
-    def _sur_changement(self, entite, ancien, nouveau):
+    def _sur_changement(self, entite, ancien, nouveau, duree_ancien=None):
         if nouveau is None or nouveau.lower() in ETATS_IGNORES or nouveau == ancien:
             return
         s = self.surveillance[entite]
+        if s.get("habitant"):
+            # person.* : "home", "not_home" ou le nom d'une zone ("Travail"...). Un passage par unavailable (redemarrage
+            # de HA) ou la premiere apparition ne sont ni un retour ni un depart.
+            if ancien is None or ancien.lower() in ETATS_IGNORES:
+                return
+            if nouveau.lower() == "home":
+                absence = f"|{int(duree_ancien)}" if duree_ancien is not None and duree_ancien >= 0 else ""
+                self.log(f"[HA] {s['nom']} rentre a la maison" + (f" ({int(duree_ancien) // 60} min d'absence)" if absence else ""))
+                self.evenements.put(f"retour:{s['nom']}{absence}")
+            elif ancien.lower() == "home":
+                self.log(f"[HA] {s['nom']} quitte la maison")
+                self.evenements.put(f"depart:{s['nom']}")
+            return
         reaction = {k.lower(): v for k, v in s.get("reactions", {}).items()}.get(nouveau.lower())
         self.log(f"[HA] {entite}: {ancien} -> {nouveau}" + (f"  => {reaction}" if reaction else ""))
         if reaction:
@@ -309,8 +337,13 @@ def verifier(cfg, jeton, log=print):
                 if e["entity_id"].split(".")[0] in ("sensor", "binary_sensor", "select", "update") and any(
                         m in (e["entity_id"] + " " + nom).lower() for m in MOTS_IMPRIMANTE):
                     res["entites"].append((e["entity_id"], e["state"], nom))
+                if e["entity_id"].startswith("person."):
+                    res.setdefault("personnes", []).append((e["entity_id"], e["state"], nom))
             log(f"[INFO] {len(res['entites'])} entite(s) qui ressemblent a une imprimante (recopie `entite` dans ha.toml) :")
             for ent, etat, nom in res["entites"][:60]:
+                log(f"         {ent}  =  {etat}   ({nom})")
+            log(f"[INFO] {len(res.get('personnes', []))} personne(s) (section [[habitant]] de ha.toml) :")
+            for ent, etat, nom in res.get("personnes", []):
                 log(f"         {ent}  =  {etat}   ({nom})")
         except Exception as e:
             log(f"[ECHEC] liste des entites : {type(e).__name__}: {e}")

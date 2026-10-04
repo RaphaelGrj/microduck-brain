@@ -54,7 +54,17 @@ entite = "A_REMPLIR"
 # Après avoir vu les vrais états de l'imprimante dans HA, décommente et adapte (états en minuscules ou comme affichés) :
 # reactions = { complete = "impression_finie", failed = "impression_echec", stopped = "impression_echec" }
 
-# ---- 5. Tes notes (ignorées par le programme) ------------------------------------------------------
+# ---- 5. Habitants (accueil au retour) --------------------------------------------------------------
+# `entite` : la personne dans HA (Paramètres -> Personnes ; suivie par l'appli Home Assistant du téléphone),
+#            `--verifier` liste les `person.*`. Le canard t'accueille quand tu passes de "absent" (ou d'une zone) à
+#            "home" : réservé au début, plus chaleureux avec le temps, petit signe si tu n'es sorti que 5 min, joie après
+#            une longue journée. Rien en mode calme ; pendant sa sieste, seul un retour après 4 h d'absence le réveille.
+#            Le prénom n'est utilisé qu'en local (mémoire du canard, hors dépôt).
+[[habitant]]
+nom = "A_REMPLIR"                   # un prénom ou surnom
+entite = "A_REMPLIR"                # ex. "person.raphael"
+
+# ---- 6. Tes notes (ignorées par le programme) ------------------------------------------------------
 [notes]
 libre = """
 Écris ici ce que tu veux me dire : noms de pièces, habitudes, ce qui doit réveiller / ne pas réveiller le canard...

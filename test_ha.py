@@ -279,7 +279,96 @@ def test_accueil_familiarite():
     print(f"accueil selon la familiarite : OK ({' -> '.join(dict.fromkeys(sons))} au fil des rencontres)")
 
 
+def test_presence():
+    """person.* : retour (avec la duree d'absence tiree de last_changed), depart, zones, redemarrage de HA ignore."""
+    ha = mock_ha.MockHA(JETON)
+    ha.set_state("person.alex", "home")
+    cfg = {**CFG, "url": ha.url, "url_ws": ha.url_ws,
+           "surveillance": CFG["surveillance"] + [{"entite": "person.alex", "nom": "Alex", "habitant": True}]}
+    pont = pont_ha.PontHA(cfg, JETON, log=lambda m: None)
+    pont.demarrer()
+    try:
+        assert attendre(lambda: ha.abonnes)
+        ha.set_state("person.alex", "not_home", il_y_a_s=5 * 3600)       # parti il y a 5 h
+        assert attendre(lambda: pont.source() == ["depart:Alex"])
+        ha.set_state("person.alex", "home")
+        ev = []
+        assert attendre(lambda: ev.extend(pont.source()) or ev)
+        nom, _, absence = ev[0].partition("|")
+        assert nom == "retour:Alex" and abs(float(absence) - 5 * 3600) < 5, ev
+        ha.set_state("person.alex", "Travail")                           # une zone : c'est un depart
+        assert attendre(lambda: pont.source() == ["depart:Alex"])
+        ha.set_state("person.alex", "unavailable")                       # redemarrage de HA...
+        ha.set_state("person.alex", "home")                              # ... ce n'est pas un retour
+        time.sleep(0.5)
+        assert pont.source() == [], "un redemarrage de HA ne doit pas declencher d'accueil"
+    finally:
+        pont.stop()
+        ha.arreter()
+    print("presence : OK (retour avec duree d'absence, depart, zones, redemarrage de HA ignore)")
+
+
+def test_accueil_retour():
+    """Accueil d'un habitant : reserve au debut, chaleureux ensuite ; petit signe apres 5 min, joie apres une journee ;
+    aucune reaction en mode calme ; la sieste n'est interrompue que par un retour apres une longue absence."""
+    import tempfile
+    from pathlib import Path
+    from memoire import Memoire
+
+    class Client:
+        def __init__(self):
+            self.sons = []
+
+        def notify(self, *a):
+            pass
+
+        def request(self, methode, params=None, *a, **k):
+            if methode == "robot.sound":
+                self.sons.append(params["tag"])
+            return {}
+
+    def accueil(m, evt, calme=False, sieste=False):
+        c = Client()
+        b = brain.Brain(c, seed=1, extras={"memoire": m})
+        b.mode_calme = b.ctx.silence = calme
+        if sieste:
+            b._bascule("nap")
+        b.evenement(evt)
+        b._traite_evenements()
+        etat = b.courant.nom
+        for _ in range(int(b.fin_etat / 0.02) + 1):                    # joue l'accueil jusqu'au bout
+            b.courant.pas(b, b.t_etat)
+            b.t_etat += 0.02
+        return etat, c.sons
+
+    with tempfile.TemporaryDirectory() as d:
+        horloge = [1_000_000.0]
+        m = Memoire(Path(d) / "m.json", horloge=lambda: horloge[0])
+        assert accueil(m, "retour:Alex|36000") == ("accueil", ["inquire"])           # inconnu : reserve
+        for _ in range(6):
+            m.rencontre("Alex")
+        assert accueil(m, "retour:Alex|36000") == ("accueil", ["greet", "coo", "wheee"])   # familier + longue absence
+        assert accueil(m, "retour:Alex|300") == ("accueil", ["chirp"])               # sorti 5 min : petit signe
+        assert accueil(m, "retour:Alex|3600") == ("accueil", ["greet", "coo"])
+        etat, sons = accueil(m, "retour:Alex|36000", calme=True)                     # calme : rien
+        assert etat != "accueil" and sons == [], (etat, sons)
+        assert accueil(m, "retour:Alex|3600", sieste=True)[0] == "nap"               # sieste : on ne le reveille pas
+        assert accueil(m, "retour:Alex|36000", sieste=True)[0] == "accueil"          # ... sauf apres une journee
+        # sans duree fournie par HA : la memoire mesure l'absence entre depart et retour
+        c = Client()
+        b = brain.Brain(c, seed=1, extras={"memoire": m})
+        b.evenement("depart:Alex")
+        b._traite_evenements()
+        horloge[0] += 6 * 3600
+        b.evenement("retour:Alex")
+        b._traite_evenements()
+        assert b.courant.nom == "accueil" and b.etats["accueil"].absence_s == 6 * 3600
+    print("accueil au retour : OK (reserve -> chaleureux, signe apres 5 min, joie apres une journee, calme, sieste)")
+
+
 if __name__ == "__main__":
+    test_presence()
+    test_accueil_retour()
     test_calme()
     test_accueil_familiarite()
     test_config_et_verifier()

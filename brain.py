@@ -284,6 +284,65 @@ class RegardeChat(Etat):
         brain.ctx.head(self.tete)
 
 
+class Accueil(Etat):
+    """Un habitant rentre a la maison (presence Home Assistant, voir pont_ha.py). L'accueil depend de la familiarite
+    (memoire.py : reservee au debut, chaleureuse avec le temps) et de la duree de l'absence (simple signe s'il est sorti
+    cinq minutes, joie apres une longue journee). Pas encore de marche vers l'entree : il faudrait une position fiable
+    (odometrie qui derive ; balises UWB plus tard)."""
+    nom = "accueil"
+    ABSENCE_COURTE_S = 15 * 60
+    ABSENCE_LONGUE_S = 4 * 3600
+
+    def __init__(self):
+        self.qui, self.absence_s = None, None
+
+    @classmethod
+    def sequence(cls, familiarite, absence_s):
+        """-> [(geste de gestures.py, son robot.sound)] joues l'un apres l'autre."""
+        if absence_s is not None and absence_s < cls.ABSENCE_COURTE_S:
+            return [("oui", "chirp")]                         # il vient de sortir : un petit signe, pas une fete
+        if familiarite < 0.3:
+            return [("curieux", "inquire")]                   # encore un peu reserve
+        seq = [("oui", "greet")]
+        if familiarite >= 0.6:
+            seq.append(("curieux", "coo"))
+        if absence_s is not None and absence_s >= cls.ABSENCE_LONGUE_S:
+            seq.append(("ebouriffe", "wheee"))                # tremoussement de joie apres une longue absence
+        return seq
+
+    def entre(self, brain):
+        mem = brain.ctx.extras.get("memoire")
+        familiarite = mem.familiarite(self.qui) if mem is not None and self.qui else 0.0
+        if self.absence_s is None and mem is not None and self.qui:
+            self.absence_s = mem.absence_s(self.qui)
+        if mem is not None and self.qui:
+            mem.rencontre(self.qui)
+        self.etapes = []
+        t = 0.0
+        for geste, son in self.sequence(familiarite, self.absence_s):
+            d, fn = gestures.GESTES[geste]
+            self.etapes.append((t, d, fn, son))
+            t += d + 0.3
+        self.total = t
+        self.joues = set()
+        print(f"[{brain.t_global:6.1f}s] accueil de {self.qui} (familiarite {familiarite:.2f}, absence "
+              f"{'?' if self.absence_s is None else f'{self.absence_s / 60:.0f} min'}) : "
+              f"{' + '.join(s for *_, s in self.etapes)}", flush=True)
+
+    def duree(self, brain):
+        return self.total + 0.3
+
+    def pas(self, brain, t):
+        tete = (0, 0, 0, 0)
+        for i, (t0, d, fn, son) in enumerate(self.etapes):
+            if t0 <= t < t0 + d:
+                if i not in self.joues:
+                    self.joues.add(i)
+                    brain.ctx.sound(son)
+                tete = fn(t - t0)
+        brain.ctx.head(tete)
+
+
 class Brain:
     SEUIL_SIESTE = 0.25
     RARES = {"lissage": 0.015, "ebouriffe": 0.01, "etirement": 0.008, "eternuement": 0.005}   # poids face a ~1 pour le reste
@@ -312,6 +371,7 @@ class Brain:
             "alerte": Geste("alerte", "surpris", son="alarm"),     # impression ratee, alarme
             "info": Geste("info", "curieux", son="inquire"),       # information a signaler
             "regarde_chat": RegardeChat(),                         # le chat vient d'apparaitre
+            "accueil": Accueil(),                                  # un habitant rentre (presence HA)
             # vocabulaire M9 (gestes de tete scriptes) : initiatives RARES, voir RARES / _choisit_suivant
             "etirement": Geste("etirement", "etirement", son="coo"),
             "ebouriffe": Geste("ebouriffe", "ebouriffe"),
@@ -347,6 +407,27 @@ class Brain:
                     self.ctx.silence = actif
                     print(f"[{self.t_global:6.1f}s] mode calme {'ACTIVE' if actif else 'desactive'}", flush=True)
                     self._bascule("nap" if actif else ("etirement" if self.courant.nom == "nap" else "chill"))
+                continue
+            if base in ("retour", "depart"):
+                # presence d'un habitant (person.* dans HA) : "retour:Nom|absence_s", "depart:Nom"
+                qui, _, absence = detail.partition("|")
+                mem = self.ctx.extras.get("memoire")
+                if base == "depart":
+                    if mem is not None:
+                        mem.depart(qui)
+                    continue
+                absence = float(absence) if absence else (mem.absence_s(qui) if mem is not None else None)
+                longue = absence is not None and absence >= Accueil.ABSENCE_LONGUE_S
+                if self.mode_calme or (self.courant.nom == "nap" and not longue):
+                    # calme : jamais de reaction ; sieste : seul un retour apres une longue absence le reveille
+                    if mem is not None:
+                        mem.rencontre(qui)
+                    print(f"[{self.t_global:6.1f}s] {qui} rentre (pas de reaction : "
+                          f"{'mode calme' if self.mode_calme else 'sieste'})", flush=True)
+                    continue
+                self.etats["accueil"].qui, self.etats["accueil"].absence_s = qui, absence
+                self.humeur.eveil = min(1.0, self.humeur.eveil + (0.6 if longue else 0.3))
+                self._bascule("accueil")
                 continue
             if base in self.REACTIONS_MAISON:
                 # une notification que l'habitant a demandee n'est pas un caprice : elle interrompt la sieste

@@ -84,10 +84,13 @@ class MockHA:
         self.ws.shutdown()
 
     # --- cote test ---------------------------------------------------------------------------------
-    def set_state(self, entite, etat, attributs=None):
+    def set_state(self, entite, etat, attributs=None, il_y_a_s=0.0):
+        """`il_y_a_s` : date le changement dans le passe (`last_changed`), pour simuler une longue absence."""
+        from datetime import datetime, timedelta, timezone
+        quand = (datetime.now(timezone.utc) - timedelta(seconds=il_y_a_s)).isoformat()
         with self.verrou:
             ancien = self.etats.get(entite)
-            nouveau = {"entity_id": entite, "state": etat, "attributes": attributs or {}}
+            nouveau = {"entity_id": entite, "state": etat, "attributes": attributs or {}, "last_changed": quand}
             self.etats[entite] = nouveau
             abonnes = list(self.abonnes)
         evt = {"id": 1, "type": "event", "event": {"event_type": "state_changed", "data": {

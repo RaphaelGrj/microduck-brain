@@ -55,6 +55,19 @@ class Memoire:
             self._sauver()
             return dict(e)
 
+    def depart(self, nom):
+        """Note qu'un habitant vient de partir (presence Home Assistant), pour mesurer son absence a son retour."""
+        with self.verrou:
+            self._etre(nom)["parti"] = self.horloge()
+            self._sauver()
+
+    def absence_s(self, nom):
+        """Duree depuis son depart note (None si on ne l'a jamais vu partir, ou s'il est revenu depuis)."""
+        e = self.donnees["etres"].get(nom)
+        if not e or not e.get("parti") or (e["derniere"] or 0) > e["parti"]:
+            return None
+        return self.horloge() - e["parti"]
+
     def heure_habituelle(self, nom):
         """L'heure de la journee ou on le rencontre le plus souvent (None si jamais)."""
         e = self.donnees["etres"].get(nom)

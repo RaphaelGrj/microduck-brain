@@ -18,6 +18,11 @@ import os
 HEAD_PITCH = float(os.environ.get("HEAD_PITCH", "0"))
 DXS = (-0.04, -0.02, 0.0, 0.02, 0.04)   # erreur en avant (m)
 DYS = (-0.03, 0.0, 0.03)                # erreur laterale (m)
+# Grilles personnalisees (ex. tir tolerant) : KICK_DXS="-0.03,0,0.03,0.06" KICK_DYS="-0.025,0,0.025"
+if os.environ.get("KICK_DXS"):
+    DXS = tuple(float(v) for v in os.environ["KICK_DXS"].split(","))
+if os.environ.get("KICK_DYS"):
+    DYS = tuple(float(v) for v in os.environ["KICK_DYS"].split(","))
 
 c = RobotdClient(SOCK_PATH)
 c.request("robot.subscribe", {})
