@@ -48,6 +48,8 @@ def test_assemblage_selon_disponibilite():
     assert len(a["extras"]["tof"].beams) == 64 and a["pont"] is None and a["options"] == {}
     a = _assemble(["--sans-camera"], sock_tof_existe=False)
     assert set(a["extras"]) == {"memoire"}, "sans tofd ni camera : seulement la memoire"
+    a = _assemble(["--sans-camera", "--micro"], sock_tof_existe=False)
+    assert len(a["sources"]) == 1 and len(a["fils"]) == 1, "le micro est une source d'evenements"
 
 
 def test_assemblage_avec_home_assistant():

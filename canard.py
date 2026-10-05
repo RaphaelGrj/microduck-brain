@@ -7,10 +7,11 @@
   - camera (MICRODUCK_FRAME_URL, route /frame de mediad) : detection de mouvement pour "1-2-3 soleil", analysee
     seulement pendant le jeu ;
   - veille du chat (YOLO, `--chat`) : seulement si le modele est present ET si la machine le supporte (pas un Pi 3B+) ;
+  - micro (`--micro`, ALSA via arecord, MICRODUCK_MICRO) : reflexes sonores (audio.py) - NON TESTE sur le robot ;
   - Home Assistant (`ha.toml`) : evenements de la maison, etat du canard, routines [cerveau] (heures calmes, bonjour) ;
   - memoire persistante (memoire.py).
 
-Usage : bash ~/run-brain.sh canard.py [ha.toml] [duree_s] [--sans-ha] [--sans-camera] [--chat]
+Usage : bash ~/run-brain.sh canard.py [ha.toml] [duree_s] [--sans-ha] [--sans-camera] [--chat] [--micro]
 """
 import os
 import sys
@@ -49,6 +50,12 @@ def assembler(client, args, log=print, cfg=None):
             log("veille du chat : active")
         else:
             log(f"veille du chat : modele absent ({animaux.MODELE_PAR_DEFAUT})")
+    if "--micro" in args:
+        import audio
+        micro = audio.MicroAlsa(peripherique=os.environ.get("MICRODUCK_MICRO"))
+        fils.append(micro)
+        sources.append(micro.source)
+        log(f"micro : {os.environ.get('MICRODUCK_MICRO') or 'peripherique ALSA par defaut'} (reflexes sonores)")
     pont, options = None, {}
     if cfg is not None:
         options = pont_ha.options_cerveau(cfg)

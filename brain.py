@@ -714,6 +714,36 @@ class VaAuCoin(Etat):
 
 
 
+class Danse(Etat):
+    """De la musique (audio.py : battement regulier) : il hoche la tete en rythme et se dandine un peu, s'arrete avec
+    la musique (musique_fin) ou au bout de DUREE_MAX - pas un juke-box : DELAI_DANSE_S avant de recommencer."""
+    nom = "danse"
+    DUREE_MAX = 30.0
+
+    def __init__(self):
+        self.bpm = 100
+
+    def entre(self, brain):
+        self.periode = 60.0 / (self.bpm / 2 if self.bpm > 130 else self.bpm)    # a 180 BPM, un hochement sur deux
+        brain.ctx.sound("chirp")
+
+    def duree(self, brain):
+        return self.DUREE_MAX
+
+    def sur_evenement(self, brain, base):
+        if base == "musique_fin":
+            brain.fin_etat = brain.t_etat + 0.5
+            return True
+        return base.startswith("musique")
+
+    def pas(self, brain, t):
+        k = gestures._smooth(t, 0.0, 1.0) * (1.0 - gestures._smooth(t, brain.fin_etat - 1.0, brain.fin_etat))
+        phase = 2 * math.pi * t / self.periode
+        brain.ctx.head((0.0, 0.2 * k * max(0.0, math.sin(phase)), 0.0, 0.12 * k * math.sin(phase / 2)))
+        brain.ctx.pose((0.0, 0.12 * k * math.sin(phase / 2), 0.0) if k > 0.05 else None)
+        brain.ctx.move()
+
+
 class Accueil(Etat):
     """Un habitant rentre a la maison (presence Home Assistant, voir pont_ha.py). L'accueil depend de la familiarite
     (memoire.py : reservee au debut, chaleureuse avec le temps) et de la duree de l'absence (simple signe s'il est sorti
@@ -915,6 +945,7 @@ class Brain:
     CHUTES_AGACE = 3
     FENETRE_CHUTES_S = 600.0
     VEILLE_AGACE_S = 900.0
+    DELAI_DANSE_S = 300.0       # une danse au plus toutes les 5 min (initiative rare, pas un juke-box)
     TAQUIN_PROBA = 0.2          # "non" theatral avant d'accepter de jouer (registre du jeu seulement, jamais la securite)
     # evenement de la maison -> (etat de reaction, hausse d'eveil)
     REACTIONS_MAISON = {
@@ -985,6 +1016,10 @@ class Brain:
             "soleil": Soleil(),                                    # jeu "1-2-3 soleil" (camera + ToF)
             "va_au_coin": VaAuCoin(),                              # fatigue : rejoindre son coin de sieste
             "taquin": Sequence("taquin", [("non", "inquire")]),    # "non..." puis il joue quand meme
+            # reflexes sonores (audio.py)
+            "appel": Sequence("appel", [("curieux", "inquire"), ("oui", "greet")]),   # deux claquements : "oui ?"
+            "bravo": Sequence("bravo", [("content", "wheee")]),                       # applaudissements
+            "danse": Danse(),                                                        # musique : hochements en rythme
         }
         self.chutes = []                        # t_global des dernieres chutes (garde-fou "chat agace")
         self.veille_jusqua = -1.0               # repos force apres une serie de chutes
@@ -1112,6 +1147,16 @@ class Brain:
             elif nom == "chat":
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.3)
                 self._bascule("regarde_chat" if "chat" in self.ctx.extras else "curious")
+            elif base == "appel":
+                self.humeur.eveil = min(1.0, self.humeur.eveil + 0.3)
+                self._bascule("appel")
+            elif base == "applaudissements":
+                self.humeur.eveil = min(1.0, self.humeur.eveil + 0.3)
+                self._bascule("bravo")
+            elif base == "musique" and self.t_global - self.derniere_fois.get("danse", -1e9) >= self.DELAI_DANSE_S:
+                self.derniere_fois["danse"] = self.t_global
+                self.etats["danse"].bpm = int(detail) if detail.isdigit() else 100
+                self._bascule("danse")
             elif nom == "main":
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.2)
                 self._bascule("main_tendue")
