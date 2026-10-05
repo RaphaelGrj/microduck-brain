@@ -367,6 +367,7 @@ class PontHA:
             "etat": brain.courant.nom, "energie": brain.humeur.energie, "eveil": brain.humeur.eveil,
             "tombe": bool(state.get("safety", {}).get("fallen")), "politique": state.get("policy"),
             "batterie": state.get("battery"), "odom": state.get("odom"), "chat_visible": chat_visible,
+            "presents": sorted(getattr(brain, "presents", None) or []),
         }
 
     def entites_du_canard(self):
@@ -380,6 +381,9 @@ class PontHA:
             "sensor.microduck_eveil": (round(i["eveil"] * 100), {
                 "friendly_name": "Microduck - eveil", "unit_of_measurement": "%", "icon": "mdi:eye"}),
             "sensor.microduck_politique": (i["politique"], {"friendly_name": "Microduck - politique active"}),
+            "sensor.microduck_habitants_presents": (len(i["presents"]), {
+                "friendly_name": "Microduck - habitants presents (connus de lui)", "icon": "mdi:account-group",
+                "noms": ", ".join(i["presents"]) or None}),
             "binary_sensor.microduck_tombe": ("on" if i["tombe"] else "off", {
                 "friendly_name": "Microduck - tombe", "device_class": "problem"}),
         }

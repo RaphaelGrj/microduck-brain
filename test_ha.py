@@ -79,6 +79,7 @@ def test_publication():
         assert ha.etats["binary_sensor.microduck_tombe"]["state"] == "off"
         assert ha.etats["sensor.microduck_etat"]["state"] == "chill"
         assert ha.etats["sensor.microduck_eveil"]["state"] == "20"
+        assert ha.etats["sensor.microduck_habitants_presents"]["state"] == "0"   # FauxBrain sans "presents"
         assert ha.etats["sensor.microduck_position"]["state"] == "1.00,2.00"
         etat = faux_etat()
         etat["safety"]["fallen"] = True                               # une chute doit remonter vite
@@ -105,11 +106,14 @@ def test_publication_chat_visible():
     pont = pont_ha.PontHA({**CFG, "url": ha.url, "url_ws": ha.url_ws}, JETON, log=print)
     fb = FauxBrain()
     fb.ctx = type("C", (), {"extras": {"chat": FauxVeilleChatPourHA(visible=False)}})()
+    fb.presents = {"Raphael"}       # habitant present (retour/depart HA) : verifie en meme temps que le chat
     pont.photographier(fb, faux_etat())
     pont.demarrer()
     try:
         assert attendre(lambda: "binary_sensor.microduck_chat_vu" in ha.etats), ha.etats.keys()
         assert ha.etats["binary_sensor.microduck_chat_vu"]["state"] == "off"
+        assert ha.etats["sensor.microduck_habitants_presents"]["state"] == "1"
+        assert ha.etats["sensor.microduck_habitants_presents"]["attributes"]["noms"] == "Raphael"
         fb.ctx.extras["chat"].suivi.visible = True
         pont.photographier(fb, faux_etat())
         assert attendre(lambda: ha.etats["binary_sensor.microduck_chat_vu"]["state"] == "on"), "chat visible non publie"
