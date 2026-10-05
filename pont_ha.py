@@ -300,6 +300,7 @@ class PontHA:
         self._derniers = {}                     # entite -> (etat, instant de la derniere publication)
         self._threads = []
         self.mqtt = None                        # PublieurMQTT si [mqtt] actif = true (sinon publication REST)
+        self._derniere_vue_chat = None           # time.time() de la derniere fois ou la veille camera l'a vu
 
     # evenements maison -> cerveau
     def _sur_changement(self, entite, ancien, nouveau, duree_ancien=None):
@@ -357,10 +358,15 @@ class PontHA:
     # canard -> maison
     def photographier(self, brain, state):
         """A passer a brain.run(a_chaque_tick=...) : memorise l'etat courant (rapide, sans reseau)."""
+        # veille camera du chat (chat.py, extras du cerveau) : optionnelle, absente dans les tests qui n'en ont pas besoin.
+        chat = (getattr(brain, "ctx", None) and (brain.ctx.extras or {}).get("chat"))
+        chat_visible = bool(chat is not None and getattr(getattr(chat, "suivi", None), "visible", False))
+        if chat_visible:
+            self._derniere_vue_chat = time.time()
         self.instantane = {
             "etat": brain.courant.nom, "energie": brain.humeur.energie, "eveil": brain.humeur.eveil,
             "tombe": bool(state.get("safety", {}).get("fallen")), "politique": state.get("policy"),
-            "batterie": state.get("battery"), "odom": state.get("odom"),
+            "batterie": state.get("battery"), "odom": state.get("odom"), "chat_visible": chat_visible,
         }
 
     def entites_du_canard(self):
@@ -385,6 +391,10 @@ class PontHA:
             ent["sensor.microduck_position"] = (f"{p[0]:.2f},{p[1]:.2f}", {
                 "friendly_name": "Microduck - position (odometrie)", "x": round(p[0], 3), "y": round(p[1], 3),
                 "cap_deg": round(i["odom"]["yaw"] * 57.2958, 1)})
+        attrs_chat = {"friendly_name": "Microduck - chat vu", "icon": "mdi:cat"}
+        if self._derniere_vue_chat is not None:
+            attrs_chat["derniere_vue_il_y_a_s"] = round(time.time() - self._derniere_vue_chat, 1)
+        ent["binary_sensor.microduck_chat_vu"] = ("on" if i.get("chat_visible") else "off", attrs_chat)
         return ent
 
     def _publier(self):

@@ -91,6 +91,37 @@ def test_publication():
     print("publication : OK (entites sensor.microduck_*, chute remontee, appel de service)")
 
 
+class FauxVeilleChatPourHA:
+    def __init__(self, visible):
+        self.suivi = type("S", (), {"visible": visible})()
+
+
+def test_publication_chat_visible():
+    # "chat vu au salon" (ROADMAP, table "Le chat") : une entite binary_sensor refletant la veille camera
+    # (chat.py, accessible via brain.ctx.extras), absente -> off plutot que de planter quand aucun cerveau
+    # complet n'est branche (cas des autres tests de ce fichier, FauxBrain sans ctx).
+    ha = mock_ha.MockHA(JETON)
+    pont = pont_ha.PontHA({**CFG, "url": ha.url, "url_ws": ha.url_ws}, JETON, log=print)
+    fb = FauxBrain()
+    fb.ctx = type("C", (), {"extras": {"chat": FauxVeilleChatPourHA(visible=False)}})()
+    pont.photographier(fb, faux_etat())
+    pont.demarrer()
+    try:
+        assert attendre(lambda: "binary_sensor.microduck_chat_vu" in ha.etats), ha.etats.keys()
+        assert ha.etats["binary_sensor.microduck_chat_vu"]["state"] == "off"
+        fb.ctx.extras["chat"].suivi.visible = True
+        pont.photographier(fb, faux_etat())
+        assert attendre(lambda: ha.etats["binary_sensor.microduck_chat_vu"]["state"] == "on"), "chat visible non publie"
+        fb.ctx.extras["chat"].suivi.visible = False
+        pont.photographier(fb, faux_etat())
+        assert attendre(lambda: ha.etats["binary_sensor.microduck_chat_vu"]["state"] == "off"), "chat parti non publie"
+        assert "derniere_vue_il_y_a_s" in ha.etats["binary_sensor.microduck_chat_vu"]["attributes"]
+    finally:
+        pont.stop()
+        ha.arreter()
+    print("chat vu : OK (on pendant la visibilite, off sinon, derniere vue memorisee)")
+
+
 def test_jeton_refuse():
     ha = mock_ha.MockHA(JETON)
     log = []
@@ -495,6 +526,7 @@ if __name__ == "__main__":
     test_config_et_verifier()
     test_evenements()
     test_publication()
+    test_publication_chat_visible()
     test_jeton_refuse()
     test_reconnexion()
     test_cerveau()
