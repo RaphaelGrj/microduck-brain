@@ -5,7 +5,7 @@
   - capteur de distance (tofd, TOFD_SOCK) : promenade sure, main tendue, jeu, coin de sieste - sans lui le canard ne
     marche jamais (prudence) ;
   - camera (MICRODUCK_FRAME_URL, route /frame de mediad) : detection de mouvement pour "1-2-3 soleil", analysee
-    seulement pendant le jeu ;
+    seulement pendant le jeu ; veille de la balle (taquineries : pousser, mime de vol), 2 images par seconde ;
   - veille du chat (YOLO, `--chat`) : seulement si le modele est present ET si la machine le supporte (pas un Pi 3B+) ;
   - micro (`--micro`, ALSA via arecord, MICRODUCK_MICRO) : reflexes sonores (audio.py) - NON TESTE sur le robot ;
   - Home Assistant (`ha.toml`) : evenements de la maison, etat du canard, routines [cerveau] (heures calmes, bonjour) ;
@@ -35,9 +35,13 @@ def assembler(client, args, log=print, cfg=None):
     if "--sans-camera" not in args:
         import mouvement
         import vision
+        import balle
         veille_mvt = mouvement.VeilleMouvement(vision.grab_frame)
-        extras["mouvement"], fils = veille_mvt, fils + [veille_mvt]
-        log(f"camera : {vision.FRAME_URL} (analysee seulement pendant les jeux)")
+        veille_balle = balle.VeilleBalle(vision.grab_frame)
+        extras["mouvement"], extras["balle"] = veille_mvt, veille_balle
+        fils += [veille_mvt, veille_balle]
+        crochets.append(veille_balle.etat_robot_hook)
+        log(f"camera : {vision.FRAME_URL} (mouvement pendant les jeux ; balle 2 fois par seconde)")
     if "--chat" in args:
         import animaux
         if animaux.MODELE_PAR_DEFAUT.exists():

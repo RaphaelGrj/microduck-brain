@@ -68,3 +68,41 @@ class DetecteurMain:
             self.dernier_evenement = t
             return ["main"]
         return []
+
+
+class DetecteurApproche:
+    """Un objet BAS qui se rapproche d'un canard immobile (le robot aspirateur, une petite voiture...) : points du ToF a
+    2-12 cm du sol dans un couloir de +-25 cm devant, dont le plus proche a avance d'au moins 12 cm en une seconde et
+    se trouve a moins de 80 cm. Un evenement au plus toutes les `delai_s`."""
+
+    H = (0.02, 0.12)
+    DEMI_LARGEUR = 0.25
+    PORTEE = 1.0
+    AVANCE_M = 0.12
+    PRES_M = 0.80
+
+    def __init__(self, delai_s=30.0):
+        self.delai_s = delai_s
+        self.historique = []
+        self.dernier_evenement = None
+        self.distance = None                    # derniere distance de l'objet bas le plus proche (m) ou None
+
+    def reinitialiser(self):
+        self.historique = []
+        self.distance = None
+
+    def mise_a_jour(self, points, t):
+        if points is None:
+            return []
+        bas = [x for x, y, h in points if 0.05 < x <= self.PORTEE and abs(y) <= self.DEMI_LARGEUR
+               and self.H[0] <= h <= self.H[1]]
+        self.distance = min(bas) if bas else None
+        self.historique = [(tt, d) for tt, d in self.historique if t - tt <= 1.0] + [(t, self.distance)]
+        if self.distance is None or self.distance > self.PRES_M:
+            return []
+        avant = [d for tt, d in self.historique if d is not None and t - tt >= 0.5]
+        if avant and max(avant) - self.distance >= self.AVANCE_M and (
+                self.dernier_evenement is None or t - self.dernier_evenement >= self.delai_s):
+            self.dernier_evenement = t
+            return ["objet_approche"]
+        return []

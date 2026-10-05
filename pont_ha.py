@@ -52,6 +52,8 @@ REACTIONS_PAR_TYPE = {       # etats connus par type d'integration ; pour les au
     # etat (une entite event.* de sonnette change d'etat - son horodatage - a chaque appui).
     "sonnette": {"on": "sonnette"},                 # binary_sensor de sonnette
     "sonnette_event": {"*": "sonnette"},            # event.* (sonnettes recentes : Ring, Reolink, Aqara...)
+    "aspirateur": {"cleaning": "aspirateur_on", "docked": "aspirateur_off", "idle": "aspirateur_off",   # vacuum.*
+                   "returning": "aspirateur_off", "paused": "aspirateur_off", "error": "aspirateur_off"},
     "machine": {"finished": "machine_finie", "end": "machine_finie", "complete": "machine_finie",   # Home Connect,
                 "completed": "machine_finie", "error": "machine_echec", "failure": "machine_echec"},  # ThinQ, SmartThings...
 }

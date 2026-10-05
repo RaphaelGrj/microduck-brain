@@ -26,6 +26,7 @@ import math
 import sys
 import time
 
+import balle
 import geometry
 import track
 import vision
@@ -68,7 +69,7 @@ PROFILS_TIR = {
     "tolerant_droit": {"cible_x": {"left": CIBLE_X, "right": 0.11}, "tol_av": {"left": 0.025, "right": 0.035},
                        "tol_ar": {"left": 0.016, "right": 0.03}},
 }
-X_MIN_BALLE, Y_MIN_BALLE = 0.05, 0.09    # zone occupee par le canard : aucune balle reelle ne peut y etre
+from balle import X_MIN_BALLE, Y_MIN_BALLE   # noqa: E402,F401  zone occupee par le canard (balle.py)
 D_ENTREE_AJUST = 0.35                    # on passe en AJUSTER sous cette distance
 D_SORTIE_AJUST = 0.45                    # et on repasse en VISER au-dela (balle repoussee)
 MAX_AJUSTEMENTS = 10
@@ -223,20 +224,8 @@ class Approche:
 
     # --- perception -------------------------------------------------------------------
     def estimer(self, det, s):
-        """Position (x, y) de la balle dans le repere du tronc, en m (None si inutilisable)."""
-        e = geometry.balle_dans_tronc(det, s["frames"]["camera"], s["odom"]["position"][2])
-        sol, ray = e["sol"], (None if det.touche_bord else e["rayon"])   # le rayon apparent est faux si le disque est tronque
-        if sol is not None and ray is not None:
-            p = (0.5 * (sol[0] + ray[0]), 0.5 * (sol[1] + ray[1]))
-        else:
-            p = sol if sol is not None else ray
-            p = None if p is None else (p[0], p[1])
-        if p is not None and p[0] < X_MIN_BALLE and abs(p[1]) < Y_MIN_BALLE:
-            # Une balle ne peut pas etre SOUS le canard : c'est lui-meme (pieds orange visibles au bord bas de
-            # l'image quand la tete est baissee a fond). Sans ce filtre l'asservissement s'y accroche et
-            # croit la balle au pied alors qu'elle roule a 1,5 m (diag_beak.py, essai d'evaluation 1).
-            return None
-        return p
+        """Position (x, y) de la balle dans le repere du tronc, en m (None si inutilisable) : voir balle.estimer."""
+        return balle.estimer(det, s)
 
     def enregistrer(self, est, s):
         self.mesure = (est, tuple(s["odom"]["position"][:2]), s["odom"]["yaw"])

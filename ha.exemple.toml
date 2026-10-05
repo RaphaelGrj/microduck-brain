@@ -76,6 +76,7 @@ entite = "A_REMPLIR"                # ex. "person.raphael"
 #   "sonnette"       : binary_sensor de sonnette (on = on sonne)
 #   "sonnette_event" : entité event.* d'une sonnette récente (chaque appui change son état)
 #   "machine"        : appareil connecté qui annonce son état (Home Connect, LG ThinQ, SmartThings : finished/end...)
+#   "aspirateur"     : robot aspirateur (entité vacuum.*) : curiosité à son départ, taquinerie / écart quand il approche
 #   "puissance"      : appareil « bête » sur une prise connectée qui mesure la puissance (W) ; réglages facultatifs :
 #                      seuil_w = 5, fin_apres_s = 180 (sous le seuil aussi longtemps = fini), marche_min_s = 300
 #   ou écris `reactions = { etat = "machine_finie" }` toi-même (comme pour la Saturn).
@@ -83,6 +84,11 @@ entite = "A_REMPLIR"                # ex. "person.raphael"
 nom = "Sonnette"
 type = "sonnette_event"
 entite = "A_REMPLIR"                # ex. "event.sonnette_entree"
+
+[[appareil]]
+nom = "Aspirateur"
+type = "aspirateur"                 # vacuum.* : le canard le regarde arriver, et s'ecarte (parfois apres l'avoir taquine)
+entite = "A_REMPLIR"                # ex. "vacuum.roborock"
 
 [[appareil]]
 nom = "Lave-linge"

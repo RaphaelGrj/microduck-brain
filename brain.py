@@ -21,7 +21,7 @@ import time
 import gestures
 from exploration import Exploration
 from caresse import DetecteurCaresse
-from main_tendue import DetecteurMain
+from main_tendue import DetecteurApproche, DetecteurMain
 from navigation import AllerVers
 from taquineries import Malice
 
@@ -925,6 +925,125 @@ class DernierMot(Etat):
         brain.ctx.move()
 
 
+# --- Taquineries, lot B : jouer avec les objets au sol, taquiner l'aspirateur ---------------------------------------
+
+class PousseBalle(Etat):
+    """Quelqu'un tend la main vers la balle posee devant le canard : il la pousse du pied juste hors de portee (une
+    rafale de marche de 0,6 s - "le pied pousse la balle au dernier pas", constat de la Phase 2), puis releve la tete,
+    tout content. Deux fois par 10 min au plus (Malice.LIMITES). Jamais s'il y a un vide devant."""
+    nom = "pousse_balle"
+    taquinerie = True
+
+    def entre(self, brain):
+        brain.ctx.sound("chirp")
+        tof = brain.ctx.extras.get("tof")
+        lib = tof.libre(brain.ctx.state) if tof is not None and brain.ctx.state is not None else None
+        self.annule = lib is None or lib.get("vide", math.inf) < 0.3
+
+    def duree(self, brain):
+        return 0.6 if self.annule else 2.8
+
+    def pas(self, brain, t):
+        if self.annule:
+            brain.ctx.head((0.0, 0.0, 0.0, 0.0))
+            brain.ctx.move()
+            return
+        if t < 1.0:
+            brain.ctx.head((0.0, 0.0, 0.0, 0.0))     # tete au neutre : la marche est franche (ZONE_MORTE.md)
+            brain.ctx.move(vx=0.4 if 0.3 <= t < 0.9 else 0.0)
+            return
+        if t < 1.03:
+            brain.ctx.sound("wheee")
+        k = gestures._smooth(t, 1.0, 1.4) * (1.0 - gestures._smooth(t, 2.2, 2.8))
+        brain.ctx.head((0.0, -0.3 * k, 0.0, 0.15 * k * math.sin(2 * math.pi * t / 0.8)))
+        brain.ctx.move()
+
+
+class MimeVol(Etat):
+    """Mime de vol d'un objet au sol : il pique la balle (skill officiel `ground_pick`, pilote par le robot), referme le
+    bec, prend un air fier et se detourne avec "son butin". On ne sait pas encore si `ground_pick` attrape vraiment un
+    objet : d'ici la, c'est un MIME (a requalifier en vrai vol/planque une fois le skill mesure sur le robot)."""
+    nom = "mime_vol"
+    taquinerie = True
+
+    def entre(self, brain):
+        r = brain.ctx.client.request("robot.do", {"skill": "ground_pick"})
+        self.refuse = isinstance(r, dict) and "error" in r
+        self.t_fin_pique = None
+
+    def duree(self, brain):
+        return 1.0 if self.refuse else 12.0
+
+    def pas(self, brain, t):
+        if self.refuse:
+            return
+        if self.t_fin_pique is None:             # le robot pique : on n'envoie rien (le skill pilote tout le corps)
+            pol = (brain.ctx.state or {}).get("policy")
+            if (t >= 1.0 and pol != "ground_pick") or t >= 6.0:
+                self.t_fin_pique = t
+                brain.ctx.bouche(0.0)             # bec ferme : "je l'ai"
+                brain.ctx.sound("chirp")
+            return
+        u = t - self.t_fin_pique
+        if u < 1.8:
+            brain.ctx.head(gestures.fier(u))
+            brain.ctx.move()
+        elif u < 3.0:                            # il se detourne avec son butin
+            brain.ctx.head((0.0, 0.0, 0.0, 0.0))
+            brain.ctx.move(vyaw=V_ROTATION)
+        else:
+            if u < 3.03:
+                brain.ctx.sound("wheee")
+            brain.ctx.head((0.0, -0.2, 0.0, 0.1))
+            brain.ctx.move()
+            if u >= 4.0:
+                brain.fin_etat = t
+
+
+class Aspirateur(Etat):
+    """Le robot aspirateur arrive vers lui. En taquinerie (`taquine`) : il lui barre le chemin un instant, tete baissee
+    vers lui avec un petit "peck" provocateur ; puis, dans tous les cas, il s'ecarte - pivot vers le cote le plus
+    degage et quelques pas - AVANT que l'aspirateur ne soit a 30 cm (un canard de 800 g ne se fait pas bousculer).
+    Jamais de poursuite."""
+    nom = "aspirateur"
+    TIENT_S = 2.5
+    TROP_PRES_M = 0.30
+
+    def __init__(self):
+        self.taquine = False
+
+    def entre(self, brain):
+        self.taquinerie_jouee = self.taquine
+        if self.taquine:
+            brain.malice.noter(brain, "barre_aspirateur")
+            brain.ctx.sound("peck")
+        self.t_ecart = self.TIENT_S if self.taquine else 0.0
+        self.signe = brain.cote_degage if getattr(brain, "cote_degage", None) else brain.rng.choice((-1.0, 1.0))
+        self.taquine = False
+
+    def duree(self, brain):
+        return self.t_ecart + 3.0
+
+    def pas(self, brain, t):
+        d = brain.detecteur_approche.distance
+        if t < self.t_ecart and (d is None or d > self.TROP_PRES_M):
+            brain.ctx.head((0.0, 0.3, 0.0, 0.15))
+            brain.ctx.move()
+            return
+        if t < self.t_ecart:
+            self.t_ecart = t                     # trop pres : on s'ecarte tout de suite
+        u = t - self.t_ecart
+        if u < 1.2:
+            brain.ctx.head((0.0, 0.0, 0.0, 0.0))
+            brain.ctx.move(vyaw=V_ROTATION * self.signe)
+            return
+        tof = brain.ctx.extras.get("tof")
+        lib = tof.libre(brain.ctx.state) if tof is not None and brain.ctx.state is not None else None
+        libre = lib is not None and lib["devant"] >= LIBRE_MIN
+        brain.ctx.head((0.0, TETE_PROMENADE, 0.0, 0.0))
+        brain.ctx.move(vx=V_PROMENADE if libre and u < 2.6 else 0.0)
+
+
 class Fier(Etat):
     """Petit air fier apres une blague devenue un running gag ; amplitude = Malice.fierte (trophee de malice)."""
     nom = "fier"
@@ -1148,6 +1267,8 @@ class Brain:
     TAQUIN_PROBA = 0.2
     P_TAQUINE = 0.35            # quand une taquinerie est permise, elle remplace la reaction normale 1 fois sur 3
     P_REGARD_MYSTERE = 0.04     # par passage par chill, quand c'est permis
+    P_POUSSE_BALLE = 0.6        # main vers la balle a ses pieds : il la pousse hors de portee
+    P_MIME_VOL = 0.3            # balle a ses pieds, un familier present : il fait mine de la voler
     ESQUIVE_S = 60.0          # "non" theatral avant d'accepter de jouer (registre du jeu seulement, jamais la securite)
     # evenement de la maison -> (etat de reaction, hausse d'eveil)
     REACTIONS_MAISON = {
@@ -1226,9 +1347,12 @@ class Brain:
             "feinte_bec": FeinteBec(), "esquive": Esquive(), "faux_endormi": FauxEndormi(),
             "sourde_oreille": SourdeOreille(), "regard_mystere": RegardMystere(), "baillement": Baillement(),
             "dernier_mot": DernierMot(), "fier": Fier(),
+            "pousse_balle": PousseBalle(), "mime_vol": MimeVol(), "aspirateur": Aspirateur(),
         }
         self.etats["taquin"].taquinerie = True
         self.malice = Malice(self.ctx.extras.get("memoire"))
+        self.detecteur_approche = DetecteurApproche()
+        self.aspirateur_actif = False
         self.t_esquive = -1e9                   # derniere main esquivee (la suivante, dans la minute, est acceptee)
         self.t_dernier_accueil = -1e9
         self.chutes = []                        # t_global des dernieres chutes (garde-fou "chat agace")
@@ -1369,6 +1493,14 @@ class Brain:
             elif base == "appel":
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.3)
                 self._bascule(self._taquinerie(("faux_endormi", "sourde_oreille"), humain=True) or "appel")
+            elif base in ("aspirateur_on", "aspirateur_off"):
+                avant, self.aspirateur_actif = self.aspirateur_actif, base == "aspirateur_on"
+                if self.aspirateur_actif and not avant and self.courant.nom in ("chill", "look"):
+                    self._bascule("curious")             # tiens, le voila : un regard curieux, un peu mefiant
+            elif base == "objet_approche":
+                asp = self.etats["aspirateur"]
+                asp.taquine = bool(self._taquinerie(("barre_aspirateur",), humain=True, proba=0.5))
+                self._bascule("aspirateur")
             elif base == "discussion_longue":
                 choix = self._taquinerie(("baillement",), humain=True, proba=1.0)
                 if choix:
@@ -1391,7 +1523,9 @@ class Brain:
                     self.etats["main_tendue"].son_entree = "coo"     # esquivee la fois d'avant : cette fois il accepte
                     self._bascule("main_tendue")
                 else:
-                    self._bascule(self._taquinerie(("feinte_bec", "esquive"), humain=True) or "main_tendue")
+                    vers_balle = self._main_vers_balle()
+                    choix = self._taquinerie(("pousse_balle",), humain=True, proba=self.P_POUSSE_BALLE) if vers_balle else None
+                    self._bascule(choix or self._taquinerie(("feinte_bec", "esquive"), humain=True) or "main_tendue")
             elif nom == "personne":
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.3)
                 self._bascule("curious")
@@ -1413,6 +1547,15 @@ class Brain:
         p = self.ctx.state["odom"]["position"]
         d = math.hypot(coin[0] - p[0], coin[1] - p[1])
         return coin if self.COIN_DISTANCE[0] <= d <= self.COIN_DISTANCE[1] else None
+
+    def _main_vers_balle(self):
+        """La main tendue vise-t-elle la balle posee devant le canard ? (main a moins de 15 cm de la balle, balle a
+        portee de pied : 6 a 25 cm devant)."""
+        veille, m = self.ctx.extras.get("balle"), self.detecteur_main.main
+        b = veille.position() if veille is not None else None
+        if b is None or m is None:
+            return False
+        return 0.06 <= b[0] <= 0.25 and abs(b[1]) <= 0.10 and math.hypot(m[1] - b[0], m[2] - b[1]) <= 0.15
 
     def _taquinerie(self, noms, humain=False, proba=None):
         """Une taquinerie a la place de la reaction normale ? -> son nom, ou None (budget, familiarite, stop, hasard)."""
@@ -1464,6 +1607,11 @@ class Brain:
             return "jeu_solitaire"
         if self.rng.random() < self.P_REGARD_MYSTERE and self.malice.permise(self, "regard_mystere"):
             return "regard_mystere"
+        veille_balle = self.ctx.extras.get("balle")
+        b = veille_balle.position() if veille_balle is not None else None
+        if (b is not None and 0.06 <= b[0] <= 0.25 and abs(b[1]) <= 0.10 and self.rng.random() < self.P_MIME_VOL
+                and self.malice.permise(self, "mime_vol")):
+            return "mime_vol"
         poids = {"look": 0.4, "turn": 0.2 + 0.3 * h.energie,
                  "wander": 0.15 + 0.4 * h.energie * (0.5 + h.eveil)}
         # Initiative rare et surprenante (principe Pollen : un duo surprise est un plaisir, un juke-box non) :
@@ -1504,6 +1652,9 @@ class Brain:
         tof = self.ctx.extras.get("tof")
         if tof is None or not hasattr(tof, "points"):
             return
+        if self.courant.nom == "aspirateur":
+            self.detecteur_approche.mise_a_jour(tof.points(state), self.t_global)   # distance suivie, sans evenement
+            return
         tete = getattr(self.ctx, "tete_cmd", None)
         if tete != getattr(self, "_tete_prec", None):
             self._tete_prec, self._t_tete_change = tete, self.t_global
@@ -1511,8 +1662,13 @@ class Brain:
         if (self.courant.nom not in self.REPOS_MAIN or self.mode_calme
                 or (not en_suivi and self.t_global - self._t_tete_change < self.TETE_STABLE_S)):
             self.detecteur_main.reinitialiser()
+            self.detecteur_approche.reinitialiser()
             return
-        evts = self.detecteur_main.mise_a_jour(tof.points(state), self.t_global)
+        points = tof.points(state)
+        if self.aspirateur_actif and not en_suivi:
+            for e in self.detecteur_approche.mise_a_jour(points, self.t_global):
+                self.evenement(e)
+        evts = self.detecteur_main.mise_a_jour(points, self.t_global)
         chat = self.ctx.extras.get("chat")
         if chat is not None and getattr(getattr(chat, "suivi", None), "visible", False):
             return

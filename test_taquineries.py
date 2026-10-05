@@ -222,3 +222,134 @@ def test_fausse_feinte_avant_le_tir():
     assert min(avant) == -approach.YAW_FEINTE, "la tete regarde d'un cote"
     assert all(y == 0.0 for y in avant[-20:]), "tete au neutre au moment du tir (la fenetre de tir l'exige)"
     assert tetes[i_tir][1] == {"skill": "kick_left"} and ap.resultat["feinte"]
+
+
+# --- lot B : objets au sol, aspirateur ---------------------------------------------------------------------------
+import math  # noqa: E402
+
+from main_tendue import DetecteurApproche  # noqa: E402
+
+
+class FauxTofScene:
+    """ToF factice : points() et libre() pilotes par le test."""
+    def __init__(self):
+        self.pts, self.devant, self.vide = [], 3.0, math.inf
+
+    def noter_etat(self, s):
+        pass
+
+    def points(self, s):
+        return list(self.pts)
+
+    def libre(self, s):
+        return {"devant": self.devant, "gauche": 3.0, "droite": 3.0, "vide": self.vide, "n": len(self.pts)}
+
+
+class FausseVeilleBalle:
+    def __init__(self, pos=None):
+        self.pos = pos
+
+    def position(self, age_max=1.5):
+        return self.pos
+
+
+def test_detecteur_approche_objet_bas():
+    d = DetecteurApproche()
+    ev = []
+    for i in range(60):                               # de 1,0 m a 0,4 m en 3 s, a 6 cm du sol
+        t = i * 0.05
+        ev += d.mise_a_jour([(1.0 - 0.2 * t, 0.0, 0.06)], t)
+    assert ev == ["objet_approche"]
+    d = DetecteurApproche()
+    assert not any(d.mise_a_jour([(0.5, 0.0, 0.06)], i * 0.05) for i in range(60)), "un meuble immobile"
+    d = DetecteurApproche()
+    assert not any(d.mise_a_jour([(1.0 - 0.01 * i, 0.0, 0.25)], i * 0.05) for i in range(60)), "trop haut (une jambe)"
+
+
+def _simule_aspirateur(b, c, tof, secondes, vitesse=0.25, d0=1.2, t0=0.0):
+    """L'aspirateur avance vers le canard ; le canard qui pivote le sort de son couloir (le test le simplifie : des
+    que le canard tourne, l'aspirateur n'est plus devant)."""
+    d = d0
+    dists = []
+    for i in range(int(secondes / 0.02)):
+        moves = [p for m, p in c.appels[-6:] if m == "robot.move"]
+        tourne = any(p["vyaw"] for p in moves)
+        d -= vitesse * 0.02
+        tof.pts = [] if tourne or d < 0.05 else [(d, 0.0, 0.06)]
+        dists.append((round(t0 + i * 0.02, 2), d, b.courant.nom, tourne))
+        b.tick({"t": t0 + i * 0.02, "safety": {"fallen": False}, "policy": "stand",
+                "odom": {"position": [0.0, 0.0, 0.11], "yaw": 0.0}}, 0.02)
+    return dists
+
+
+def test_aspirateur_s_ecarte_avant_30_cm():
+    for taquine in (False, True):
+        tof = FauxTofScene()
+        b, c, _ = cerveau(seed=110, extras={"tof": tof, "exploration": False})
+        b.fin_etat = 1e9
+        b.evenement("aspirateur_on")
+        simule(b, 3.0)                                # regard curieux, puis repos
+        b.fin_etat = 1e9
+        b._bascule("chill")
+        b.fin_etat = 1e9
+        if taquine:
+            b.malice.permise = lambda brain, nom, humain=False: nom == "barre_aspirateur"
+            b.P_TAQUINE = 1.0
+        trace = _simule_aspirateur(b, c, tof, 6.0)
+        assert "aspirateur" in [e[1] for e in b.journal], b.journal
+        premier_tour = next(i for i, x in enumerate(trace) if x[3])
+        assert trace[premier_tour][1] > 0.28, f"il doit s'ecarter avant 30 cm (taquine={taquine}) : {trace[premier_tour]}"
+        if taquine:
+            debut = next(i for i, x in enumerate(trace) if x[2] == "aspirateur")
+            assert premier_tour - debut >= 50, "en taquinerie, il lui barre d'abord le chemin un instant"
+
+
+def test_aspirateur_curiosite_a_son_arrivee():
+    b, c, _ = cerveau(seed=111)
+    simule(b, 2, evenements=[(0.5, "aspirateur_on")])
+    assert "curious" in [e[1] for e in b.journal] and b.aspirateur_actif
+    simule(b, 2, evenements=[(0.5, "aspirateur_off")])
+    assert not b.aspirateur_actif
+
+
+def test_pousse_la_balle_hors_de_portee_deux_fois_au_plus():
+    tof = FauxTofScene()
+    b, c, _ = cerveau(seed=112, extras={"tof": tof, "exploration": False, "balle": FausseVeilleBalle((0.12, 0.0))})
+    b.P_TAQUINE = b.P_POUSSE_BALLE = 1.0
+    for k in range(3):
+        b.detecteur_main.main = (b.t_global, 0.14, 0.02, 0.05)       # la main descend vers la balle
+        b.evenement("main")
+        simule(b, 4)
+        b.t_esquive = -1e9
+    noms = [e[1] for e in b.journal]
+    assert noms.count("pousse_balle") == 2, noms
+    rafales = [p["vx"] for m, p in c.appels if m == "robot.move" and p["vx"] > 0]
+    assert rafales and max(rafales) == 0.4 and len(rafales) <= 2 * 31, "deux rafales de 0,6 s, rien de plus"
+
+
+def test_pas_de_poussee_au_bord_d_un_vide():
+    tof = FauxTofScene()
+    tof.vide = 0.2
+    b, c, _ = cerveau(seed=113, extras={"tof": tof, "exploration": False, "balle": FausseVeilleBalle((0.12, 0.0))})
+    b.malice.permise = lambda brain, nom, humain=False: nom == "pousse_balle"
+    b.P_TAQUINE = b.P_POUSSE_BALLE = 1.0
+    b.detecteur_main.main = (b.t_global, 0.14, 0.02, 0.05)
+    b.evenement("main")
+    simule(b, 3)
+    assert "pousse_balle" in [e[1] for e in b.journal]
+    assert not any(m == "robot.move" and p["vx"] > 0 for m, p in c.appels), "jamais de pas vers un vide"
+
+
+def test_mime_de_vol_avec_ground_pick():
+    b, c, _ = cerveau(seed=114, extras={"balle": FausseVeilleBalle((0.15, 0.02))})
+    b.P_MIME_VOL = 1.0
+    b.t_global = 0.0
+    simule(b, 60)
+    assert "mime_vol" in [e[1] for e in b.journal], b.journal
+    assert ("robot.do", {"skill": "ground_pick"}) in c.appels
+    assert any(m == "robot.move" and p["vyaw"] for m, p in c.appels), "il se detourne avec son butin"
+    sans_balle, c2, _ = cerveau(seed=114, extras={"balle": FausseVeilleBalle(None)})
+    sans_balle.P_MIME_VOL = 1.0
+    sans_balle.t_global = 0.0
+    simule(sans_balle, 60)
+    assert "mime_vol" not in [e[1] for e in sans_balle.journal]

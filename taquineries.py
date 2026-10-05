@@ -23,7 +23,9 @@ FAMILIARITE_MIN = 0.6
 APRES_ACCUEIL_S = 300.0
 STOP_S = 1800.0
 NUIT = (22, 8)                  # sans heures calmes configurees : pas de taquinerie de 22 h a 8 h
-LIMITES = {"dernier_mot": (3, 600.0)}     # nom -> (nombre max, fenetre s) ; hors budget general
+LIMITES = {"dernier_mot": (3, 600.0),     # nom -> (nombre max, fenetre s) ; hors budget general
+           "pousse_balle": (2, 600.0),    # "une ou deux fois, pas une boucle sans fin"
+           "compte_eternuements": (4, 120.0)}
 RUNNING_GAG = 5                 # a partir de 5 fois la meme blague, il en est visiblement fier
 
 
