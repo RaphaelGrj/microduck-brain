@@ -39,6 +39,7 @@ class VeilleBalle(threading.Thread):
         self.actif = True
         self.etat_robot = None
         self.estimation = None                   # (instant monotonic, x, y) repere du tronc
+        self.pause = False                       # carte trop chaude (Brain._verifie_sante) : on n'analyse plus
 
     def etat_robot_hook(self, brain, state):
         self.etat_robot = state
@@ -49,7 +50,7 @@ class VeilleBalle(threading.Thread):
             t0 = time.monotonic()
             try:
                 etat = self.etat_robot
-                if etat is not None and etat.get("frames", {}).get("camera"):
+                if not self.pause and etat is not None and etat.get("frames", {}).get("camera"):
                     dets = vision.detect(self.grab(), couleurs=(self.couleur,))
                     p = estimer(dets[0], etat) if dets else None
                     if p is not None:

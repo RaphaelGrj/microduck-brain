@@ -476,6 +476,7 @@ class PontHA:
             "presents": sorted(getattr(brain, "presents", None) or []),
             "messages": list(getattr(brain, "messages", None) or []),
             "veille": getattr(brain, "t_global", 0.0) < getattr(brain, "veille_jusqua", -1.0),
+            "temperatures": dict(getattr(brain, "temperatures", None) or {}),
             "blagues": brain.malice.compte() if hasattr(brain, "malice") else None,
             "derniere_blague": (brain.malice.historique[-1][1] if getattr(getattr(brain, "malice", None), "historique", None)
                                 else None),
@@ -512,6 +513,11 @@ class PontHA:
         ent["sensor.microduck_messages"] = (len(msgs), {
             "friendly_name": "Microduck - messages a transmettre", "icon": "mdi:email-outline",
             "messages": ", ".join(msgs) or None})
+        t_moteurs = (i.get("temperatures") or {}).get("moteurs")
+        if t_moteurs is not None:
+            ent["sensor.microduck_temperature_servos"] = (round(t_moteurs), {
+                "friendly_name": "Microduck - servo le plus chaud", "unit_of_measurement": "°C",
+                "device_class": "temperature"})
         ent["binary_sensor.microduck_veille"] = ("on" if i.get("veille") else "off", {
             "friendly_name": "Microduck - en veille apres des chutes", "icon": "mdi:sleep"})
         if i.get("blagues") is not None:

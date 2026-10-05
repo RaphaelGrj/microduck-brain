@@ -318,6 +318,9 @@ class Nap(Etat):
             ctx.toggle_sit()
             self.leve = True
             ctx.head((0, 0, 0, 0))
+        elif self.assis and not self.leve and getattr(brain, "surchauffe", False):
+            # il a chaud : il halete, bec entrouvert en rythme (comme un canard au soleil), sans rever
+            ctx.bouche(0.25 + 0.15 * math.sin(2 * math.pi * 1.5 * t))
         elif self.assis and not self.leve:
             for reve in self.reves:
                 t0, duree, signe, joue = reve
@@ -330,6 +333,8 @@ class Nap(Etat):
                     break
 
     def sort(self, brain):
+        if getattr(brain, "surchauffe", False):
+            brain.ctx.bouche(0.0)               # fin de halètement
         if brain.ctx.sitting and not brain.reste_assis():
             brain.ctx.toggle_sit()
         brain.ctx.calme()

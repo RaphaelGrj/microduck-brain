@@ -164,6 +164,7 @@ class Brain:
             "attentif": Sequence("attentif", [("curieux", "chirp")]),            # on l'a appele par son nom
             "hesite": Sequence("hesite", [("curieux", "inquire")]),              # il n'a pas compris
             "compliment": Sequence("compliment", [("fier", "coo")]),             # "bravo" : fierte discrete
+            "chaud": Sequence("chaud", [("fatigue", "coo")]),                    # servos chauds : il s'affale
             # social
             "signature": Sequence("signature", [("curieux", "coo"), ("fier", "wheee")]),
             "gene": Sequence("gene", [("gene", "peck")]),                     # trebuche devant quelqu'un
@@ -179,6 +180,10 @@ class Brain:
         self.meteo = None                       # groupe meteo courant (Home Assistant) : soleil, pluie, neige, orage...
         self.chargeur = None                    # (x, y) odom ou la batterie est deja remontee (session en cours)
         self._charge_ref = None                 # (t, pourcentage, position) depuis le dernier deplacement
+        self.surchauffe = False                 # servos trop chauds (robot.health.motors.max_c)
+        self.cpu_chaud = False                  # carte trop chaude (robot.health.cpu_temp_c) : camera en pause
+        self.temperatures = {}                  # derniere lecture : {"moteurs": max_c, "cpu": c}
+        self._t_sante = -1e9
         self._audio_prec = None                 # derniers compteurs robot.state.audio (patch contrib/)
         self.porte = False                      # dans les bras (safety.picked_up)
         self.ignores, self._t_tentative, self._tentative_jugee = 0, None, False   # demandes d'attention ignorees
@@ -407,8 +412,9 @@ class Brain:
                 self._bascule("curious")
 
     def reste_assis(self):
-        """Pendant le mode calme ou la veille apres des chutes, on ne se releve pas entre deux siestes."""
-        return self.mode_calme or self.t_global < self.veille_jusqua
+        """Pendant le mode calme, la veille apres des chutes ou une surchauffe des servos, on ne se releve pas entre
+        deux siestes (se relever puis se rasseoir solliciterait justement les servos)."""
+        return self.mode_calme or self.t_global < self.veille_jusqua or self.surchauffe
 
     COIN_DISTANCE = (0.5, 4.0)               # m : plus pres, inutile de bouger ; plus loin, l'odometrie a trop derive
 
@@ -525,6 +531,8 @@ class Brain:
         if force:
             self.suivant_force = None
             return force
+        if self.surchauffe:
+            return "nap"                        # servos trop chauds : repos assis, jamais de marche, jusqu'a refroidir
         if self.mode_calme or self.t_global < self.veille_jusqua:
             return "nap"                        # sieste prolongee, assis : interrupteur calme, ou veille apres des chutes
         h = self.humeur
@@ -665,6 +673,46 @@ class Brain:
         if self.courant.nom != "main_tendue":
             for e in evts:
                 self.evenement(e)
+
+    SANTE_S = 30.0                      # robot.health toutes les 30 s
+    MOTEURS_CHAUD_C, MOTEURS_OK_C = 60.0, 50.0   # XL330 : coupure vers 70 degres ; hysteresis pour ne pas osciller
+    CPU_CHAUD_C, CPU_OK_C = 85.0, 75.0
+
+    def _verifie_sante(self):
+        """Auto-preservation thermique (ROADMAP) : servos chauds -> repos assis (et il halete) ; carte chaude -> la veille
+        camera de la balle se met en pause. Lu dans robot.health (robotd), toutes les SANTE_S."""
+        if self.t_global - self._t_sante < self.SANTE_S:
+            return
+        self._t_sante = self.t_global
+        try:
+            r = self.ctx.client.request("robot.health", {})
+        except Exception:
+            return
+        sante = (r or {}).get("result") if isinstance(r, dict) else None
+        if not isinstance(sante, dict):
+            return
+        moteurs = (sante.get("motors") or {}).get("max_c")
+        cpu = sante.get("cpu_temp_c")
+        self.temperatures = {"moteurs": moteurs, "cpu": cpu}
+        if moteurs is not None:
+            if not self.surchauffe and moteurs >= self.MOTEURS_CHAUD_C:
+                self.surchauffe = True
+                print(f"[{self.t_global:6.1f}s] servos chauds ({moteurs:.0f} C, {sante['motors'].get('hottest')}) : "
+                      "repos jusqu'a refroidir", flush=True)
+                if self.courant.nom not in ("nap", "alarme", "porte"):
+                    self.suivant_force = "nap"
+                    self._bascule("chaud")
+            elif self.surchauffe and moteurs <= self.MOTEURS_OK_C:
+                self.surchauffe = False
+                print(f"[{self.t_global:6.1f}s] servos refroidis ({moteurs:.0f} C)", flush=True)
+        if cpu is not None:
+            if not self.cpu_chaud and cpu >= self.CPU_CHAUD_C:
+                self.cpu_chaud = True
+            elif self.cpu_chaud and cpu <= self.CPU_OK_C:
+                self.cpu_chaud = False
+            veille = self.ctx.extras.get("balle")
+            if veille is not None:
+                veille.pause = self.cpu_chaud
 
     def _surveille_robotd(self, state):
         """Ce que robotd sait deja : la tete entendue par son micro (robot.state.audio : compteurs, voir
@@ -823,6 +871,7 @@ class Brain:
                 self._bascule("ebouriffe")
 
         self._surveille_robotd(state)
+        self._verifie_sante()
         if self.courant.nom == "porte":
             self._traite_evenements_porte()
             self.t_etat += dt
