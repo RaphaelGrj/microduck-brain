@@ -2083,6 +2083,8 @@ class Brain:
 
     def tick(self, state, dt):
         """Un pas du cerveau, a appeler une fois par trame robot.state."""
+        if self.ctx.state is None and state.get("policy") == "sit":
+            self.ctx.sitting = True             # demarrage sur un canard deja assis (cerveau precedent arrete en sieste)
         self.ctx.state = state
         self.ctx.bec()
         if self.ctx.extras.get("tof") is not None:
@@ -2168,8 +2170,11 @@ class Brain:
             self._bascule(self._choisit_suivant())
 
     def arret(self):
-        """Sortie propre : on se leve si on dormait, tete neutre, mouvement arrete."""
+        """Sortie propre : on se leve si on dormait (meme en mode calme : le prochain cerveau doit trouver le canard
+        debout, comme il le suppose), tete neutre, mouvement arrete."""
         self.courant.sort(self)
+        if self.ctx.sitting:
+            self.ctx.toggle_sit()
         self.ctx.calme()
 
 

@@ -73,7 +73,7 @@ def test_publication():
     pont.photographier(FauxBrain(), faux_etat())
     pont.demarrer()
     try:
-        assert attendre(lambda: "sensor.microduck_batterie" in ha.etats), ha.etats.keys()
+        assert attendre(lambda: "binary_sensor.microduck_chat_vu" in ha.etats), ha.etats.keys()   # la derniere publiee
         assert ha.etats["sensor.microduck_batterie"]["state"] == "87"
         assert ha.etats["sensor.microduck_batterie"]["attributes"]["device_class"] == "battery"
         assert ha.etats["binary_sensor.microduck_tombe"]["state"] == "off"
