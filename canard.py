@@ -6,10 +6,13 @@
     marche jamais (prudence) ;
   - camera (MICRODUCK_FRAME_URL, route /frame de mediad) : detection de mouvement pour "1-2-3 soleil", analysee
     seulement pendant le jeu ; veille de la balle (taquineries : pousser, mime de vol), 2 images par seconde ;
-  - veille du chat (YOLO, `--chat`) : seulement si le modele est present ET si la machine le supporte (pas un Pi 3B+) ;
+  - veille du chat (YOLO, `--chat`) : seulement si le modele est present ET si la machine le supporte (CPU du RK3566 probablement trop lent : a porter sur son NPU) ;
   - micro (`--micro`, ALSA via arecord, MICRODUCK_MICRO) : reflexes sonores (audio.py) - NON TESTE sur le robot ;
   - Home Assistant (`ha.toml`) : evenements de la maison, etat du canard, routines [cerveau] (heures calmes, bonjour) ;
   - memoire persistante (memoire.py).
+
+Tout est analyse SUR le canard (images, sons, distances) ; seul Home Assistant, s'il est configure, recoit des etats
+(batterie, humeur, position...) et envoie les evenements de la maison. Aucune image ni aucun son ne sort du robot.
 
 Usage : bash ~/run-brain.sh canard.py [ha.toml] [duree_s] [--sans-ha] [--sans-camera] [--chat] [--micro]
 """
@@ -23,8 +26,20 @@ import pont_ha
 import tof as tof_mod
 
 
-def assembler(client, args, log=print, cfg=None):
-    """-> dict(extras, sources, crochets, options, pont, fils) ; `cfg` = config HA deja lue (ou None)."""
+def verifier_local(url_camera):
+    """Regle du projet : tout tourne SUR le canard, aucune image ni aucun son ne part vers un autre appareil pour etre
+    analyse. La camera doit donc etre lue en local (boucle locale), sinon on refuse de demarrer."""
+    from urllib.parse import urlparse
+    hote = urlparse(url_camera).hostname
+    if hote not in ("127.0.0.1", "localhost", "::1"):
+        raise SystemExit(f"camera lue sur {hote!r} : refuse. Le cerveau tourne SUR le canard et lit sa camera en local "
+                         "(MICRODUCK_FRAME_URL=http://127.0.0.1:8080/frame) ; aucune image ne quitte le robot.")
+
+
+def assembler(client, args, log=print, cfg=None, cerveau=None):
+    """-> dict(extras, sources, crochets, options, pont, fils) ; `cfg` = config HA deja lue (ou None), `cerveau` =
+    section [cerveau] du fichier de config (lue meme sans Home Assistant : le canard vit sans lui)."""
+    cerveau = cerveau if cerveau is not None else ((cfg or {}).get("cerveau") or {})
     extras, sources, crochets, fils = {"memoire": memoire.Memoire()}, [], [], []
     if tof_mod.SOCK_TOF.exists():
         capteur = tof_mod.Tof(tof_mod.beams_du_robot(client))
@@ -35,6 +50,7 @@ def assembler(client, args, log=print, cfg=None):
     if "--sans-camera" not in args:
         import mouvement
         import vision
+        verifier_local(vision.FRAME_URL)
         import balle
         veille_mvt = mouvement.VeilleMouvement(vision.grab_frame)
         veille_balle = balle.VeilleBalle(vision.grab_frame)
@@ -56,17 +72,26 @@ def assembler(client, args, log=print, cfg=None):
             log(f"veille du chat : modele absent ({animaux.MODELE_PAR_DEFAUT})")
     if "--micro" in args:
         import audio
-        micro = audio.MicroAlsa(peripherique=os.environ.get("MICRODUCK_MICRO"))
+        commandes = None
+        modele = cerveau.get("modele_vosk")
+        if modele and Path(modele).expanduser().exists():
+            import commandes as cmd
+            commandes = cmd.Commandes(cmd.fabrique_vosk(Path(modele).expanduser()), nom=cerveau.get("nom", "canard"))
+            log(f"commandes vocales locales : '{cerveau.get('nom', 'canard')} ...' (modele {modele}, hors ligne)")
+        elif modele:
+            log(f"commandes vocales : modele absent ({modele})")
+        micro = audio.MicroAlsa(peripherique=os.environ.get("MICRODUCK_MICRO"), commandes=commandes)
         fils.append(micro)
         sources.append(micro.source)
         log(f"micro : {os.environ.get('MICRODUCK_MICRO') or 'peripherique ALSA par defaut'} (reflexes sonores)")
-    pont, options = None, {}
+    pont, options = None, pont_ha.options_cerveau({"cerveau": cerveau})
     if cfg is not None:
-        options = pont_ha.options_cerveau(cfg)
         pont = pont_ha.PontHA(cfg, pont_ha.lire_jeton(cfg), log=log)
         sources.append(pont.source)
         crochets.append(pont.photographier)
-        log("Home Assistant : " + cfg["url"] + (f" ; routines {options}" if options else ""))
+        log("Home Assistant : " + cfg["url"])
+    if options:
+        log(f"routines : {options}")
     return {"extras": extras, "sources": sources, "crochets": crochets, "options": options, "pont": pont, "fils": fils}
 
 
@@ -75,17 +100,20 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     chemin = Path(args[0]) if args else Path(__file__).parent / "ha.toml"
     duree = float(args[1]) if len(args) > 1 else 10 * 365 * 86400.0
-    cfg = None
-    if "--sans-ha" not in sys.argv and chemin.exists():
+    cfg, cerveau = None, {}
+    if chemin.exists():
         pont_ha.avertir_si_non_ignore(chemin)
         cfg = pont_ha.lire_config(chemin)
-        if cfg["url"] is None:
+        cerveau = cfg.get("cerveau") or {}
+        if "--sans-ha" in sys.argv:
+            cfg = None
+        elif cfg["url"] is None:
             print(f"{chemin} : pas d'URL Home Assistant, pont desactive", flush=True)
             cfg = None
     c = RobotdClient(SOCK_PATH)
     hz = ((cfg or {}).get("reseau") or {}).get("etat_hz")
     c.request("robot.subscribe", {"hz": int(hz)} if isinstance(hz, int) and 10 <= hz <= 50 else {})
-    a = assembler(c, sys.argv[1:], log=lambda m: print(m, flush=True), cfg=cfg)
+    a = assembler(c, sys.argv[1:], log=lambda m: print(m, flush=True), cfg=cfg, cerveau=cerveau)
     for f in a["fils"]:
         f.start()
     if a["pont"] is not None:

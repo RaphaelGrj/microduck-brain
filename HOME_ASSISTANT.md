@@ -25,7 +25,7 @@
 
 ## Ton installation : Home Assistant OS sur Raspberry Pi 3B+
 
-- **Le Pi 3B+ n'a que 1 Go de RAM** : le cerveau et le pont ne doivent PAS tourner dessus (voir « Où fait-on tourner le
+- **Le Pi 3B+ n'a que 1 Go de RAM** : le cerveau et le pont ne tournent PAS dessus mais sur le canard (voir « Où tourne le
   cerveau ? » plus bas). Ils parlent à HA par l'API réseau (port 8123).
 - Utilise l'**adresse IP** du Pi dans la config (le nom `homeassistant.local` ne se résout pas toujours depuis WSL) et
   fixe-lui une adresse (réservation DHCP dans ta box).
@@ -38,30 +38,16 @@
 - MQTT apporterait : entités avec `unique_id` (elles survivent au redémarrage de HA), appareil « Microduck » regroupé,
   boutons pour commander le canard depuis HA. **Pas encore codé** (en attente de ton oui).
 
-## Tu n'as que des Pi 3B+ : ça suffit pour le pont + cerveau (mesuré), pas pour la vision
+## Où tourne le cerveau : SUR le canard (décision du 2026-10-05)
 
-Mesuré sur le PC : pont + cerveau = **29 Mo de RAM et 0,4–0,8 % d'un cœur** (10 à 50 trames d'état/s). Un Pi 3B+ (Cortex-A53) est
-plusieurs fois plus lent (estimation ×5–10) : largement assez, avec 1 Go. Les modules concernés n'utilisent que la bibliothèque
-standard + `websockets` et sont compatibles Python 3.11 (celui de Raspberry Pi OS Bookworm). Ce qui **ne** tourne **pas** sur un Pi 3B+ :
-la vision (jeu de balle) et YOLO (chat) — ils restent sur le PC à la demande, ou sur le robot plus tard.
-Fichiers d'installation prêts mais **non testés sur un Pi** : `deploy/pi/` (README, deux services systemd, requirements).
+Le cerveau (`canard.py` : cerveau + pont Home Assistant + capteur de distance + caméra) tourne **sur la carte du robot**
+(Radxa Zero 3, RK3566), à côté de `robotd`, `tofd` et `mediad`, et ne parle qu'à eux en local. **Aucune donnée du canard
+(image, son, distances) n'est analysée sur un autre appareil** : `canard.py` refuse même de démarrer si la caméra n'est
+pas lue en local. Installation : `deploy/robot/`.
 
-## Où fait-on tourner le cerveau ? (sans laisser le PC allumé)
-
-Le PC n'est nécessaire que **pendant le développement** (c'est lui qui fait tourner le simulateur). En usage normal, le
-cerveau et le pont doivent tourner sur une machine allumée en permanence. Options, de la plus adaptée à la moins :
-
-| Option | Verdict |
-|---|---|
-| **Un autre Raspberry Pi** (4 ou 5 idéal ; un Pi 3 / Zero 2 W suffit pour le pont seul) | **Recommandé.** Linux complet, 24 h/24, quelques watts. Le pont (Python + `websockets`) est minuscule ; la vision (couleur) tient sur un Pi 4 ; YOLO pour le chat est plus lent (~0,3–1 s/image à estimer). |
-| **Le robot lui-même** (RK3566, 1 Go, comme `quacksat`) | Possible pour le pont et les réactions simples (pas de réseau entre cerveau et `robotd`), mais la RAM est partagée avec les démons ; à décider quand le robot sera là. |
-| **Ton S24+** (Termux) | **Déconseillé comme hôte** : Android suspend les applications en arrière-plan (économie de batterie), le cerveau s'arrêterait sans prévenir. Très bien comme **télécommande / notifications** via l'appli Home Assistant. |
-| Le Pi 3B+ de HA OS (add-on) | Non : 1 Go déjà bien occupé par HA. |
-
-**Comment un cerveau distant atteint le robot** : `robotd` n'écoute que sur un socket local du robot. Un cerveau sur un autre
-Pi s'y connecte par un **tunnel SSH de socket Unix** (`ssh -L` redirige un socket distant vers un socket local ; le robot a
-déjà SSH, c'est ainsi que `quacksat` s'y déploie). Le code actuel (`RobotdClient`) parle à un socket Unix : il n'y a rien à
-changer côté cerveau. **À valider sur le vrai robot** (pas encore livré).
+Le Pi 3B+ de Home Assistant ne fait que ce qu'il fait déjà (HA, et Mosquitto si tu l'ajoutes) : il reçoit des **états**
+(batterie, humeur, position, présence…) et envoie les **événements de la maison** (imprimantes, sonnette, présence,
+météo, boutons). Sans lui, le canard vit quand même ; seules les fonctions « maison » ne se déclenchent pas.
 
 ## Le fichier de configuration (ce que tu remplis)
 

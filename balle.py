@@ -4,7 +4,7 @@ tronc ? Sert aux taquineries du lot B (pousser la balle hors de portee, mime de 
 dans approach.py, qui utilise la meme estimation (`estimer`).
 
 `estimer` est la logique pure (detection HSV de vision.py + geometrie de la camera) ; `VeilleBalle` le fil qui lui donne
-des images a basse cadence (2 par seconde par defaut : leger sur un Pi 3B+).
+des images a basse cadence (2 par seconde par defaut : leger pour la carte du canard (RK3566)).
 """
 import threading
 import time

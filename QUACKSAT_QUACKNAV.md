@@ -1,5 +1,12 @@
 # quacksat et quacknav : cohabitation avec notre cerveau (étude du 2026-10-04)
 
+> **Décision du 2026-10-05 : quacksat est écarté.** Dans ses trois modes (`wyoming`, `agent`, `direct`), il envoie le son
+> du micro **hors du canard** pour le comprendre (Home Assistant, LLM, API) et répond par **synthèse vocale** : deux règles
+> du projet violées (rien n'est analysé hors du canard ; il ne s'exprime qu'en sons de canard). Remplacé par les
+> **commandes vocales locales** (`commandes.py` : Vosk hors ligne, petite grammaire, réponses en sons de canard).
+> L'état `ecoute` et `satellite_vocal` restent dans le code mais ne servent plus. **quacknav reste envisageable** : il
+> tourne sur le canard et ne parle qu'en local.
+
 Deux projets communautaires d'Andrea Genovese, Apache-2.0, lus (pas exécutés) à leurs versions du 2026-10-03 :
 `andreagenovese/quacksat` (v0.1.0-rc1) et `andreagenovese/quacknav` (v0.2.0-rc2). Validés seulement sur le jumeau MuJoCo,
 comme nous ; essais sur un vrai canard annoncés pour décembre 2026.

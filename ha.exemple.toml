@@ -116,10 +116,12 @@ entite = "A_REMPLIR"                # ex. "sensor.prise_lave_linge_puissance"
 evenement = "jeu_soleil"
 entite = "A_REMPLIR"                # ex. "input_button.microduck_soleil"
 
-# ---- 7. Routines du cerveau (facultatif : supprime une ligne pour la desactiver) --------------------
+# ---- 7. Le cerveau (facultatif ; lu meme sans Home Assistant) ---------------------------------------
 [cerveau]
 # heures_calmes = [23, 7]           # de 23h a 7h : assis, silencieux, comme l'interrupteur calme
 # bonjour = "7:30"                  # une fois par jour, a partir de 7h30 : etirement + bonjour (si quelqu'un est la)
+# nom = "canard"                  # commandes vocales : on l'appelle par ce nom ("canard assis", "canard viens")
+# modele_vosk = "~/modeles/vosk-model-small-fr-0.22"   # reconnaissance HORS LIGNE sur le canard (lancer avec --micro)
 
 # ---- 8. Tes notes (ignorées par le programme) ------------------------------------------------------
 [notes]

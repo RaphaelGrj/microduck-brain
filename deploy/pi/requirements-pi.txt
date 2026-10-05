@@ -1,5 +1,0 @@
-websockets>=17.1
-paho-mqtt>=2.1
-# capteur de distance (tof.py -> geometry.py) et detection de mouvement (jeu 1-2-3 soleil) : roues aarch64 disponibles
-numpy>=1.26
-opencv-python-headless>=4.10

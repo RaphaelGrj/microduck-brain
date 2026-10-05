@@ -676,7 +676,7 @@ def main():
     from poc_robotd_client import RobotdClient, SOCK_PATH
     c = RobotdClient(SOCK_PATH)
     hz = (cfg.get("reseau") or {}).get("etat_hz")
-    # Un petit Raspberry Pi (ou une liaison SSH / Wi-Fi) n'a pas besoin des 50 trames d'etat par seconde ; le deadman de
+    # Le cerveau n'a pas besoin des 50 trames d'etat par seconde ; le deadman de
     # `robot.move` (500 ms) exige seulement >= 10 envois par seconde.
     c.request("robot.subscribe", {"hz": int(hz)} if isinstance(hz, int) and 10 <= hz <= 50 else {})
     pont.demarrer()

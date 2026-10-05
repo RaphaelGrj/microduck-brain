@@ -72,6 +72,7 @@ def test_endurance_deux_heures_invariants():
         assert not c.violations, c.violations[:5]
         assert not c.sons_en_calme, c.sons_en_calme[:5]
         assert not b.ctx.sitting, f"seed {seed} : reste assis apres l'arret"
+        assert getattr(b.ctx, "sons_refuses", 0) == 0, "un etat a voulu jouer un son qui n'est pas un son de canard"
         assert len({e[1] for e in b.journal}) >= 15, "trop peu d'etats visites : flux d'evenements mal branche ?"
         assert "porte" in {e[1] for e in b.journal}
 

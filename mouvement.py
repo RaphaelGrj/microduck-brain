@@ -7,7 +7,7 @@ Ne marche QUE si la camera est immobile (le canard ne bouge ni le corps ni la te
 detecteur une fois le canard stabilise, et le desarme des qu'il bouge. Image reduite (90x160), floutee, difference
 avec l'image precedente, seuil, ouverture morphologique (le bruit du capteur fait des points isoles, une personne qui
 bouge fait une tache) : la fraction de pixels qui ont change dit s'il y a du mouvement. Leger : quelques ms par image
-sur un Raspberry Pi 3B+ a 5 images/s (et seulement pendant le jeu).
+sur la carte du canard (RK3566) a 5 images/s (et seulement pendant le jeu).
 
 `DetecteurMouvement` est la logique pure (tests sur images synthetiques) ; `VeilleMouvement` le fil qui lui donne les
 images de la camera quand il est arme.

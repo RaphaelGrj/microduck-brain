@@ -11,8 +11,9 @@ WorkingDirectory=/opt/microduck-cerveau
 Environment=ROBOTD_SOCK=/run/robotd.sock
 Environment=TOFD_SOCK=/run/tofd/tof.sock
 Environment=MICRODUCK_FRAME_URL=http://127.0.0.1:8080/frame
+Environment=MICRODUCK_MICRO=micro_partage
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/microduck-cerveau/venv/bin/python canard.py ha.toml
+ExecStart=/opt/microduck-cerveau/venv/bin/python canard.py ha.toml --micro
 Restart=always
 RestartSec=10
 # le cerveau est un client parmi d'autres : jamais prioritaire sur la boucle de controle de robotd

@@ -235,12 +235,14 @@ class AnalyseurSon:
 
 
 class MicroAlsa(threading.Thread):
-    """Lit le micro (arecord, 16 kHz mono 16 bits) et passe chaque bloc a l'analyseur. `peripherique` : nom ALSA
-    (MICRODUCK_MICRO, ex. "dsnoop:0" pour partager le micro avec quacksat). NON TESTE sur le robot."""
+    """Lit le micro (arecord, 16 kHz mono 16 bits) et passe chaque bloc a l'analyseur et, si elles sont configurees, aux
+    commandes vocales locales (commandes.py) : une seule lecture du micro pour les deux. `peripherique` : nom ALSA
+    (MICRODUCK_MICRO ; sur le robot, le PCM dsnoop partage avec robotd, deploy/robot/asound.conf). NON TESTE sur le robot."""
 
-    def __init__(self, analyseur=None, peripherique=None):
+    def __init__(self, analyseur=None, peripherique=None, commandes=None):
         super().__init__(daemon=True)
         self.analyseur = analyseur or AnalyseurSon()
+        self.commandes = commandes
         self.peripherique = peripherique
         self.evenements, self.verrou, self.actif = [], threading.Lock(), True
 
@@ -256,6 +258,8 @@ class MicroAlsa(threading.Thread):
                         if len(brut) < BLOC * 2:
                             break
                         evts = self.analyseur.bloc(np.frombuffer(brut, dtype="<i2") / 32768.0)
+                        if self.commandes is not None:
+                            evts = evts + self.commandes.bloc_brut(brut)
                         if evts:
                             with self.verrou:
                                 self.evenements += evts
