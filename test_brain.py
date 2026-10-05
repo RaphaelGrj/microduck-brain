@@ -104,7 +104,10 @@ def test_reves_pendant_sieste_profonde():
     assert nap.total - 2.0 - 4.0 >= 3.0, "la sieste de ce test doit avoir une phase profonde"
     yaws = [p["head_yaw"] for m, p in c.appels if m == "robot.head" and p["head_yaw"] != 0.0]
     assert yaws, "aucun tressaillement de tete pendant la sieste"
-    for t0, duree, _ in nap.reves:
+    if nap.reves:
+        assert any(m == "robot.sound" and p == {"tag": "chirp"} for m, p in c.appels), \
+            "aucun murmure sonore pendant un reve"
+    for t0, duree, _, _ in nap.reves:
         assert t0 >= 2.0 and t0 + duree <= nap.total - 4.0, f"reve hors de la phase profonde: {t0}, {duree}"
 
 

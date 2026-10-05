@@ -308,7 +308,7 @@ class Nap(Etat):
         if profond >= 3.0:
             for _ in range(brain.rng.randint(0, 2)):
                 t0 = 2.0 + brain.rng.uniform(0.5, profond - 1.5)
-                self.reves.append((t0, brain.rng.uniform(0.6, 1.2), brain.rng.choice((-1, 1))))
+                self.reves.append([t0, brain.rng.uniform(0.6, 1.2), brain.rng.choice((-1, 1)), False])
 
     def duree(self, brain):
         return self.total
@@ -325,8 +325,12 @@ class Nap(Etat):
             self.leve = True
             ctx.head((0, 0, 0, 0))
         elif self.assis and not self.leve:
-            for t0, duree, signe in self.reves:
+            for reve in self.reves:
+                t0, duree, signe, joue = reve
                 if t0 <= t < t0 + duree:
+                    if not joue:
+                        ctx.sound("chirp")        # murmure sonore occasionnel (ROADMAP) ; silencieux en mode calme
+                        reve[3] = True
                     k = math.sin(math.pi * (t - t0) / duree)      # monte puis redescend a 0 : jamais de saut brusque
                     ctx.head((0.0, 0.7 + 0.05 * signe * k, 0.08 * signe * k, 0.0))
                     break
