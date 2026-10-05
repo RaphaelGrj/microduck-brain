@@ -677,25 +677,25 @@ class VaAuCoin(Etat):
     """Fatigue : avant la sieste, il rejoint son coin de sieste prefere (Exploration.coin_favori("nap")) - pivote,
     marche droit, tete un peu baissee comme en promenade. Arrive, bloque (obstacle, capteur muet plus d'1 s) ou trop
     long : il fait la sieste la ou il est. Jamais un detour : c'est une envie, pas une mission."""
-    nom = "va_au_coin"
     DUREE_MAX = 25.0
     BLOQUE_MAX_S = 1.0
 
-    def __init__(self):
+    def __init__(self, nom="va_au_coin", ensuite="nap", motif="faire la sieste dans son coin"):
+        """Meme mecanique pour d'autres destinations : `ensuite` = etat a l'arrivee (ou en cas d'abandon)."""
+        self.nom, self.ensuite, self.motif = nom, ensuite, motif
         self.cible = None
 
     def entre(self, brain):
         self.nav = AllerVers(self.cible)
         self.bloque_depuis = None
-        print(f"[{brain.t_global:6.1f}s] va faire la sieste dans son coin ({self.cible[0]:.2f}, {self.cible[1]:.2f})",
-              flush=True)
+        print(f"[{brain.t_global:6.1f}s] va {self.motif} ({self.cible[0]:.2f}, {self.cible[1]:.2f})", flush=True)
 
     def duree(self, brain):
         return self.DUREE_MAX
 
     def _fin(self, brain, t, pourquoi):
         brain.ctx.move()
-        brain.suivant_force = "nap"
+        brain.suivant_force = self.ensuite
         brain.fin_etat = t
         self.issue = pourquoi
 
@@ -1395,6 +1395,8 @@ class Brain:
     TAQUIN_PROBA = 0.2
     P_TAQUINE = 0.35            # quand une taquinerie est permise, elle remplace la reaction normale 1 fois sur 3
     P_REGARD_MYSTERE = 0.04     # par passage par chill, quand c'est permis
+    P_OBSERVER = 0.03           # par passage par chill, en journee : rejoindre son coin d'observation
+    CHARGE_S, CHARGE_PCT = 120.0, 2.0     # immobile 2 min et +2 % de batterie : il est sur son chargeur
     P_GAG = 0.02                # gag spontane (fausse chute, fausse notification) par passage par chill, si permis
     P_POUSSE_BALLE = 0.6        # main vers la balle a ses pieds : il la pousse hors de portee
     P_MIME_VOL = 0.3            # balle a ses pieds, un familier present : il fait mine de la voler
@@ -1467,6 +1469,8 @@ class Brain:
             "caresse": Caresse(),                                  # on le caresse : roucoulement, tete contre la main
             "soleil": Soleil(),                                    # jeu "1-2-3 soleil" (camera + ToF)
             "va_au_coin": VaAuCoin(),                              # fatigue : rejoindre son coin de sieste
+            "va_chargeur": VaAuCoin("va_chargeur", "nap", "se recharger la ou il s'est deja recharge"),
+            "va_observer": VaAuCoin("va_observer", "look", "dans son coin d'observation"),
             "taquin": Sequence("taquin", [("non", "inquire")]),    # "non..." puis il joue quand meme
             # reflexes sonores (audio.py)
             "appel": Sequence("appel", [("curieux", "inquire"), ("oui", "greet")]),   # deux claquements : "oui ?"
@@ -1484,6 +1488,8 @@ class Brain:
         self.malice = Malice(self.ctx.extras.get("memoire"))
         self.detecteur_approche = DetecteurApproche()
         self.aspirateur_actif = False
+        self.chargeur = None                    # (x, y) odom ou la batterie est deja remontee (session en cours)
+        self._charge_ref = None                 # (t, pourcentage, position) depuis le dernier deplacement
         self.eternuements = []                  # t_global des eternuements entendus (serie = moins de 60 s d'ecart)
         self.t_esquive = -1e9                   # derniere main esquivee (la suivante, dans la minute, est acceptee)
         self.t_dernier_accueil = -1e9
@@ -1680,6 +1686,13 @@ class Brain:
 
     COIN_DISTANCE = (0.5, 4.0)               # m : plus pres, inutile de bouger ; plus loin, l'odometrie a trop derive
 
+    def _atteignable(self, point, distances):
+        """Point (odom) a une distance dans `distances`, capteur de distance branche (on ne marche jamais a l'aveugle)."""
+        if self.ctx.extras.get("tof") is None or not (self.ctx.state or {}).get("odom"):
+            return False
+        p = self.ctx.state["odom"]["position"]
+        return distances[0] <= math.hypot(point[0] - p[0], point[1] - p[1]) <= distances[1]
+
     def _coin_atteignable(self):
         """Coin de sieste appris (exploration.py), s'il est a une distance raisonnable et que le capteur de distance
         est la (on ne marche jamais a l'aveugle)."""
@@ -1720,11 +1733,17 @@ class Brain:
         if h.energie < self.SEUIL_SIESTE or batterie_basse:
             # fatigue "jouee" OU vraie batterie basse : meme reponse (repos) - dans son coin favori s'il est connu et
             # pas trop loin (sauf batterie basse : on ne gaspille pas les derniers pourcents a marcher)
-            if not batterie_basse and self.courant.nom not in ("nap", "va_au_coin"):
-                coin = self._coin_atteignable()
-                if coin is not None:
-                    self.etats["va_au_coin"].cible = coin
-                    return "va_au_coin"
+            if self.courant.nom not in ("nap", "va_au_coin", "va_chargeur"):
+                if batterie_basse:
+                    # batterie basse : seulement vers le chargeur appris, jamais pour un simple coin prefere
+                    if self.chargeur is not None and self._atteignable(self.chargeur, (0.3, 4.0)):
+                        self.etats["va_chargeur"].cible = self.chargeur
+                        return "va_chargeur"
+                else:
+                    coin = self._coin_atteignable()
+                    if coin is not None:
+                        self.etats["va_au_coin"].cible = coin
+                        return "va_au_coin"
             return "nap"
         if self.courant.nom == "nap":
             self.derniere_fois["etirement"] = self.t_global
@@ -1751,6 +1770,11 @@ class Brain:
             return "jeu_solitaire"
         if self.rng.random() < self.P_REGARD_MYSTERE and self.malice.permise(self, "regard_mystere"):
             return "regard_mystere"
+        if self.rng.random() < self.P_OBSERVER and h.energie > 0.4 and 9 <= self.horloge().tm_hour < 21:
+            coin = self.exploration.coin_favori("chill", self.t_global)
+            if coin is not None and self._atteignable(coin, (1.0, 4.0)):
+                self.etats["va_observer"].cible = coin       # en journee : il va regarder la piece depuis son coin
+                return "va_observer"
         if self.rng.random() < self.P_GAG:
             chat = self.ctx.extras.get("chat")
             gags = [g for g in ("fausse_chute", "fausse_notif") if self.malice.permise(self, g)
@@ -1837,6 +1861,20 @@ class Brain:
                                                     joints[5:9], immobile):
             self.evenement(e)
 
+    def _apprend_chargeur(self, pct, position):
+        """La batterie remonte alors qu'il ne bouge pas : il est sur son chargeur -> il retient cet endroit (repere de
+        l'odometrie de la session) pour y retourner sur batterie basse."""
+        pos = (position[0], position[1])
+        ref = self._charge_ref
+        if ref is None or math.hypot(pos[0] - ref[2][0], pos[1] - ref[2][1]) > 0.1 or pct < ref[1] - 0.5:
+            self._charge_ref = (self.t_global, pct, pos)
+            return
+        if self.t_global - ref[0] >= self.CHARGE_S and pct - ref[1] >= self.CHARGE_PCT:
+            if self.chargeur is None or math.hypot(pos[0] - self.chargeur[0], pos[1] - self.chargeur[1]) > 0.2:
+                print(f"[{self.t_global:6.1f}s] chargeur appris en ({pos[0]:.2f}, {pos[1]:.2f})", flush=True)
+            self.chargeur = pos
+            self._charge_ref = (self.t_global, pct, pos)
+
     def _verifie_bonjour(self):
         h = self.horloge()
         jour = getattr(h, "tm_yday", None)
@@ -1871,6 +1909,8 @@ class Brain:
         pct = state.get("battery", {}).get("percent")
         if pct is not None:
             self._batterie_pct = pct
+            if state.get("odom"):
+                self._apprend_chargeur(pct, state["odom"]["position"])
         if state.get("safety", {}).get("fallen"):
             if not self.tombe:
                 print(f"[{self.t_global:6.1f}s] CHUTE : cerveau en pause (robotd se charge du relevement)", flush=True)

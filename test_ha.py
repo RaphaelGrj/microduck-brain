@@ -328,6 +328,15 @@ def test_publication_messages_en_attente():
     pont.photographier(b, faux_etat())
     etat, attrs = pont.entites_du_canard()["sensor.microduck_messages"]
     assert etat == 1 and attrs["messages"] == "machine_finie:Lave-linge"
+    assert pont.entites_du_canard()["binary_sensor.microduck_veille"][0] == "off"
+    assert "sensor.microduck_blagues" not in pont.entites_du_canard(), "pas de compteur sans cerveau a taquineries"
+    vrai = brain.Brain(type("C", (), {"notify": lambda *a: None, "request": lambda *a, **k: {}})(), seed=1)
+    vrai.malice.noter(vrai, "regard_mystere")
+    vrai.veille_jusqua = 100.0
+    pont.photographier(vrai, faux_etat())
+    e = pont.entites_du_canard()
+    assert e["sensor.microduck_blagues"][0] == 1 and e["sensor.microduck_blagues"][1]["derniere"] == "regard_mystere"
+    assert e["binary_sensor.microduck_veille"][0] == "on"
 
 
 def test_calme():

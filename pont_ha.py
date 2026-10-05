@@ -465,6 +465,10 @@ class PontHA:
             "batterie": state.get("battery"), "odom": state.get("odom"), "chat_visible": chat_visible,
             "presents": sorted(getattr(brain, "presents", None) or []),
             "messages": list(getattr(brain, "messages", None) or []),
+            "veille": getattr(brain, "t_global", 0.0) < getattr(brain, "veille_jusqua", -1.0),
+            "blagues": brain.malice.compte() if hasattr(brain, "malice") else None,
+            "derniere_blague": (brain.malice.historique[-1][1] if getattr(getattr(brain, "malice", None), "historique", None)
+                                else None),
         }
 
     def entites_du_canard(self):
@@ -498,6 +502,12 @@ class PontHA:
         ent["sensor.microduck_messages"] = (len(msgs), {
             "friendly_name": "Microduck - messages a transmettre", "icon": "mdi:email-outline",
             "messages": ", ".join(msgs) or None})
+        ent["binary_sensor.microduck_veille"] = ("on" if i.get("veille") else "off", {
+            "friendly_name": "Microduck - en veille apres des chutes", "icon": "mdi:sleep"})
+        if i.get("blagues") is not None:
+            ent["sensor.microduck_blagues"] = (i["blagues"], {
+                "friendly_name": "Microduck - taquineries (total)", "icon": "mdi:emoticon-wink-outline",
+                "derniere": i.get("derniere_blague")})
         attrs_chat = {"friendly_name": "Microduck - chat vu", "icon": "mdi:cat"}
         if self._derniere_vue_chat is not None:
             attrs_chat["derniere_vue_il_y_a_s"] = round(time.time() - self._derniere_vue_chat, 1)
