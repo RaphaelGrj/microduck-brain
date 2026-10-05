@@ -20,6 +20,7 @@ import time
 
 import gestures
 from exploration import Exploration
+from caresse import DetecteurCaresse
 from main_tendue import DetecteurMain
 
 DT_DEFAUT = 0.02  # une trame robot.state = 20 ms
@@ -477,6 +478,35 @@ class MainTendue(Etat):
         brain.ctx.move()
 
 
+class Caresse(Etat):
+    """On le caresse (caresse.py, ou `pet-detect` officiel plus tard) - etat "Petted" du M9 : roucoulement, la tete
+    s'appuie doucement contre la main et frotte un peu, puis un petit tremoussement de contentement. Calme l'eveil."""
+    nom = "caresse"
+    APPUI_S = 3.0
+
+    def entre(self, brain):
+        brain.ctx.sound("coo")
+        brain.humeur.eveil = max(0.0, brain.humeur.eveil - 0.15)
+        self.d_content, self.f_content = gestures.GESTES["content"]
+
+    def duree(self, brain):
+        return self.APPUI_S + self.d_content + 0.3
+
+    def pas(self, brain, t):
+        if t < self.APPUI_S:
+            k = gestures._smooth(t, 0.0, 0.6) * (1.0 - gestures._smooth(t, self.APPUI_S - 0.5, self.APPUI_S))
+            brain.ctx.head((0.0, 0.1 * k, 0.08 * k * math.sin(2 * math.pi * 0.7 * t), 0.15 * k))
+            brain.ctx.pose(None)
+        elif t < self.APPUI_S + self.d_content:
+            u = t - self.APPUI_S
+            brain.ctx.head(self.f_content(u))
+            brain.ctx.pose(gestures.content_corps(u))
+        else:
+            brain.ctx.head((0.0, 0.0, 0.0, 0.0))
+            brain.ctx.pose(None)
+        brain.ctx.move()
+
+
 class Accueil(Etat):
     """Un habitant rentre a la maison (presence Home Assistant, voir pont_ha.py). L'accueil depend de la familiarite
     (memoire.py : reservee au debut, chaleureuse avec le temps) et de la duree de l'absence (simple signe s'il est sorti
@@ -737,7 +767,9 @@ class Brain:
             "sonnette": Sequence("sonnette", [("surpris", "alarm"), ("curieux", "inquire")]),
             "messager": Sequence("messager", [("curieux", "inquire"), ("oui", "chirp")]),
             "main_tendue": MainTendue(),                           # une main tendue devant lui (ToF) : il picore
+            "caresse": Caresse(),                                  # on le caresse : roucoulement, tete contre la main
         }
+        self.detecteur_caresse = DetecteurCaresse()
         self.detecteur_main = DetecteurMain()
         self._tete_prec, self._t_tete_change = None, 0.0     # derniere consigne de tete vue, et quand elle a change
         self.messages = []                      # notifications a redire au prochain habitant qui rentre
@@ -829,6 +861,12 @@ class Brain:
                     self.messages = (self.messages + [nom])[-self.MESSAGES_MAX:]
                 print(f"[{self.t_global:6.1f}s] notification maison : {nom}", flush=True)
                 self._bascule(etat)
+                continue
+            if base == "caresse":
+                if self.courant.nom == "nap" or self.mode_calme:
+                    self.ctx.sound("coo")       # caresse pendant le sommeil : un roucoulement, sans se reveiller
+                elif self.courant.nom != "caresse":
+                    self._bascule("caresse")
                 continue
             if self.courant.nom == "nap":
                 continue  # ne jamais insister : on dort, l'evenement est perdu
@@ -925,6 +963,16 @@ class Brain:
             for e in evts:
                 self.evenement(e)
 
+    def _surveille_caresse(self, state):
+        joints = state.get("joints")
+        if not joints or len(joints) < 9:
+            return
+        immobile = self.courant.nom == "chill" or (     # sieste : pas pendant qu'il s'assoit ni qu'il se releve
+            self.courant.nom == "nap" and 6.0 <= self.t_etat < self.fin_etat - 4.0)
+        for e in self.detecteur_caresse.mise_a_jour(self.t_global, getattr(self.ctx, "tete_cmd", None),
+                                                    joints[5:9], immobile):
+            self.evenement(e)
+
     def _verifie_bonjour(self):
         h = self.horloge()
         jour = getattr(h, "tm_yday", None)
@@ -1002,6 +1050,7 @@ class Brain:
                 self._bascule("ebouriffe")
 
         self._surveille_main(state)
+        self._surveille_caresse(state)
         self._traite_evenements()
         if self.bonjour is not None:
             self._verifie_bonjour()                 # apres les evenements : un "calme_on" en attente passe d'abord
