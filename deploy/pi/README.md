@@ -7,15 +7,18 @@ Pi de rechange, de préférence **avant** la livraison du robot, en pointant le 
 
 | Sur le Pi 3B+ | Pas sur le Pi 3B+ |
 |---|---|
-| `pont_ha.py` (écoute de Home Assistant, publication de l'état du canard) | Le jeu de balle avec vision (approche, tir) |
-| `brain.py` (états, humeur, gestes, réactions aux notifications) | Le détecteur de chat (YOLO : ~1 à 3 s par image sur un Cortex-A53, à confirmer) |
-| Le tunnel SSH vers `robotd` | Le simulateur et l'entraînement (restent sur le PC) |
+| `canard.py` = `brain.py` + `pont_ha.py` + capteur de distance + caméra (2026-10-05) | Le jeu de balle avec vision (approche, tir) |
+| `brain.py` (états, humeur, gestes, réactions aux notifications, main tendue, caresse, coin de sieste) | Le détecteur de chat (YOLO : ~1 à 3 s par image sur un Cortex-A53, à confirmer) — `--chat` à ne pas activer ici |
+| Détection de mouvement « 1-2-3 soleil » (différence d'images, ~13 ms/image sur PC, 5 images/s **seulement pendant le jeu**) | Le simulateur et l'entraînement (restent sur le PC) |
+| Le tunnel SSH vers `robotd`, `tofd` et la caméra | |
 
 Mesuré sur le PC (Python 3.12, simulateur) : **29 Mo de RAM, 0,4 à 0,8 % d'un cœur** pour pont + cerveau, à 10 à 50 trames d'état
 par seconde. Un Cortex-A53 est plusieurs fois plus lent qu'un cœur de PC (estimation : ×5 à ×10) : on reste sous ~10 % d'un cœur
 et sous 50 Mo, sur 1 Go. `etat_hz` dans `ha.toml` (`[reseau]`, 10 à 50) réduit encore la charge.
-Ces modules n'utilisent que la bibliothèque standard + `websockets` (pas de numpy ni d'OpenCV) et sont compatibles Python 3.11
-(`python diag_py311.py`, test statique), donc le Python de Raspberry Pi OS Bookworm suffit.
+Pont + cerveau seuls n'utilisent que la bibliothèque standard + `websockets` ; le capteur de distance (`tof.py` → `geometry.py`) et
+la détection de mouvement ajoutent **numpy et OpenCV** (`opencv-python-headless`, roues aarch64 sur PyPI) : la mesure de 29 Mo est
+donc à refaire avec `canard.py` (estimation : +40 à 60 Mo pour OpenCV). Tout est compatible Python 3.11 (`python diag_py311.py
+brain.py pont_ha.py canard.py ...`, test statique), donc le Python de Raspberry Pi OS Bookworm suffit.
 
 ## Installation (à faire sur le Pi ; les commandes `sudo` sont à taper par toi)
 
@@ -28,11 +31,12 @@ Ces modules n'utilisent que la bibliothèque standard + `websockets` (pas de num
    sudo -u microduck python3 -m venv /opt/microduck/venv
    sudo -u microduck /opt/microduck/venv/bin/pip install -r requirements-pi.txt
    ```
-3. Depuis le PC, copier les 5 fichiers (jamais `ha.toml` par e-mail ni sur GitHub ; `scp` direct) :
+3. Depuis le PC, copier les modules et `ha.toml` (jamais `ha.toml` par e-mail ni sur GitHub ; `scp` direct) :
    ```bash
-   scp pont_ha.py brain.py gestures.py poc_robotd_client.py ha.toml  <toi>@<ip-du-pi>:/tmp/
+   M="canard pont_ha brain gestures poc_robotd_client exploration memoire main_tendue caresse navigation mouvement tof geometry vision"
+   scp $(for m in $M; do echo $m.py; done) ha.toml  <toi>@<ip-du-pi>:/tmp/
    # puis sur le Pi :
-   sudo install -o microduck -g microduck -m 644 /tmp/{pont_ha,brain,gestures,poc_robotd_client}.py /opt/microduck/
+   for m in $M; do sudo install -o microduck -g microduck -m 644 /tmp/$m.py /opt/microduck/; done
    sudo install -o microduck -g microduck -m 600 /tmp/ha.toml /opt/microduck/ha.toml && rm /tmp/ha.toml
    ```
 4. Clé SSH pour joindre le robot (quand il sera là) : `sudo -u microduck ssh-keygen -t ed25519 -f /opt/microduck/.ssh/id_ed25519 -N ""`,
@@ -44,10 +48,12 @@ Ces modules n'utilisent que la bibliothèque standard + `websockets` (pas de num
    journalctl -u microduck-pont -f          # voir ce que fait le pont
    ```
 
-## Pourquoi un tunnel SSH
+## Pourquoi un tunnel SSH (et ce qu'il transporte)
 
 `robotd` n'écoute que sur un socket Unix du robot (`/run/robotd.sock`). `ssh -L socket_local:socket_distant` le rend disponible sur le
-Pi (`/run/microduck/robotd.sock`), et le cerveau le lit via la variable `ROBOTD_SOCK`. Aucun changement de code. **À valider sur le vrai
+Pi (`/run/microduck/robotd.sock`), et le cerveau le lit via la variable `ROBOTD_SOCK`. Aucun changement de code. Même chose pour le
+capteur de distance (`tofd` → `/run/microduck/tofd.sock`, variable `TOFD_SOCK` ; chemin sur le robot **supposé** `/run/tofd.sock`) et la
+caméra (route `/frame` de `mediad` ramenée sur `127.0.0.1:8080` du Pi : l'image ne sort jamais du tunnel, règle de vie « vie privée »). **À valider sur le vrai
 robot** (droits sur le socket, compte SSH dédié, comportement à la perte du Wi-Fi : le deadman de `robotd` arrête le robot si les
 commandes cessent, et le service redémarre tout seul).
 

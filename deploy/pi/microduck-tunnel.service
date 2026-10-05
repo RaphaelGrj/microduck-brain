@@ -1,5 +1,7 @@
-# Tunnel SSH : expose le socket robotd du Microduck sur le Pi (/run/microduck/robotd.sock).
-# Remplace ROBOT_IP et l'utilisateur. NON TESTE sur un vrai robot.
+# Tunnel SSH : expose sur le Pi le socket robotd du Microduck (/run/microduck/robotd.sock), celui du capteur de distance
+# (tofd -> /run/microduck/tofd.sock) et la route camera de mediad (127.0.0.1:8080 du Pi, jamais ouverte au reseau).
+# Remplace ROBOT_IP et l'utilisateur. NON TESTE sur un vrai robot ; le chemin du socket tofd sur le robot
+# (/run/tofd.sock ici) est SUPPOSE : a verifier a la livraison (`ls /run/*.sock` sur le robot).
 [Unit]
 Description=Tunnel SSH vers robotd (Microduck)
 After=network-online.target
@@ -13,6 +15,8 @@ ExecStart=/usr/bin/ssh -N \
   -o StreamLocalBindUnlink=yes -o StrictHostKeyChecking=accept-new \
   -i /opt/microduck/.ssh/id_ed25519 \
   -L /run/microduck/robotd.sock:/run/robotd.sock \
+  -L /run/microduck/tofd.sock:/run/tofd.sock \
+  -L 127.0.0.1:8080:127.0.0.1:8080 \
   microduck@ROBOT_IP
 Restart=always
 RestartSec=5

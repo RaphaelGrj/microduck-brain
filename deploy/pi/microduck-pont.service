@@ -1,4 +1,4 @@
-# Pont Home Assistant + cerveau du Microduck. NON TESTE sur un Raspberry Pi.
+# Cerveau complet du Microduck (canard.py : cerveau + Home Assistant + ToF + camera). NON TESTE sur un Raspberry Pi.
 # (Pas de ProtectSystem=strict : non verifie qu'il laisse passer le socket du tunnel ; a durcir apres un premier essai.)
 [Unit]
 Description=Pont Home Assistant et cerveau (Microduck)
@@ -9,8 +9,9 @@ Wants=network-online.target
 User=microduck
 WorkingDirectory=/opt/microduck
 Environment=ROBOTD_SOCK=/run/microduck/robotd.sock
+Environment=TOFD_SOCK=/run/microduck/tofd.sock
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/microduck/venv/bin/python pont_ha.py ha.toml
+ExecStart=/opt/microduck/venv/bin/python canard.py ha.toml
 Restart=always
 RestartSec=10
 NoNewPrivileges=yes

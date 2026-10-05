@@ -12,6 +12,7 @@ d'un quart de tour -> image portrait 360x640. Horizontalement on a donc le champ
 Usage : uv run python vision.py [chemin_sortie.png]   -> detecte et sauvegarde l'image annotee
 """
 import math
+import os
 import sys
 import urllib.request
 from dataclasses import dataclass
@@ -19,7 +20,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-FRAME_URL = "http://127.0.0.1:8080/frame"
+FRAME_URL = os.environ.get("MICRODUCK_FRAME_URL", "http://127.0.0.1:8080/frame")
 WIDTH, HEIGHT = 360, 640
 FOVY_DEG = 45.0  # champ vertical du rendu avant rotation = champ HORIZONTAL de l'image portrait
 FOCAL_PX = (WIDTH / 2) / math.tan(math.radians(FOVY_DEG / 2))  # ~434.6 px
