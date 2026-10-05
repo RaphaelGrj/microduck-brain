@@ -12,6 +12,7 @@ DEMI_VIE_S = 600.0          # une case visitee redevient "nouvelle" de moitie en
 PORTEE = 1.0                # on juge un cap sur le premier metre devant
 DEMI_VIE_OBSTACLE_S = 1800.0  # un meuble ne bouge pas souvent : on s'en souvient ~30 min
 DEMI_VIE_CHUTE_S = 30 * 86400.0  # une "zone noire" (deja tombe ici) s'oublie tres lentement (~1 mois)
+DEMI_VIE_PREFERENCE_S = 3 * 86400.0  # un "coin favori" s'oublie en quelques jours, pas en 10 min comme la novelty grid
 
 
 class Exploration:
@@ -20,6 +21,9 @@ class Exploration:
         self.obstacles = {}     # (i, j) -> instant ou le ToF y a vu un obstacle
         self.chutes = {}        # (i, j) -> instant ou le canard est deja tombe ici ("zone noire" apprise,
                                  # ROADMAP "Occupation autonome..." : distincte de l'evitement ToF generique)
+        self.activites = {}     # (i, j) -> {activite: (poids = temps cumule pondere, instant de la derniere maj)}
+                                 # "deux coins favoris distincts selon l'activite" (chill/nap) - memoire longue,
+                                 # separee de `visites` (qui sert a explorer, pas a se souvenir d'un endroit prefere).
 
     def _poids(self, cle, t):
         v = self.visites.get(cle)
@@ -72,3 +76,29 @@ class Exploration:
         """Ecart de cap (rad, relatif au cap actuel) vers la zone la plus nouvelle ; a nouveaute egale, le plus petit."""
         notes = [(self.nouveaute(x, y, cap + math.radians(e), t), -abs(e), e) for e in ecarts_deg]
         return math.radians(max(notes)[2])
+
+    def _poids_activite(self, cle, activite, t):
+        v = self.activites.get(cle, {}).get(activite)
+        if v is None:
+            return 0.0
+        return v[0] * math.pow(0.5, (t - v[1]) / DEMI_VIE_PREFERENCE_S)
+
+    def preference(self, x, y, activite, dt, t):
+        """Le canard passe `dt` secondes en `activite` ("chill" ou "nap") en (x, y) : la case en garde la trace,
+        avec un oubli tres lent (jours). Sert a apprendre un coin favori distinct par activite - PAS encore a s'y
+        rendre (pas de navigation vers un point connu dans brain.py pour l'instant, meme limite que l'accueil sans
+        position fiable, voir Accueil)."""
+        cle = (math.floor(x / CASE), math.floor(y / CASE))
+        poids = self._poids_activite(cle, activite, t) + dt
+        self.activites.setdefault(cle, {})[activite] = (poids, t)
+
+    def coin_favori(self, activite, t):
+        """Centre (x, y) de la case la plus associee a `activite` (None si rien n'est encore appris)."""
+        candidats = [(self._poids_activite(cle, activite, t), cle)
+                     for cle in self.activites if activite in self.activites[cle]]
+        if not candidats:
+            return None
+        poids, cle = max(candidats)
+        if poids <= 0.0:
+            return None
+        return ((cle[0] + 0.5) * CASE, (cle[1] + 0.5) * CASE)

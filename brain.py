@@ -722,6 +722,13 @@ class Brain:
         if state.get("odom") and self.t_global - self._t_explo >= 0.5:
             self._t_explo = self.t_global
             self.exploration.noter(state["odom"]["position"][0], state["odom"]["position"][1], self.t_global)
+        if state.get("odom") and self.courant.nom in ("chill", "nap"):
+            # "Deux coins favoris distincts selon l'activite" (ROADMAP "chantier actif") : on accumule le temps
+            # passe par activite, par case - a chaque trame (pas throttle comme `noter` ci-dessus : c'est une duree
+            # cumulee, pas un compteur de passages). La navigation vers le coin appris n'est pas encore cablee (pas
+            # de position fiable connue d'avance, meme limite que Accueil).
+            o = state["odom"]
+            self.exploration.preference(o["position"][0], o["position"][1], self.courant.nom, dt, self.t_global)
 
         self._traite_evenements()
         self.humeur.avance(dt, self.courant.nom)

@@ -153,6 +153,20 @@ def test_fatigue_progressive_amplitude_tete():
         "l'amplitude de tete en 'look' devrait etre reduite a basse energie"
 
 
+def test_coin_favori_accumule_pendant_chill():
+    # tick() avec odom connu, en chill, accumule bien la preference pour le coin favori ("deux coins favoris
+    # distincts selon l'activite").
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.9), seed=14)
+    assert b.courant.nom == "chill"
+    for i in range(50):      # 1 s, toujours a la meme position
+        b.tick({"t": i * 0.02, "safety": {"fallen": False}, "policy": "stand",
+                "odom": {"position": [0.6, 0.6, 0.0], "yaw": 0.0}}, 0.02)
+    favori = b.exploration.coin_favori("chill", b.t_global)
+    assert favori is not None, "aucun coin favori appris pendant le chill"
+    assert favori == (int(0.6 // 0.25) * 0.25 + 0.125, int(0.6 // 0.25) * 0.25 + 0.125)
+
+
 def test_chute_memorise_une_zone_noire():
     # une chute avec odom connu note une "zone noire" a l'endroit precis (exploration.py), pas seulement
     # la pause du cerveau deja testee par test_chute_met_le_cerveau_en_pause.

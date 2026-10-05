@@ -29,8 +29,18 @@ def test():
         "le point de chute doit detourner comme un obstacle"
     assert zone_noire.nouveaute(0, 0, 0.0, 10 * 86400) < 0.3, "la zone noire ne s'oublie pas en quelques jours"
 
+    # "coin favori" distinct par activite : memoire longue, separee de la novelty grid.
+    coins = Exploration()
+    for k in range(200):
+        coins.preference(2.0, 2.0, "chill", 0.1, k * 0.1)       # passe 20 s en chill toujours au meme endroit
+        coins.preference(-1.0, -1.0, "nap", 0.1, k * 0.1)       # et 20 s en nap ailleurs
+    assert coins.coin_favori("chill", 20.0) == (2.125, 2.125)
+    assert coins.coin_favori("nap", 20.0) == (-0.875, -0.875)
+    assert coins.coin_favori("chill", 20.0) != coins.coin_favori("nap", 20.0), "les deux coins doivent differer"
+    assert Exploration().coin_favori("chill", 0.0) is None, "rien appris : pas de coin favori"
+
     print("exploration : OK (evite la zone connue, prefere tout droit a nouveaute egale, oubli progressif, "
-          "obstacles connus evites, zone noire apprise au point de chute)")
+          "obstacles connus evites, zone noire apprise au point de chute, coin favori distinct par activite)")
 
 
 if __name__ == "__main__":
