@@ -141,3 +141,41 @@ def test_danse_pas_un_juke_box():
     b = Brain(c, Humeur(energie=0.9), seed=91)
     simule(b, 120, evenements=[(1.0, "musique:100"), (40.0, "musique_fin"), (60.0, "musique:100")])
     assert [e[1] for e in b.journal].count("danse") == 1, "deux danses en moins de 5 min"
+
+
+def voix(sig, debut, duree, f0_debut, f0_fin, amplitude=0.06):
+    """Enonce voise synthetique : 3 harmoniques, hauteur qui glisse lineairement."""
+    n = int(duree * TAUX)
+    t = np.arange(n) / TAUX
+    f0 = f0_debut + (f0_fin - f0_debut) * t / duree
+    phase = 2 * np.pi * np.cumsum(f0) / TAUX
+    env = np.minimum(1.0, np.minimum(t, duree - t) / 0.05)
+    i = int(debut * TAUX)
+    sig[i:i + n] += amplitude * env * (np.sin(phase) + 0.5 * np.sin(2 * phase) + 0.3 * np.sin(3 * phase))
+
+
+def test_intonation_monte_descend_plat():
+    for f0a, f0b, attendu in ((150, 230, "intonation:monte"), (230, 150, "intonation:descend"), (180, 185, None)):
+        s = fond(4)
+        voix(s, 1.0, 1.2, f0a, f0b)
+        evts = [e for e in noms(analyse(s)) if e.startswith("intonation")]
+        assert evts == ([attendu] if attendu else []), (f0a, f0b, evts)
+
+
+def eternuement(sig, t, amplitude=0.15, duree=0.3):
+    n = int(duree * TAUX)
+    i = int(t * TAUX)
+    env = np.minimum(1.0, np.arange(n) / (0.004 * TAUX)) * np.exp(-np.arange(n) / (0.09 * TAUX))
+    sig[i:i + n] += RNG.normal(0, 1, n) * amplitude * env
+
+
+def test_eternuements_ni_claquement_ni_parole():
+    s = fond(8)
+    eternuement(s, 2.0)
+    eternuement(s, 4.5)
+    evts = noms(analyse(s))
+    assert evts == ["eternuement", "eternuement"], evts
+    s = fond(5)
+    clap(s, 2.0)
+    clap(s, 2.35)
+    assert noms(analyse(s)) == ["appel"], "un claquement n'est pas un eternuement"

@@ -1044,6 +1044,57 @@ class Aspirateur(Etat):
         brain.ctx.move(vx=V_PROMENADE if libre and u < 2.6 else 0.0)
 
 
+# --- Taquineries, lot C : imiter l'humain pour s'en moquer (gentiment) ---------------------------------------------
+
+class MimeTon(Etat):
+    """Il mime l'intonation de qui vient de parler (audio.py : intonation monte / descend), en exagerant : deux sons
+    qui "montent" (chirp puis inquire) et la tete qui part vers le haut, ou l'inverse (inquire puis coo, tete qui
+    tombe). Effet perroquet ironique, sans un seul mot."""
+    nom = "mime_ton"
+    taquinerie = True
+
+    def __init__(self):
+        self.sens = "monte"
+
+    def entre(self, brain):
+        self.sons = ("chirp", "inquire") if self.sens == "monte" else ("inquire", "coo")
+        brain.ctx.sound(self.sons[0])
+
+    def duree(self, brain):
+        return 2.0
+
+    def pas(self, brain, t):
+        if 0.6 <= t < 0.63:
+            brain.ctx.sound(self.sons[1])
+        k = gestures._smooth(t, 0.0, 1.2) * (1.0 - gestures._smooth(t, 1.5, 2.0))
+        signe = -1.0 if self.sens == "monte" else 1.0          # head_pitch negatif = tete vers le haut
+        brain.ctx.head((0.0, signe * 0.4 * k, 0.0, 0.2 * k))
+        brain.ctx.move()
+
+
+class CompteEternuements(Etat):
+    """Une serie d'eternuements : au premier, contagion sincere (son propre eternuement, etat `eternuement`) ; a partir
+    du deuxieme, il "compte" - un son different a chaque fois et autant de hochements que d'eternuements (4 au plus),
+    avec un brin de moquerie."""
+    nom = "compte_eternuements"
+    taquinerie = True
+    SONS = ("peck", "chirp", "inquire", "wheee")
+
+    def __init__(self):
+        self.n = 2
+
+    def entre(self, brain):
+        brain.ctx.sound(self.SONS[min(self.n, len(self.SONS) + 1) - 2])
+        self.hoche = min(self.n, 4)
+
+    def duree(self, brain):
+        return 0.5 * self.hoche + 0.6
+
+    def pas(self, brain, t):
+        brain.ctx.head(gestures.oui(t % 0.5) if t < 0.5 * self.hoche else (0, 0, 0, 0))
+        brain.ctx.move()
+
+
 class Fier(Etat):
     """Petit air fier apres une blague devenue un running gag ; amplitude = Malice.fierte (trophee de malice)."""
     nom = "fier"
@@ -1348,11 +1399,13 @@ class Brain:
             "sourde_oreille": SourdeOreille(), "regard_mystere": RegardMystere(), "baillement": Baillement(),
             "dernier_mot": DernierMot(), "fier": Fier(),
             "pousse_balle": PousseBalle(), "mime_vol": MimeVol(), "aspirateur": Aspirateur(),
+            "mime_ton": MimeTon(), "compte_eternuements": CompteEternuements(),
         }
         self.etats["taquin"].taquinerie = True
         self.malice = Malice(self.ctx.extras.get("memoire"))
         self.detecteur_approche = DetecteurApproche()
         self.aspirateur_actif = False
+        self.eternuements = []                  # t_global des eternuements entendus (serie = moins de 60 s d'ecart)
         self.t_esquive = -1e9                   # derniere main esquivee (la suivante, dans la minute, est acceptee)
         self.t_dernier_accueil = -1e9
         self.chutes = []                        # t_global des dernieres chutes (garde-fou "chat agace")
@@ -1501,6 +1554,18 @@ class Brain:
                 asp = self.etats["aspirateur"]
                 asp.taquine = bool(self._taquinerie(("barre_aspirateur",), humain=True, proba=0.5))
                 self._bascule("aspirateur")
+            elif base == "intonation" and detail in ("monte", "descend"):
+                if self._taquinerie(("mime_ton",), humain=True):
+                    self.etats["mime_ton"].sens = detail
+                    self._bascule("mime_ton")
+            elif base == "eternuement":
+                self.eternuements = [t for t in self.eternuements if self.t_global - t <= 60.0] + [self.t_global]
+                n = len(self.eternuements)
+                if n == 1:
+                    self._bascule("eternuement")         # contagion sincere : il eternue a son tour
+                elif self._taquinerie(("compte_eternuements",), humain=True, proba=1.0):
+                    self.etats["compte_eternuements"].n = n
+                    self._bascule("compte_eternuements")
             elif base == "discussion_longue":
                 choix = self._taquinerie(("baillement",), humain=True, proba=1.0)
                 if choix:

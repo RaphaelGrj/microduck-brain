@@ -353,3 +353,28 @@ def test_mime_de_vol_avec_ground_pick():
     sans_balle.t_global = 0.0
     simule(sans_balle, 60)
     assert "mime_vol" not in [e[1] for e in sans_balle.journal]
+
+
+# --- lot C : imiter ----------------------------------------------------------------------------------------------
+def test_mime_le_ton():
+    for sens, attendu_tete in (("monte", -1), ("descend", 1)):
+        b, c, _ = cerveau(seed=120)
+        b.P_TAQUINE = 1.0
+        simule(b, 3, evenements=[(0.5, f"intonation:{sens}")])
+        assert "mime_ton" in [e[1] for e in b.journal], b.journal
+        pitchs = [p["head_pitch"] for m, p in c.appels if m == "robot.head"]
+        extreme = min(pitchs) if attendu_tete < 0 else max(pitchs)
+        assert abs(extreme) > 0.3 and extreme * attendu_tete > 0, (sens, extreme)
+
+
+def test_serie_d_eternuements():
+    b, c, _ = cerveau(seed=121)
+    simule(b, 20, evenements=[(0.5, "eternuement"), (5.0, "eternuement"), (10.0, "eternuement")])
+    noms = [e[1] for e in b.journal]
+    assert noms[0] == "eternuement", "le premier : contagion sincere"
+    assert noms.count("compte_eternuements") == 2, noms
+    sons = [p["tag"] for m, p in c.appels if m == "robot.sound"]
+    assert "peck" in sons and "chirp" in sons, "un son different a chaque eternuement de la serie"
+    b, c, _ = cerveau(seed=122)
+    simule(b, 150, evenements=[(0.5, "eternuement"), (80.0, "eternuement")])
+    assert [e[1] for e in b.journal].count("eternuement") == 2, "deux eternuements espaces : pas une serie"

@@ -9,7 +9,11 @@ le pipeline micro qui manquait (journal du 2026-10-05 : "aucun pipeline micro/FF
   - "musique:<bpm>"    : un battement regulier (60 a 180 BPM) tenu plusieurs secondes -> il hoche la tete en rythme ;
   - "musique_fin"      : le battement s'est arrete ;
   - "discussion_longue" : des voix (son actif, hors musique) sur plus de 25 % des blocs de 2 min -> faux baillement ;
-  - "silence_conversation" : un silence d'au moins 1,2 s juste apres plusieurs secondes de voix -> "dernier mot".
+  - "silence_conversation" : un silence d'au moins 1,2 s juste apres plusieurs secondes de voix -> "dernier mot" ;
+  - "intonation:monte|descend" : un enonce de 0,4 a 3 s dont la hauteur (autocorrelation) monte ou descend d'au moins
+    3 demi-tons -> le canard mime le ton (taquinerie) ;
+  - "eternuement"      : bruit large bande (platitude spectrale), attaque nette, 0,12 a 0,6 s, tres au-dessus du fond.
+    Heuristique a etalonner : une chute d'objet peut y ressembler (consequence benigne : il "compte" au lieu de sursauter).
 Methode : niveau par bloc (dB), bruit de fond suivi par le bas (monte lentement, descend tout de suite), transitoires =
 saut de niveau au-dessus du fond qui retombe vite ; tempo = autocorrelation de la "force d'attaque" sur 6 s.
 Seuils a etalonner sur le vrai micro (reglables a la construction).
@@ -35,6 +39,45 @@ MONTEE_CLAP_S = 0.0075          # un claquement atteint son pic en quelques ms ;
 DB_MIN = -100.0
 
 
+def platitude(x):
+    """Platitude spectrale (0 = son tonal, 1 = bruit blanc) entre 300 Hz et 6 kHz."""
+    p = np.abs(np.fft.rfft(x * np.hanning(len(x)))) ** 2 + 1e-12
+    f = np.fft.rfftfreq(len(x), 1.0 / TAUX)
+    p = p[(f >= 300) & (f <= 6000)]
+    return float(np.exp(np.mean(np.log(p))) / np.mean(p))
+
+
+def hauteurs(son, trame=640, pas=320):
+    """Hauteur (Hz) des trames voisees (autocorrelation normalisee >= 0,5, 80-400 Hz) : liste de (instant s, f0)."""
+    out = []
+    for i in range(0, len(son) - trame, pas):
+        w = son[i:i + trame] - np.mean(son[i:i + trame])
+        e = float(np.dot(w, w))
+        if e < 1e-8:
+            continue
+        lags = np.arange(TAUX // 400, TAUX // 80 + 1)
+        r = np.array([float(np.dot(w[:-k], w[k:])) for k in lags]) / e
+        k = int(np.argmax(r))
+        if r[k] >= 0.5:
+            out.append(((i + trame / 2) / TAUX, TAUX / lags[k]))
+    return out
+
+
+def intonation(son):
+    """"monte" / "descend" si la hauteur du dernier tiers de l'enonce differe d'au moins 3 demi-tons de celle du premier
+    tiers ; None sinon (enonce trop court, trop peu voise, ou plat)."""
+    if not 0.4 * TAUX <= len(son) <= 3.5 * TAUX:
+        return None
+    h = hauteurs(son)
+    if len(h) < 6:
+        return None
+    n = len(h) // 3
+    debut = np.mean([np.log2(f) for _, f in h[:n]])
+    fin = np.mean([np.log2(f) for _, f in h[-n:]])
+    dt = 12.0 * (fin - debut)
+    return "monte" if dt >= 3.0 else "descend" if dt <= -3.0 else None
+
+
 class AnalyseurSon:
     def __init__(self, seuil_fort_dbfs=-12.0, saut_transitoire_db=15.0, delai_bruit_s=5.0, delai_appel_s=20.0):
         self.seuil_fort, self.saut = seuil_fort_dbfs, saut_transitoire_db
@@ -50,6 +93,9 @@ class AnalyseurSon:
         self.enveloppe = []                      # (instant, dB) par sous-bloc de 2,5 ms, sur 0,5 s
         self.voix = []                           # 1 si le bloc est "actif" (voix probable), sur 2 min
         self.silence_depuis = None               # debut du silence en cours
+        self.enonce = []                         # echantillons de l'enonce (voix) en cours, 3 s au plus
+        self.calme_enonce = 0                    # blocs silencieux depuis la derniere voix de l'enonce
+        self.platitudes = []                     # platitude spectrale des blocs du transitoire en cours
 
     def _peut(self, nom, delai):
         if self.t - self.dernier.get(nom, -1e9) < delai:
@@ -75,21 +121,28 @@ class AnalyseurSon:
         # fond suivi par le bas : descend tout de suite, monte de 0,5 dB/s (la musique ne devient pas "le silence")
         self.fond = niveau if niveau < self.fond else self.fond + 0.01
 
-        # 1. transitoires : saut au-dessus du fond, qui doit retomber en moins de 150 ms (un claquement, un choc)
+        # 1. transitoires : saut au-dessus du fond, qui doit retomber vite (claquement, choc, eternuement)
         if self.transitoire is None and niveau - self.fond >= self.saut and niveau - prec >= self.saut * 0.6:
-            self.transitoire = [self.t, niveau]
+            self.transitoire = [self.t, niveau, self.fond]
+            self.platitudes = [platitude(x)]
         elif self.transitoire is not None:
             self.transitoire[1] = max(self.transitoire[1], niveau)
+            self.platitudes.append(platitude(x))
             duree = self.t - self.transitoire[0]
             if niveau - self.fond < self.saut * 0.5:          # retombe : c'etait bref
-                debut, pic = self.transitoire
+                debut, pic, fond = self.transitoire
                 self.transitoire = None
-                if pic >= self.seuil_fort:
+                montee = self._montee(debut)
+                if (0.12 < duree <= 0.6 and pic - fond >= 25.0 and montee <= 0.03
+                        and float(np.mean(self.platitudes)) >= 0.35):
+                    if self._peut("eternuement", 1.5):
+                        out.append("eternuement")
+                elif pic >= self.seuil_fort:
                     if self._peut("bruit", self.delai_bruit_s):
                         out.append("bruit")
-                elif duree <= 0.15 and self.musique is None and self._montee(debut) <= MONTEE_CLAP_S:
+                elif duree <= 0.15 and self.musique is None and montee <= MONTEE_CLAP_S:
                     self.claps.append(debut)
-            elif duree > 0.4:                                  # son tenu : ni claquement ni choc
+            elif duree > 0.6:                                  # son tenu : ni claquement, ni choc, ni eternuement
                 self.transitoire = None
 
         # 2 bis. voix / conversation (son actif ni bref ni rythme : parole probable)
@@ -108,6 +161,20 @@ class AnalyseurSon:
         if len(self.voix) >= 6000 and int(self.t / 0.02) % 50 == 0 and sum(self.voix) / len(self.voix) >= 0.25:
             if self._peut("discussion_longue", 900.0):
                 out.append("discussion_longue")
+
+        # 2 ter. enonces : on garde le son tant que la voix continue (pauses < 0,3 s), on juge l'intonation a la fin
+        if actif:
+            self.enonce = (self.enonce + [x])[-150:]
+            self.calme_enonce = 0
+        elif self.enonce:
+            self.calme_enonce += 1
+            if self.calme_enonce < 15:
+                self.enonce.append(x)
+            else:
+                son, self.enonce = np.concatenate(self.enonce), []
+                sens = intonation(son)
+                if sens and self._peut("intonation", 8.0):
+                    out.append(f"intonation:{sens}")
 
         # 2. groupe de claquements : on juge quand il n'en vient plus depuis 0,8 s
         if self.claps and self.t - self.claps[-1] > 0.8:
