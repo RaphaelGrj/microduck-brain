@@ -378,3 +378,38 @@ def test_serie_d_eternuements():
     b, c, _ = cerveau(seed=122)
     simule(b, 150, evenements=[(0.5, "eternuement"), (80.0, "eternuement")])
     assert [e[1] for e in b.journal].count("eternuement") == 2, "deux eternuements espaces : pas une serie"
+
+
+# --- lot D (partie sure) -----------------------------------------------------------------------------------------
+def test_fausse_chute_theatrale_et_sure():
+    b, c, _ = cerveau(seed=130)
+    b.t_global = 0.0
+    b._bascule("fausse_chute")
+    simule(b, 10)
+    roulis = [p["roll"] for m, p in c.appels if m == "robot.pose" and p["active"]]
+    assert roulis and max(abs(r) for r in roulis) <= 0.25 + 1e-9, "jamais au-dela du roulis mesure sans chute"
+    assert sum(1 for m, p in c.appels if m == "robot.do" and p == {"skill": "sit_toggle"}) % 2 == 0, "il se releve"
+    assert not b.ctx.sitting and "wheee" in [p["tag"] for m, p in c.appels if m == "robot.sound"]
+
+
+def test_gags_spontanes_seulement_avec_un_familier_et_de_l_energie():
+    vus = set()
+    for seed in range(40):
+        b, c, _ = cerveau(seed=seed)
+        b.P_GAG = 0.5
+        b.t_global = 0.0
+        simule(b, 120)
+        vus |= {e[1] for e in b.journal} & {"fausse_chute", "fausse_notif"}
+    assert vus == {"fausse_chute", "fausse_notif"}, vus
+    b, c, _ = cerveau(seed=1, fam=0.1)
+    b.P_GAG = 1.0
+    b.t_global = 0.0
+    simule(b, 120)
+    assert not {e[1] for e in b.journal} & {"fausse_chute", "fausse_notif"}
+    b, c, _ = cerveau(seed=1)
+    b.humeur.energie = 0.3
+    b.P_GAG = 1.0
+    b.malice.permise = lambda brain, nom, humain=False: nom == "fausse_chute"
+    b.t_global = 0.0
+    simule(b, 60)
+    assert "fausse_chute" not in {e[1] for e in b.journal}, "fatigue : pas de cascade"

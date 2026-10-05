@@ -1095,6 +1095,83 @@ class CompteEternuements(Etat):
         brain.ctx.move()
 
 
+# --- Taquineries, lot D (partie sure) : gags spontanes ------------------------------------------------------------
+
+class FausseChute(Etat):
+    """Fausse chute comique, clairement theatrale : le corps se dandine de plus en plus (robot.pose, roulis 0,25 rad -
+    sous les +-0,3 rad mesures sans chute, diag_pose.py), la tete s'affole, "wheee"... et il s'assoit d'un coup
+    (sit_toggle), l'air etourdi, puis se releve et prend un petit air fier. AUCUNE perte d'equilibre reelle."""
+    nom = "fausse_chute"
+    taquinerie = True
+    ROULIS = 0.25
+
+    def entre(self, brain):
+        self.assis = False
+        self.releve = False
+
+    def duree(self, brain):
+        return 9.0
+
+    def pas(self, brain, t):
+        ctx = brain.ctx
+        if t < 1.5:
+            k = gestures._smooth(t, 0.0, 1.2)
+            ctx.pose((0.0, self.ROULIS * k * math.sin(2 * math.pi * 2.0 * t), 0.0))
+            ctx.head((0.0, -0.2 * k, 0.35 * k * math.sin(2 * math.pi * 3.0 * t), -0.3 * k * math.sin(2 * math.pi * 2.0 * t)))
+            if 1.2 <= t < 1.23:
+                ctx.sound("wheee")
+        elif not self.assis:
+            ctx.pose(None)
+            ctx.toggle_sit()                     # "plop"
+            self.assis = True
+        elif t < 5.0:
+            u = t - 1.5                          # etourdi : la tete fait de petits cercles
+            ctx.head((0.0, 0.15 * math.cos(2 * math.pi * 0.7 * u), 0.2 * math.sin(2 * math.pi * 0.7 * u), 0.0))
+        elif not self.releve:
+            ctx.sound("chirp")
+            ctx.head((0.0, 0.0, 0.0, 0.0))
+            if ctx.sitting:
+                ctx.toggle_sit()
+            self.releve = True
+        else:
+            u = t - 6.0
+            ctx.head(gestures.fier(u) if 0.0 <= u < 1.8 else (0, 0, 0, 0))
+        ctx.move()
+
+    def sort(self, brain):
+        brain.ctx.pose(None)
+        if brain.ctx.sitting and not brain.reste_assis():
+            brain.ctx.toggle_sit()
+        brain.ctx.calme()
+
+
+class FausseNotif(Etat):
+    """Parodie sonore d'une notification de telephone : "ding-ding" en deux chirps (un son clairement ludique, jamais une
+    imitation d'alarme), il regarde ailleurs d'un air innocent... puis file, tout content de lui."""
+    nom = "fausse_notif"
+    taquinerie = True
+
+    def entre(self, brain):
+        brain.ctx.sound("chirp")
+        self.cote = brain.rng.choice((-1.0, 1.0))
+
+    def duree(self, brain):
+        return 5.2
+
+    def pas(self, brain, t):
+        if 0.3 <= t < 0.33:
+            brain.ctx.sound("chirp")
+        if t < 3.4:
+            k = gestures._smooth(t, 0.6, 1.2)
+            brain.ctx.head((0.0, -0.25 * k, 0.6 * self.cote * k, 0.0))
+            brain.ctx.move()
+            return
+        if t < 3.43:
+            brain.ctx.sound("wheee")
+        brain.ctx.head((0.0, 0.0, 0.0, 0.0))
+        brain.ctx.move(vyaw=V_ROTATION * self.cote if t < 4.6 else 0.0)
+
+
 class Fier(Etat):
     """Petit air fier apres une blague devenue un running gag ; amplitude = Malice.fierte (trophee de malice)."""
     nom = "fier"
@@ -1318,6 +1395,7 @@ class Brain:
     TAQUIN_PROBA = 0.2
     P_TAQUINE = 0.35            # quand une taquinerie est permise, elle remplace la reaction normale 1 fois sur 3
     P_REGARD_MYSTERE = 0.04     # par passage par chill, quand c'est permis
+    P_GAG = 0.02                # gag spontane (fausse chute, fausse notification) par passage par chill, si permis
     P_POUSSE_BALLE = 0.6        # main vers la balle a ses pieds : il la pousse hors de portee
     P_MIME_VOL = 0.3            # balle a ses pieds, un familier present : il fait mine de la voler
     ESQUIVE_S = 60.0          # "non" theatral avant d'accepter de jouer (registre du jeu seulement, jamais la securite)
@@ -1400,6 +1478,7 @@ class Brain:
             "dernier_mot": DernierMot(), "fier": Fier(),
             "pousse_balle": PousseBalle(), "mime_vol": MimeVol(), "aspirateur": Aspirateur(),
             "mime_ton": MimeTon(), "compte_eternuements": CompteEternuements(),
+            "fausse_chute": FausseChute(), "fausse_notif": FausseNotif(),
         }
         self.etats["taquin"].taquinerie = True
         self.malice = Malice(self.ctx.extras.get("memoire"))
@@ -1672,6 +1751,13 @@ class Brain:
             return "jeu_solitaire"
         if self.rng.random() < self.P_REGARD_MYSTERE and self.malice.permise(self, "regard_mystere"):
             return "regard_mystere"
+        if self.rng.random() < self.P_GAG:
+            chat = self.ctx.extras.get("chat")
+            gags = [g for g in ("fausse_chute", "fausse_notif") if self.malice.permise(self, g)
+                    and not (g == "fausse_chute" and (h.energie < 0.5
+                             or (chat is not None and getattr(chat.suivi, "visible", False))))]
+            if gags:
+                return self.rng.choice(gags)
         veille_balle = self.ctx.extras.get("balle")
         b = veille_balle.position() if veille_balle is not None else None
         if (b is not None and 0.06 <= b[0] <= 0.25 and abs(b[1]) <= 0.10 and self.rng.random() < self.P_MIME_VOL
