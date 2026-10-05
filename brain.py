@@ -571,9 +571,18 @@ class Brain:
         "info": ("info", 0.2),
     }
 
-    def __init__(self, client, humeur=None, seed=None, extras=None):
+    def __init__(self, client, humeur=None, seed=None, extras=None, heures_calmes=None, horloge=time.localtime):
         self.ctx = Ctx(client)
         self.ctx.extras = extras or {}          # perceptions externes partagees (ex. {"chat": VeilleChat})
+        # "Heures calmes" (ROADMAP, table Humains : routine "Heure, HA" -> Nap) : optionnel (None = desactive, le
+        # comportement par defaut ne change pas) - un tuple (heure_debut, heure_fin) en heure LOCALE, ex. (23, 7)
+        # pour 23h-7h (franchit minuit). Reutilise exactement le chemin "calme_on"/"calme_off" de l'interrupteur
+        # HA (meme effet : assis, silencieux, prioritaire) plutot que dupliquer sa logique - un vrai toggle HA
+        # pendant la nuit reste respecte jusqu'au prochain changement d'heure (evenement non renvoye si deja a
+        # l'etat demande). `horloge` injectable pour les tests (sinon l'heure reelle de la machine).
+        self.heures_calmes = heures_calmes
+        self.horloge = horloge
+        self._nuit_actuelle = None
         self.humeur = humeur or Humeur()
         self.rng = random.Random(seed)
         self.etats = {
@@ -757,6 +766,13 @@ class Brain:
         if self.ctx.extras.get("tof") is not None:
             self.ctx.extras["tof"].noter_etat(state)     # pose de tete datee, pour placer chaque trame ToF a son instant
         self.t_global += dt
+        if self.heures_calmes is not None:
+            debut, fin = self.heures_calmes
+            h = self.horloge().tm_hour
+            nuit = (h >= debut or h < fin) if debut > fin else (debut <= h < fin)
+            if nuit != self._nuit_actuelle:
+                self._nuit_actuelle = nuit
+                self.evenement("calme_on" if nuit else "calme_off")
         if state.get("odom"):
             self._derniere_position = (state["odom"]["position"][0], state["odom"]["position"][1])
         pct = state.get("battery", {}).get("percent")

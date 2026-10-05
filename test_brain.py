@@ -382,6 +382,59 @@ def test_recule_si_chat_approche_vite():
     assert dernier_vx(c) == 0.0, "le recul doit s'arreter, pas devenir une fuite continue"
 
 
+class FauxHorloge:
+    """Imite time.localtime() juste assez pour Brain.heures_calmes : une heure locale pilotee par le test."""
+    def __init__(self, heure):
+        self.heure = heure
+
+    def __call__(self):
+        return type("T", (), {"tm_hour": self.heure})()
+
+
+def test_heures_calmes_nuit_force_le_repos():
+    # routine "heures calmes" (ROADMAP, table Humains) : pendant la plage nocturne configuree, le cerveau se met
+    # au repos tout seul, exactement comme l'interrupteur "calme" de Home Assistant (meme chemin, meme effet).
+    c = FauxClient()
+    horloge = FauxHorloge(2)        # 2h du matin, dans la plage (23h-7h)
+    b = Brain(c, Humeur(energie=0.9), seed=20, heures_calmes=(23, 7), horloge=horloge)
+    simule(b, 2.0)
+    assert b.mode_calme, "les heures calmes nocturnes doivent forcer le mode calme"
+    assert b.courant.nom == "nap"
+
+
+def test_heures_calmes_matin_reveille():
+    c = FauxClient()
+    horloge = FauxHorloge(2)
+    b = Brain(c, Humeur(energie=0.9), seed=21, heures_calmes=(23, 7), horloge=horloge)
+    simule(b, 2.0)
+    assert b.mode_calme
+    horloge.heure = 8               # le matin arrive, hors plage
+    simule(b, 2.0)
+    assert not b.mode_calme, "le matin doit lever les heures calmes toutes seules"
+
+
+def test_heures_calmes_desactivees_par_defaut():
+    # heures_calmes=None (valeur par defaut) : rien ne doit changer de comportement existant - cette
+    # fonctionnalite est opt-in, jamais imposee a un cerveau qui ne la configure pas.
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.9), seed=22)
+    simule(b, 5.0)
+    assert not b.mode_calme, "sans heures_calmes configurees, rien ne doit se declencher tout seul"
+
+
+def test_heures_calmes_respecte_un_reveil_manuel_pendant_la_nuit():
+    # un toggle HA explicite pendant la nuit doit etre respecte jusqu'au prochain changement d'heure, pas
+    # reimpose tick apres tick par l'horloge (une seule transition par changement d'etat, pas une insistance).
+    c = FauxClient()
+    horloge = FauxHorloge(2)
+    b = Brain(c, Humeur(energie=0.9), seed=23, heures_calmes=(23, 7), horloge=horloge)
+    simule(b, 2.0)
+    assert b.mode_calme
+    b.evenement("calme_off")
+    simule(b, 2.0)
+    assert not b.mode_calme, "le reveil manuel pendant la nuit doit etre respecte"
+
+
 def test_pas_de_recul_si_approche_lente():
     # le chat se rapproche, mais lentement (visite normale) : aucun recul, meme tres pres.
     c = FauxClient()
