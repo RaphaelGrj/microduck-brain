@@ -1172,6 +1172,88 @@ class FausseNotif(Etat):
         brain.ctx.move(vyaw=V_ROTATION * self.cote if t < 4.6 else 0.0)
 
 
+# --- La maison : alarme, tours sur demande ------------------------------------------------------------------------
+
+class AlarmeFumee(Etat):
+    """Detecteur de fumee / CO (Home Assistant) : le canard donne l'alarme - son "alarm" toutes les 2 s pendant 20 s,
+    tete dressee qui balaie. PRIORITAIRE sur tout : reveille la sieste, passe outre le silence du mode calme et une
+    conversation vocale en cours (la securite des habitants avant la tranquillite)."""
+    nom = "alarme"
+    DUREE = 20.0
+
+    def entre(self, brain):
+        brain.ctx.silence = False
+        self.n = 0
+
+    def duree(self, brain):
+        return self.DUREE
+
+    def pas(self, brain, t):
+        if t >= 2.0 * self.n:
+            self.n += 1
+            brain.ctx.sound("alarm")
+        brain.ctx.head((0.0, -0.3, 0.5 * math.sin(2 * math.pi * t / 2.0), 0.0))
+        brain.ctx.move()
+
+    def sort(self, brain):
+        brain.ctx.silence = brain.mode_calme
+        brain.ctx.calme()
+
+
+class Toupie(Etat):
+    """Tour sur demande (bouton HA) : un tour complet sur lui-meme, a l'odometrie, puis un petit salut."""
+    nom = "toupie"
+    DUREE_MAX = 10.0
+
+    def entre(self, brain):
+        brain.ctx.sound("wheee")
+        self.cumul, self.yaw_prec, self.fini = 0.0, None, None
+
+    def duree(self, brain):
+        return self.DUREE_MAX
+
+    def pas(self, brain, t):
+        o = (brain.ctx.state or {}).get("odom")
+        if o is not None:
+            if self.yaw_prec is not None:
+                self.cumul += abs(math.remainder(o["yaw"] - self.yaw_prec, 2 * math.pi))
+            self.yaw_prec = o["yaw"]
+        if self.fini is None and (self.cumul >= 2 * math.pi - 0.3 or t >= self.DUREE_MAX - 2.0):
+            self.fini = t
+            brain.ctx.sound("chirp")
+        brain.ctx.head((0.0, 0.0, 0.0, 0.0) if self.fini is None else gestures.oui(min(t - self.fini, 1.2)))
+        brain.ctx.move(vyaw=V_ROTATION if self.fini is None else 0.0)
+        if self.fini is not None and t - self.fini >= 1.4:
+            brain.fin_etat = t
+
+
+class AssisDemande(Etat):
+    """Tour sur demande : "assis !" - il s'assoit (sit_toggle) et reste assis 20 s, ou jusqu'au bouton suivant."""
+    nom = "assis_demande"
+
+    def entre(self, brain):
+        brain.ctx.sound("chirp")
+        if not brain.ctx.sitting:
+            brain.ctx.toggle_sit()
+
+    def duree(self, brain):
+        return 20.0
+
+    def sur_evenement(self, brain, base):
+        if base == "tour_assis":
+            brain.fin_etat = brain.t_etat         # "debout !" : on se releve
+            return True
+        return False
+
+    def pas(self, brain, t):
+        brain.ctx.head((0.0, 0.0, 0.0, 0.0))
+
+    def sort(self, brain):
+        if brain.ctx.sitting and not brain.reste_assis():
+            brain.ctx.toggle_sit()
+        brain.ctx.calme()
+
+
 class Fier(Etat):
     """Petit air fier apres une blague devenue un running gag ; amplitude = Malice.fierte (trophee de malice)."""
     nom = "fier"
@@ -1395,6 +1477,7 @@ class Brain:
     TAQUIN_PROBA = 0.2
     P_TAQUINE = 0.35            # quand une taquinerie est permise, elle remplace la reaction normale 1 fois sur 3
     P_REGARD_MYSTERE = 0.04     # par passage par chill, quand c'est permis
+    P_TOILETTE = 0.5            # apres une impression terminee : il se lisse les plumes
     P_OBSERVER = 0.03           # par passage par chill, en journee : rejoindre son coin d'observation
     CHARGE_S, CHARGE_PCT = 120.0, 2.0     # immobile 2 min et +2 % de batterie : il est sur son chargeur
     P_GAG = 0.02                # gag spontane (fausse chute, fausse notification) par passage par chill, si permis
@@ -1483,11 +1566,18 @@ class Brain:
             "pousse_balle": PousseBalle(), "mime_vol": MimeVol(), "aspirateur": Aspirateur(),
             "mime_ton": MimeTon(), "compte_eternuements": CompteEternuements(),
             "fausse_chute": FausseChute(), "fausse_notif": FausseNotif(),
+            # la maison
+            "alarme": AlarmeFumee(), "toupie": Toupie(), "assis_demande": AssisDemande(),
+            "salut": Sequence("salut", [("oui", "greet"), ("content", "wheee")]),
+            "meteo_curieux": Sequence("meteo_curieux", [("curieux", "inquire")]),      # tiens, il pleut
+            "meteo_neige": Sequence("meteo_neige", [("curieux", "inquire"), ("content", "wheee")]),
+            "meteo_orage": Sequence("meteo_orage", [("surpris", "inquire")]),         # inquiet, puis va se blottir
         }
         self.etats["taquin"].taquinerie = True
         self.malice = Malice(self.ctx.extras.get("memoire"))
         self.detecteur_approche = DetecteurApproche()
         self.aspirateur_actif = False
+        self.meteo = None                       # groupe meteo courant (Home Assistant) : soleil, pluie, neige, orage...
         self.chargeur = None                    # (x, y) odom ou la batterie est deja remontee (session en cours)
         self._charge_ref = None                 # (t, pourcentage, position) depuis le dernier deplacement
         self.eternuements = []                  # t_global des eternuements entendus (serie = moins de 60 s d'ecart)
@@ -1528,6 +1618,12 @@ class Brain:
         while self.evenements:
             nom = self.evenements.pop(0)
             base, _, detail = nom.partition(":")     # "impression_echec:MK4S" -> ("impression_echec", "MK4S")
+            if base == "alarme_fumee":
+                # securite des habitants : avant le mode calme, la conversation vocale, la sieste ou un jeu
+                print(f"[{self.t_global:6.1f}s] ALARME fumee / CO", flush=True)
+                self.derniere_interaction = self.t_global
+                self._bascule("alarme")
+                continue
             if base in ("calme_on", "calme_off"):
                 # Regle de vie : interrupteur "calme" (veille, silence, sieste forcee). Prioritaire sur tout.
                 actif = base == "calme_on"
@@ -1584,6 +1680,8 @@ class Brain:
                 # une notification que l'habitant a demandee n'est pas un caprice : elle interrompt la sieste
                 etat, eveil = self.REACTIONS_MAISON[base]
                 self.humeur.eveil = min(1.0, self.humeur.eveil + eveil)
+                if base == "impression_finie" and not self.mode_calme and self.rng.random() < self.P_TOILETTE:
+                    self.suivant_force = "lissage"   # toilette apres l'atelier "poussiereux" (ROADMAP)
                 if base in self.MESSAGES_A_GARDER and not self.presents:
                     self.messages = (self.messages + [nom])[-self.MESSAGES_MAX:]
                 print(f"[{self.t_global:6.1f}s] notification maison : {nom}", flush=True)
@@ -1597,6 +1695,14 @@ class Brain:
                 if getattr(self.courant, "taquinerie", False) or self.courant.nom == "fier":
                     self.suivant_force = None        # ex. le jeu qui devait suivre le "non" theatral : annule aussi
                     self._bascule("chill")
+                continue
+            if base in ("tour_salut", "tour_toupie", "tour_assis") and self.courant.nom != "assis_demande":
+                # tours sur demande (boutons HA) : une demande explicite reveille la sieste, mais rien en mode calme
+                if not self.mode_calme and self.courant.nom != "alarme":
+                    self._bascule({"tour_salut": "salut", "tour_toupie": "toupie", "tour_assis": "assis_demande"}[base])
+                continue
+            if base in ("meteo", "orage"):
+                self._sur_meteo("orage" if base == "orage" else detail)
                 continue
             sur_evt = getattr(self.courant, "sur_evenement", None)
             if sur_evt is not None and sur_evt(self, base):
@@ -1714,6 +1820,34 @@ class Brain:
             return False
         return 0.06 <= b[0] <= 0.25 and abs(b[1]) <= 0.10 and math.hypot(m[1] - b[0], m[2] - b[1]) <= 0.15
 
+    METEO = {"lightning": "orage", "lightning-rainy": "orage", "hail": "orage", "exceptional": "orage",
+             "rainy": "pluie", "pouring": "pluie", "snowy-rainy": "pluie", "snowy": "neige",
+             "sunny": "soleil", "clear-night": "clair", "partlycloudy": "nuageux", "cloudy": "nuageux",
+             "fog": "nuageux", "windy": "nuageux", "windy-variant": "nuageux", "orage": "orage"}
+    MARCHE_PAR_METEO = {"orage": 0.3, "pluie": 0.6, "neige": 0.8, "soleil": 1.3}   # envie de se promener
+
+    def _sur_meteo(self, etat):
+        """Ne reagit qu'au CHANGEMENT (le debut de la pluie, pas chaque instant ou elle tombe)."""
+        groupe = self.METEO.get(etat)
+        if groupe is None or groupe == self.meteo:
+            return
+        self.meteo = groupe
+        if self.mode_calme or self.courant.nom in ("nap", "ecoute", "alarme"):
+            return
+        if groupe == "orage":
+            # inquiet, puis il va se blottir dans son coin de sieste s'il le connait (sinon sieste sur place)
+            coin = self._coin_atteignable()
+            if coin is not None:
+                self.etats["va_au_coin"].cible = coin
+                self.suivant_force = "va_au_coin"
+            else:
+                self.suivant_force = "nap"
+            self._bascule("meteo_orage")
+        elif groupe == "neige":
+            self._bascule("meteo_neige")
+        elif groupe == "pluie":
+            self._bascule("meteo_curieux")
+
     def _taquinerie(self, noms, humain=False, proba=None):
         """Une taquinerie a la place de la reaction normale ? -> son nom, ou None (budget, familiarite, stop, hasard)."""
         if self.rng.random() >= (self.P_TAQUINE if proba is None else proba):
@@ -1788,7 +1922,7 @@ class Brain:
                 and self.malice.permise(self, "mime_vol")):
             return "mime_vol"
         poids = {"look": 0.4, "turn": 0.2 + 0.3 * h.energie,
-                 "wander": 0.15 + 0.4 * h.energie * (0.5 + h.eveil)}
+                 "wander": (0.15 + 0.4 * h.energie * (0.5 + h.eveil)) * self.MARCHE_PAR_METEO.get(self.meteo, 1.0)}
         # Initiative rare et surprenante (principe Pollen : un duo surprise est un plaisir, un juke-box non) :
         # faible probabilite, et jamais deux fois le meme geste en moins de DELAI_RARE secondes.
         for nom, p in self.RARES.items():

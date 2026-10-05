@@ -52,6 +52,7 @@ REACTIONS_PAR_TYPE = {       # etats connus par type d'integration ; pour les au
     # etat (une entite event.* de sonnette change d'etat - son horodatage - a chaque appui).
     "sonnette": {"on": "sonnette"},                 # binary_sensor de sonnette
     "sonnette_event": {"*": "sonnette"},            # event.* (sonnettes recentes : Ring, Reolink, Aqara...)
+    "fumee": {"on": "alarme_fumee"},                # binary_sensor de detecteur de fumee / CO (device_class smoke)
     "aspirateur": {"cleaning": "aspirateur_on", "docked": "aspirateur_off", "idle": "aspirateur_off",   # vacuum.*
                    "returning": "aspirateur_off", "paused": "aspirateur_off", "error": "aspirateur_off"},
     "machine": {"finished": "machine_finie", "end": "machine_finie", "complete": "machine_finie",   # Home Connect,
@@ -122,6 +123,8 @@ def lire_config(chemin):
         s = {"entite": app["entite"], "nom": app.get("nom", app["entite"])}
         if app.get("type") == "puissance":
             s["puissance"] = {k: float(app.get(k, v)) for k, v in PUISSANCE_DEFAUTS.items()}
+        elif app.get("type") == "meteo":
+            s["meteo"] = True                   # weather.* : chaque nouvel etat -> "meteo:<etat>"
         else:
             s["reactions"] = app.get("reactions") or REACTIONS_PAR_TYPE.get(app.get("type", ""), {})
         cfg["surveillance"].append(s)
@@ -246,7 +249,10 @@ class PublieurMQTT:
     # (objet, nom dans HA, icone, charge MQTT = evenement du cerveau) ; seules ces charges sont acceptees
     BOUTONS = (("jouer_soleil", "jouer a 1-2-3 soleil", "mdi:weather-sunny", "jeu_soleil"),
                ("fin_jeu", "fin du jeu", "mdi:stop-circle-outline", "fin_jeu"),
-               ("stop_taquinerie", "arrete de me taquiner", "mdi:hand-back-left", "stop_taquinerie"))
+               ("stop_taquinerie", "arrete de me taquiner", "mdi:hand-back-left", "stop_taquinerie"),
+               ("tour_salut", "tour : salut", "mdi:hand-wave", "tour_salut"),
+               ("tour_toupie", "tour : toupie", "mdi:rotate-360", "tour_toupie"),
+               ("tour_assis", "tour : assis / debout", "mdi:seat", "tour_assis"))
 
     def __init__(self, mq, log=print, sur_evenement=None):
         import paho.mqtt.client as mqtt
@@ -391,6 +397,10 @@ class PontHA:
             return
         if s.get("puissance"):
             self._sur_puissance(entite, s, nouveau)
+            return
+        if s.get("meteo"):
+            self.log(f"[HA] meteo : {ancien} -> {nouveau}")
+            self.evenements.put(f"meteo:{nouveau.lower()}")
             return
         reactions = {k.lower(): v for k, v in s.get("reactions", {}).items()}
         reaction = reactions.get(nouveau.lower(), reactions.get("*"))

@@ -76,6 +76,8 @@ entite = "A_REMPLIR"                # ex. "person.raphael"
 #   "sonnette"       : binary_sensor de sonnette (on = on sonne)
 #   "sonnette_event" : entité event.* d'une sonnette récente (chaque appui change son état)
 #   "machine"        : appareil connecté qui annonce son état (Home Connect, LG ThinQ, SmartThings : finished/end...)
+#   "fumee"          : détecteur de fumée / CO (binary_sensor) : alarme répétée, même en mode calme
+#   "meteo"          : entité weather.* : réagit au début de la pluie, à la neige, et se réfugie par orage
 #   "aspirateur"     : robot aspirateur (entité vacuum.*) : curiosité à son départ, taquinerie / écart quand il approche
 #   "puissance"      : appareil « bête » sur une prise connectée qui mesure la puissance (W) ; réglages facultatifs :
 #                      seuil_w = 5, fin_apres_s = 180 (sous le seuil aussi longtemps = fini), marche_min_s = 300
@@ -84,6 +86,16 @@ entite = "A_REMPLIR"                # ex. "person.raphael"
 nom = "Sonnette"
 type = "sonnette_event"
 entite = "A_REMPLIR"                # ex. "event.sonnette_entree"
+
+[[appareil]]
+nom = "Detecteur de fumee"
+type = "fumee"                      # binary_sensor smoke/CO : alarme du canard, PRIORITAIRE meme en mode calme
+entite = "A_REMPLIR"
+
+[[appareil]]
+nom = "Meteo"
+type = "meteo"                      # weather.* : debut de pluie, neige, orage (il se refugie dans son coin)
+entite = "A_REMPLIR"                # ex. "weather.maison" (Meteo-France, Met.no...)
 
 [[appareil]]
 nom = "Aspirateur"
