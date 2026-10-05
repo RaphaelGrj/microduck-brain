@@ -458,7 +458,11 @@ class Accueil(Etat):
             mem.rencontre(self.qui)
         self.etapes = []
         t = 0.0
-        for geste, son in self.sequence(familiarite, self.absence_s):
+        seq = self.sequence(familiarite, self.absence_s)
+        self.messages, brain.messages = brain.messages, []
+        if self.messages:
+            seq = seq + [("curieux", "inquire"), ("oui", "chirp")]   # "pendant ton absence, il s'est passe quelque chose"
+        for geste, son in seq:
             d, fn = gestures.GESTES[geste]
             self.etapes.append((t, d, fn, son, gestures.GESTES_CORPS.get(geste)))
             t += d + 0.3
@@ -466,7 +470,8 @@ class Accueil(Etat):
         self.joues = set()
         print(f"[{brain.t_global:6.1f}s] accueil de {self.qui} (familiarite {familiarite:.2f}, absence "
               f"{'?' if self.absence_s is None else f'{self.absence_s / 60:.0f} min'}) : "
-              f"{' + '.join(e[3] for e in self.etapes)}", flush=True)
+              f"{' + '.join(e[3] for e in self.etapes)}"
+              + (f" ; messages transmis : {', '.join(self.messages)}" if self.messages else ""), flush=True)
 
     def duree(self, brain):
         return self.total + 0.3
@@ -620,7 +625,16 @@ class Brain:
         "impression_commencee": ("info", 0.1),
         "alerte": ("alerte", 0.7),
         "info": ("info", 0.2),
+        # messager de la maison (pont_ha.py, sections [[appareil]])
+        "sonnette": ("sonnette", 0.6),
+        "machine_finie": ("messager", 0.2),
+        "machine_echec": ("alerte", 0.7),
     }
+    # Notifications qui meritent d'etre REDITES a un habitant absent a ce moment-la (ROADMAP "Messager physique") : le
+    # canard les garde et les rappelle a l'accueil du prochain retour (sans navigation : il ne va pas chercher
+    # quelqu'un, il transmet quand on rentre). Une sonnette n'a pas de sens apres coup : pas gardee.
+    MESSAGES_A_GARDER = ("impression_finie", "impression_echec", "machine_finie", "machine_echec")
+    MESSAGES_MAX = 5
 
     BONJOUR_FENETRE_H = 4       # le bonjour du matin n'est dit que dans les 4 h qui suivent l'heure prevue
 
@@ -665,7 +679,11 @@ class Brain:
             "jeu_solitaire": JeuSolitaire(),                       # occupation autonome, personne de disponible
             "cherche_attention": RechercheAttention(),             # occupation autonome, humain/chat disponible
             "bonjour": Bonjour(),                                  # routine du matin, une fois par jour
+            # messager : "on sonne !" (tete qui se redresse + alarme, puis interrogatif) ; "c'est fini" (signe)
+            "sonnette": Sequence("sonnette", [("surpris", "alarm"), ("curieux", "inquire")]),
+            "messager": Sequence("messager", [("curieux", "inquire"), ("oui", "chirp")]),
         }
+        self.messages = []                      # notifications a redire au prochain habitant qui rentre
         self.derniere_fois = {}                 # etat rare -> t_global de la derniere fois
         self.mode_calme = False                 # interrupteur "calme" de Home Assistant (regle de vie)
         self.exploration = Exploration()        # memoire des zones visitees (novelty grid du M9)
@@ -750,6 +768,8 @@ class Brain:
                 # une notification que l'habitant a demandee n'est pas un caprice : elle interrompt la sieste
                 etat, eveil = self.REACTIONS_MAISON[base]
                 self.humeur.eveil = min(1.0, self.humeur.eveil + eveil)
+                if base in self.MESSAGES_A_GARDER and not self.presents:
+                    self.messages = (self.messages + [nom])[-self.MESSAGES_MAX:]
                 print(f"[{self.t_global:6.1f}s] notification maison : {nom}", flush=True)
                 self._bascule(etat)
                 continue

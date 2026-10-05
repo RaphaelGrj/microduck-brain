@@ -259,6 +259,72 @@ def test_options_cerveau():
     assert pont_ha.options_cerveau({}) == {}
 
 
+def test_messager_appareils():
+    """Sections [[appareil]] : sonnette (binary_sensor et event.*), machine a etats, prise a mesure de puissance."""
+    import tempfile
+    from pathlib import Path
+    toml = """
+[home_assistant]
+url = "http://ha.local:8123"
+[[appareil]]
+nom = "Sonnette"
+type = "sonnette_event"
+entite = "event.sonnette_entree"
+[[appareil]]
+nom = "Lave-vaisselle"
+type = "machine"
+entite = "sensor.lave_vaisselle_operation_state"
+[[appareil]]
+nom = "Lave-linge"
+type = "puissance"
+entite = "sensor.prise_lave_linge_puissance"
+fin_apres_s = 120
+[[appareil]]
+nom = "Seche-linge"
+type = "puissance"
+entite = "A_REMPLIR"
+"""
+    with tempfile.TemporaryDirectory() as d:
+        chemin = Path(d) / "ha.toml"
+        chemin.write_text(toml)
+        cfg = pont_ha.lire_config(chemin)
+    assert cfg["ignorees"] == ["Seche-linge"]
+    t = [0.0]
+    pont = pont_ha.PontHA(cfg, JETON, log=lambda m: None, horloge=lambda: t[0])
+    pont._sur_changement("event.sonnette_entree", None, "2026-10-05T10:00:00+00:00")
+    pont._sur_changement("event.sonnette_entree", "2026-10-05T10:00:00+00:00", "2026-10-05T10:05:00+00:00")
+    assert pont.source() == ["sonnette:Sonnette", "sonnette:Sonnette"], "chaque appui doit sonner"
+    pont._sur_changement("sensor.lave_vaisselle_operation_state", "run", "Finished")
+    assert pont.source() == ["machine_finie:Lave-vaisselle"]
+    lv = "sensor.prise_lave_linge_puissance"
+
+    def puissance(w, a):
+        t[0] = a
+        pont._sur_changement(lv, None, str(w))
+        return pont.source()
+    assert puissance(2000, 0) == [] and puissance(1.0, 600) == []     # 10 min de lavage, puis trempage
+    assert puissance(1.0, 700) == []                                   # 100 s sous le seuil : pas encore fini
+    assert puissance(400, 710) == []                                   # ca repart : c'etait une pause
+    assert puissance(0.5, 3000) == []
+    t[0] = 3121
+    assert pont.source() == ["machine_finie:Lave-linge"], "cycle termine non signale"
+    t[0] = 9999
+    assert pont.source() == [], "un cycle ne se signale qu'une fois"
+    assert puissance(1500, 10000) == [] and puissance(0.0, 10030) == []    # 30 s de marche : pas une lessive
+    t[0] = 11000
+    assert pont.source() == [], "un allumage bref ne doit rien signaler"
+    assert puissance("unavailable", 11001) == []
+
+
+def test_publication_messages_en_attente():
+    pont = pont_ha.PontHA({"url": "http://x", "surveillance": [], "publier_toutes_les_s": 1}, JETON, log=lambda m: None)
+    b = FauxBrain()
+    b.messages = ["machine_finie:Lave-linge"]
+    pont.photographier(b, faux_etat())
+    etat, attrs = pont.entites_du_canard()["sensor.microduck_messages"]
+    assert etat == 1 and attrs["messages"] == "machine_finie:Lave-linge"
+
+
 def test_calme():
     """Interrupteur calme : etat initial lu au demarrage, on/off -> evenements ; cerveau : sieste, silence, pas de promenade."""
     ha = mock_ha.MockHA(JETON)

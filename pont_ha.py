@@ -48,7 +48,18 @@ class ErreurAuth(Exception):
 REACTIONS_PAR_TYPE = {       # etats connus par type d'integration ; pour les autres, a ecrire dans la config
     "prusalink": {"finished": "impression_finie", "stopped": "impression_echec", "error": "impression_echec",
                   "attention": "alerte", "printing": "impression_commencee"},
+    # Messager de la maison (ROADMAP, table Humains "Messager physique", prochaine etape n°3) : "*" = tout nouvel
+    # etat (une entite event.* de sonnette change d'etat - son horodatage - a chaque appui).
+    "sonnette": {"on": "sonnette"},                 # binary_sensor de sonnette
+    "sonnette_event": {"*": "sonnette"},            # event.* (sonnettes recentes : Ring, Reolink, Aqara...)
+    "machine": {"finished": "machine_finie", "end": "machine_finie", "complete": "machine_finie",   # Home Connect,
+                "completed": "machine_finie", "error": "machine_echec", "failure": "machine_echec"},  # ThinQ, SmartThings...
 }
+
+# Lave-linge "bete" sur une prise connectee : on suit la PUISSANCE (W). En marche au-dessus du seuil ; finie quand
+# elle reste sous le seuil assez longtemps (un lave-linge s'arrete quelques minutes pendant le trempage) et seulement
+# apres un vrai cycle (une prise qu'on allume 10 s n'est pas une lessive).
+PUISSANCE_DEFAUTS = {"seuil_w": 5.0, "fin_apres_s": 180.0, "marche_min_s": 300.0}
 
 
 def duree_etat(ancien, nouveau):
@@ -96,6 +107,16 @@ def lire_config(chemin):
         cfg["surveillance"].append({
             "entite": imp["entite"], "nom": imp.get("nom", imp["entite"]),
             "reactions": imp.get("reactions") or REACTIONS_PAR_TYPE.get(imp.get("type", ""), {})})
+    for app in brut.get("appareil", []):        # messager : sonnette, lave-linge, lave-vaisselle...
+        if est_vide(app.get("entite")):
+            cfg["ignorees"].append(app.get("nom", "?"))
+            continue
+        s = {"entite": app["entite"], "nom": app.get("nom", app["entite"])}
+        if app.get("type") == "puissance":
+            s["puissance"] = {k: float(app.get(k, v)) for k, v in PUISSANCE_DEFAUTS.items()}
+        else:
+            s["reactions"] = app.get("reactions") or REACTIONS_PAR_TYPE.get(app.get("type", ""), {})
+        cfg["surveillance"].append(s)
     if est_vide(cfg["url"]):
         cfg["url"] = None
     return cfg
@@ -298,8 +319,10 @@ class PublieurMQTT:
 
 
 class PontHA:
-    def __init__(self, cfg, jeton, log=print):
+    def __init__(self, cfg, jeton, log=print, horloge=time.monotonic):
         self.cfg = cfg
+        self.horloge = horloge
+        self._puissances = {}                   # entite -> {"debut": instant de mise en marche, "sous_seuil": instant}
         self.log = log
         self.client = HAClient(cfg["url"], jeton, log, cfg.get("url_ws"))
         self.evenements = queue.SimpleQueue()
@@ -345,10 +368,43 @@ class PontHA:
                 self.log(f"[HA] {s['nom']} quitte la maison")
                 self.evenements.put(f"depart:{s['nom']}")
             return
-        reaction = {k.lower(): v for k, v in s.get("reactions", {}).items()}.get(nouveau.lower())
+        if s.get("puissance"):
+            self._sur_puissance(entite, s, nouveau)
+            return
+        reactions = {k.lower(): v for k, v in s.get("reactions", {}).items()}
+        reaction = reactions.get(nouveau.lower(), reactions.get("*"))
         self.log(f"[HA] {entite}: {ancien} -> {nouveau}" + (f"  => {reaction}" if reaction else ""))
         if reaction:
             self.evenements.put(reaction if entite == self.calme else f"{reaction}:{s.get('nom', entite)}")
+
+    def _sur_puissance(self, entite, s, valeur):
+        try:
+            w = float(valeur)
+        except ValueError:
+            return
+        p, now = s["puissance"], self.horloge()
+        suivi = self._puissances.setdefault(entite, {"debut": None, "sous_seuil": None})
+        if w > p["seuil_w"]:
+            if suivi["debut"] is None:
+                suivi["debut"] = now
+                self.log(f"[HA] {s['nom']} : en marche ({w:.0f} W)")
+            suivi["sous_seuil"] = None
+        elif suivi["debut"] is not None and suivi["sous_seuil"] is None:
+            suivi["sous_seuil"] = now           # peut-etre la fin, peut-etre une pause : verdict dans _verifie_puissances
+
+    def _verifie_puissances(self):
+        now = self.horloge()
+        for entite, suivi in self._puissances.items():
+            if suivi["debut"] is None or suivi["sous_seuil"] is None:
+                continue
+            p, nom = self.surveillance[entite]["puissance"], self.surveillance[entite]["nom"]
+            if now - suivi["sous_seuil"] < p["fin_apres_s"]:
+                continue
+            duree = suivi["sous_seuil"] - suivi["debut"]
+            suivi["debut"] = suivi["sous_seuil"] = None
+            if duree >= p["marche_min_s"]:
+                self.log(f"[HA] {nom} : cycle termine ({duree / 60:.0f} min)")
+                self.evenements.put(f"machine_finie:{nom}")
 
     def lire_calme_initial(self):
         """Au demarrage, applique l'etat ACTUEL de l'interrupteur calme (sinon un canard relance la nuit ferait du bruit)."""
@@ -366,6 +422,7 @@ class PontHA:
 
     def source(self):
         """A passer a brain.run(source=...) : evenements arrives depuis la derniere trame."""
+        self._verifie_puissances()
         out = []
         while True:
             try:
@@ -386,6 +443,7 @@ class PontHA:
             "tombe": bool(state.get("safety", {}).get("fallen")), "politique": state.get("policy"),
             "batterie": state.get("battery"), "odom": state.get("odom"), "chat_visible": chat_visible,
             "presents": sorted(getattr(brain, "presents", None) or []),
+            "messages": list(getattr(brain, "messages", None) or []),
         }
 
     def entites_du_canard(self):
@@ -415,6 +473,10 @@ class PontHA:
             ent["sensor.microduck_position"] = (f"{p[0]:.2f},{p[1]:.2f}", {
                 "friendly_name": "Microduck - position (odometrie)", "x": round(p[0], 3), "y": round(p[1], 3),
                 "cap_deg": round(i["odom"]["yaw"] * 57.2958, 1)})
+        msgs = i.get("messages") or []
+        ent["sensor.microduck_messages"] = (len(msgs), {
+            "friendly_name": "Microduck - messages a transmettre", "icon": "mdi:email-outline",
+            "messages": ", ".join(msgs) or None})
         attrs_chat = {"friendly_name": "Microduck - chat vu", "icon": "mdi:cat"}
         if self._derniere_vue_chat is not None:
             attrs_chat["derniere_vue_il_y_a_s"] = round(time.time() - self._derniere_vue_chat, 1)

@@ -70,12 +70,31 @@ entite = "A_REMPLIR"
 nom = "A_REMPLIR"                   # un prénom ou surnom
 entite = "A_REMPLIR"                # ex. "person.raphael"
 
-# ---- 6. Routines du cerveau (facultatif : supprime une ligne pour la desactiver) --------------------
+# ---- 6. Messager de la maison (sonnette, lave-linge, lave-vaisselle...) ----------------------------
+# Le canard réagit (son + geste) ; si personne n'est à la maison, il garde le message et te le « redit » à ton retour
+# (entité sensor.microduck_messages dans HA). `type` :
+#   "sonnette"       : binary_sensor de sonnette (on = on sonne)
+#   "sonnette_event" : entité event.* d'une sonnette récente (chaque appui change son état)
+#   "machine"        : appareil connecté qui annonce son état (Home Connect, LG ThinQ, SmartThings : finished/end...)
+#   "puissance"      : appareil « bête » sur une prise connectée qui mesure la puissance (W) ; réglages facultatifs :
+#                      seuil_w = 5, fin_apres_s = 180 (sous le seuil aussi longtemps = fini), marche_min_s = 300
+#   ou écris `reactions = { etat = "machine_finie" }` toi-même (comme pour la Saturn).
+[[appareil]]
+nom = "Sonnette"
+type = "sonnette_event"
+entite = "A_REMPLIR"                # ex. "event.sonnette_entree"
+
+[[appareil]]
+nom = "Lave-linge"
+type = "puissance"
+entite = "A_REMPLIR"                # ex. "sensor.prise_lave_linge_puissance"
+
+# ---- 7. Routines du cerveau (facultatif : supprime une ligne pour la desactiver) --------------------
 [cerveau]
 # heures_calmes = [23, 7]           # de 23h a 7h : assis, silencieux, comme l'interrupteur calme
 # bonjour = "7:30"                  # une fois par jour, a partir de 7h30 : etirement + bonjour (si quelqu'un est la)
 
-# ---- 7. Tes notes (ignorées par le programme) ------------------------------------------------------
+# ---- 8. Tes notes (ignorées par le programme) ------------------------------------------------------
 [notes]
 libre = """
 Écris ici ce que tu veux me dire : noms de pièces, habitudes, ce qui doit réveiller / ne pas réveiller le canard...

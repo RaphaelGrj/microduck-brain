@@ -492,6 +492,33 @@ def test_bonjour_attend_la_fin_des_heures_calmes_et_salue_les_presents():
     assert any(m == "robot.sound" and p == {"tag": "greet"} for m, p in c.appels), "pas de bonjour a l'habitant"
 
 
+def test_messager_sonnette_et_machine():
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.9), seed=33)
+    simule(b, 3, evenements=[(1.0, "sonnette:Entree")])
+    assert "sonnette" in {e[1] for e in b.journal}
+    assert any(m == "robot.sound" and p == {"tag": "alarm"} for m, p in c.appels)
+    simule(b, 8, evenements=[(1.0, "machine_finie:Lave-linge")])
+    assert "messager" in {e[1] for e in b.journal}
+    assert b.messages == ["machine_finie:Lave-linge"], "personne a la maison : le message doit etre garde"
+    assert b.etats["sonnette"] is not None and "sonnette" not in " ".join(b.messages)
+
+
+def test_message_transmis_au_retour_puis_oublie():
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.9), seed=34)
+    simule(b, 8, evenements=[(1.0, "impression_finie:MK4S")])
+    assert b.messages == ["impression_finie:MK4S"]
+    n_avant = sum(1 for m, p in c.appels if m == "robot.sound" and p == {"tag": "inquire"})
+    simule(b, 15, evenements=[(1.0, "retour:Raphael|3600")])
+    assert b.messages == [], "message non transmis"
+    acc = b.etats["accueil"]
+    assert acc.messages == ["impression_finie:MK4S"]
+    assert sum(1 for m, p in c.appels if m == "robot.sound" and p == {"tag": "inquire"}) > n_avant
+    simule(b, 8, evenements=[(1.0, "impression_finie:MK4S")])
+    assert b.messages == [], "quelqu'un est la : rien a garder, il l'a vu en direct"
+
+
 if __name__ == "__main__":
     import sys
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
