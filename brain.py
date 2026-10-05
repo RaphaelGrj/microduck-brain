@@ -522,6 +522,11 @@ class RechercheAttention(Etat):
 
 class Brain:
     SEUIL_SIESTE = 0.25
+    # "Va se recharger de sa propre initiative avant d'etre a court" (ROADMAP "chantier actif") : la VRAIE batterie
+    # (state["battery"]["percent"], distincte du modele comportemental `Humeur.energie`) force le repos en dessous
+    # de ce seuil - anticipation (consommer moins en se posant) plutot qu'attendre l'arret force. Pas encore de
+    # retour physique au chargeur : aucune position de chargeur connue dans brain.py (meme limite que `Accueil`).
+    BATTERIE_BASSE_PCT = 25.0
     RARES = {"lissage": 0.015, "ebouriffe": 0.01, "etirement": 0.008, "eternuement": 0.005}   # poids face a ~1 pour le reste
     DELAI_RARE = 300.0
     # Occupation autonome / recherche d'attention (ROADMAP "chantier actif", 2026-10-05) : si rien ne s'est passe
@@ -578,6 +583,7 @@ class Brain:
         self._derniere_position = None          # derniere position odom connue, pour noter une "zone noire" a la chute
         self._pos_ref_immobile = None           # (x, y) de reference pour detecter l'immobilite reelle
         self._t_ref_immobile = 0.0
+        self._batterie_pct = None               # vraie batterie (state["battery"]["percent"]), si connue
         self.courant = self.etats["chill"]
         self.t_etat = 0.0
         self.fin_etat = self.courant.duree(self)
@@ -676,8 +682,8 @@ class Brain:
         if self.mode_calme:
             return "nap"                        # sieste prolongee, assis, sans bruit, tant que l'interrupteur est actif
         h = self.humeur
-        if h.energie < self.SEUIL_SIESTE:
-            return "nap"
+        if h.energie < self.SEUIL_SIESTE or (self._batterie_pct is not None and self._batterie_pct < self.BATTERIE_BASSE_PCT):
+            return "nap"                        # fatigue "jouee" OU vraie batterie basse : meme reponse (repos)
         if self.courant.nom == "nap":
             self.derniere_fois["etirement"] = self.t_global
             return "etirement"                  # on s'etire en se reveillant
@@ -731,6 +737,9 @@ class Brain:
         self.t_global += dt
         if state.get("odom"):
             self._derniere_position = (state["odom"]["position"][0], state["odom"]["position"][1])
+        pct = state.get("battery", {}).get("percent")
+        if pct is not None:
+            self._batterie_pct = pct
         if state.get("safety", {}).get("fallen"):
             if not self.tombe:
                 print(f"[{self.t_global:6.1f}s] CHUTE : cerveau en pause (robotd se charge du relevement)", flush=True)

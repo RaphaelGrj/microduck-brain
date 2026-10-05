@@ -230,6 +230,29 @@ def test_ebrouement_immobilite_pas_declenche_si_ca_bouge():
     assert "ebouriffe" not in {e[1] for e in b.journal}
 
 
+def test_batterie_basse_force_le_repos():
+    # une VRAIE batterie basse (state["battery"]["percent"]) force le repos (nap) meme avec une energie "jouee"
+    # (Humeur) au maximum - anticipation plutot qu'arret force (ROADMAP "chantier actif").
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.95), seed=18)
+    for i in range(2000):
+        t = i * 0.02
+        b.tick({"t": t, "safety": {"fallen": False}, "policy": "stand", "battery": {"percent": 18.0}}, 0.02)
+        if b.courant.nom == "nap":
+            break
+    assert b.courant.nom == "nap", "la batterie basse doit forcer le repos malgre une energie jouee elevee"
+
+
+def test_batterie_normale_ne_force_pas_le_repos():
+    # a l'inverse, une batterie correcte ne doit rien changer au comportement habituel (energie jouee elevee).
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.95), seed=19)
+    for i in range(2000):
+        t = i * 0.02
+        b.tick({"t": t, "safety": {"fallen": False}, "policy": "stand", "battery": {"percent": 80.0}}, 0.02)
+    assert b.courant.nom != "nap"
+
+
 def test_chute_memorise_une_zone_noire():
     # une chute avec odom connu note une "zone noire" a l'endroit precis (exploration.py), pas seulement
     # la pause du cerveau deja testee par test_chute_met_le_cerveau_en_pause.
