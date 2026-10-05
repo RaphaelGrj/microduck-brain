@@ -383,12 +383,12 @@ def test_recule_si_chat_approche_vite():
 
 
 class FauxHorloge:
-    """Imite time.localtime() juste assez pour Brain.heures_calmes : une heure locale pilotee par le test."""
-    def __init__(self, heure):
-        self.heure = heure
+    """Imite time.localtime() juste assez pour Brain (heures_calmes, bonjour) : heure, minute, jour pilotes par le test."""
+    def __init__(self, heure, minute=0, jour=100):
+        self.heure, self.minute, self.jour = heure, minute, jour
 
     def __call__(self):
-        return type("T", (), {"tm_hour": self.heure})()
+        return type("T", (), {"tm_hour": self.heure, "tm_min": self.minute, "tm_yday": self.jour})()
 
 
 def test_heures_calmes_nuit_force_le_repos():
@@ -449,6 +449,47 @@ def test_pas_de_recul_si_approche_lente():
     chat.estimation = (1.0, 0.3, 0.0)      # 0,2 m parcourus en 1 s = 0,2 m/s, sous le seuil (0,3 m/s)
     etat.pas(b, 1.0)
     assert dernier_vx(c) == 0.0, "une approche lente ne doit pas declencher de recul"
+
+
+def test_bonjour_une_fois_par_jour_a_heure_reelle():
+    # routine du matin (ROADMAP, prochaine etape n°6) : avant l'heure, rien ; a l'heure, un bonjour des que le canard
+    # est au repos ; jamais deux fois le meme jour ; de nouveau le lendemain.
+    c = FauxClient()
+    horloge = FauxHorloge(7, 10)
+    b = Brain(c, Humeur(energie=0.9), seed=30, horloge=horloge, bonjour=(7, 30))
+    simule(b, 30)
+    assert "bonjour" not in {e[1] for e in b.journal}, "bonjour avant l'heure"
+    horloge.minute = 31
+    simule(b, 60)
+    assert [e[1] for e in b.journal].count("bonjour") == 1, b.journal
+    simule(b, 60)
+    assert [e[1] for e in b.journal].count("bonjour") == 1, "deux bonjours le meme jour"
+    horloge.jour += 1
+    simule(b, 60)
+    assert [e[1] for e in b.journal].count("bonjour") == 2, "pas de bonjour le lendemain"
+
+
+def test_bonjour_hors_fenetre_et_desactive_par_defaut():
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.9), seed=31, horloge=FauxHorloge(17), bonjour=8)    # 17h : trop tard
+    simule(b, 60)
+    assert "bonjour" not in {e[1] for e in b.journal}
+    b = Brain(FauxClient(), Humeur(energie=0.9), seed=31, horloge=FauxHorloge(8, 5))  # pas configure
+    simule(b, 60)
+    assert "bonjour" not in {e[1] for e in b.journal}
+
+
+def test_bonjour_attend_la_fin_des_heures_calmes_et_salue_les_presents():
+    c = FauxClient()
+    horloge = FauxHorloge(6, 50)
+    b = Brain(c, Humeur(energie=0.9), seed=32, horloge=horloge, heures_calmes=(23, 7), bonjour=(6, 45))
+    b.presents.add("Raphael")
+    simule(b, 30)
+    assert b.mode_calme and "bonjour" not in {e[1] for e in b.journal}, "bonjour pendant les heures calmes"
+    horloge.heure, horloge.minute = 7, 0
+    simule(b, 90)
+    assert "bonjour" in {e[1] for e in b.journal}
+    assert any(m == "robot.sound" and p == {"tag": "greet"} for m, p in c.appels), "pas de bonjour a l'habitant"
 
 
 if __name__ == "__main__":

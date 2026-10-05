@@ -542,6 +542,57 @@ class RechercheAttention(Etat):
         brain.ctx.head((0.0, 0.0, yaw, 0.0))
 
 
+class Sequence(Etat):
+    """Suite de gestes de gestures.py, chacun avec son son (robot.sound), joues l'un apres l'autre - la meme mecanique
+    que `Accueil`, pour les routines qui n'ont pas besoin de sa logique de familiarite."""
+
+    def __init__(self, nom_etat, etapes):
+        self.nom = nom_etat
+        self.etapes_def = list(etapes)          # [(geste, son ou None)]
+
+    def etapes_pour(self, brain):
+        return self.etapes_def
+
+    def entre(self, brain):
+        self.etapes, t = [], 0.0
+        for geste, son in self.etapes_pour(brain):
+            d, fn = gestures.GESTES[geste]
+            self.etapes.append((t, d, fn, son, gestures.GESTES_CORPS.get(geste)))
+            t += d + 0.3
+        self.total = t
+        self.joues = set()
+
+    def duree(self, brain):
+        return self.total + 0.3
+
+    def pas(self, brain, t):
+        tete, corps = (0, 0, 0, 0), None
+        for i, (t0, d, fn, son, fn_corps) in enumerate(self.etapes):
+            if t0 <= t < t0 + d:
+                if i not in self.joues:
+                    self.joues.add(i)
+                    if son:
+                        brain.ctx.sound(son)
+                tete = fn(t - t0)
+                corps = fn_corps(t - t0) if fn_corps else None
+        brain.ctx.head(tete)
+        brain.ctx.pose(corps)
+
+
+class Bonjour(Sequence):
+    """Routine du matin (ROADMAP, table Humains : "etirement du matin", prochaine etape n°6) : une fois par jour, a
+    l'heure reelle configuree, un grand etirement puis un bonjour - plus chaleureux si quelqu'un est a la maison
+    (presence HA), un simple roucoulement sinon. Independant du reveil de sieste (qui s'etire deja)."""
+
+    def __init__(self):
+        super().__init__("bonjour", [])
+
+    def etapes_pour(self, brain):
+        if brain.presents:
+            return [("etirement", "coo"), ("oui", "greet")]
+        return [("etirement", "coo")]
+
+
 class Brain:
     SEUIL_SIESTE = 0.25
     # "Va se recharger de sa propre initiative avant d'etre a court" (ROADMAP "chantier actif") : la VRAIE batterie
@@ -571,7 +622,10 @@ class Brain:
         "info": ("info", 0.2),
     }
 
-    def __init__(self, client, humeur=None, seed=None, extras=None, heures_calmes=None, horloge=time.localtime):
+    BONJOUR_FENETRE_H = 4       # le bonjour du matin n'est dit que dans les 4 h qui suivent l'heure prevue
+
+    def __init__(self, client, humeur=None, seed=None, extras=None, heures_calmes=None, horloge=time.localtime,
+                 bonjour=None):
         self.ctx = Ctx(client)
         self.ctx.extras = extras or {}          # perceptions externes partagees (ex. {"chat": VeilleChat})
         # "Heures calmes" (ROADMAP, table Humains : routine "Heure, HA" -> Nap) : optionnel (None = desactive, le
@@ -583,6 +637,11 @@ class Brain:
         self.heures_calmes = heures_calmes
         self.horloge = horloge
         self._nuit_actuelle = None
+        # Routine du matin : `bonjour` = heure locale (8 ou (7, 30)) a partir de laquelle le canard dit bonjour, une
+        # seule fois par jour, des qu'il est au repos (chill/look) et hors mode calme ; rien apres la fenetre de
+        # BONJOUR_FENETRE_H (un "bonjour" a 17h n'a pas de sens). None = desactive (opt-in, comme heures_calmes).
+        self.bonjour = (bonjour, 0) if isinstance(bonjour, int) else (tuple(bonjour) if bonjour else None)
+        self._jour_bonjour = None
         self.humeur = humeur or Humeur()
         self.rng = random.Random(seed)
         self.etats = {
@@ -605,6 +664,7 @@ class Brain:
             "eternuement": Geste("eternuement", "eternuement", son="peck"),
             "jeu_solitaire": JeuSolitaire(),                       # occupation autonome, personne de disponible
             "cherche_attention": RechercheAttention(),             # occupation autonome, humain/chat disponible
+            "bonjour": Bonjour(),                                  # routine du matin, une fois par jour
         }
         self.derniere_fois = {}                 # etat rare -> t_global de la derniere fois
         self.mode_calme = False                 # interrupteur "calme" de Home Assistant (regle de vie)
@@ -759,6 +819,21 @@ class Brain:
         print(f"[{self.t_global:6.1f}s] -> {nom:8s} energie={self.humeur.energie:.2f} "
               f"eveil={self.humeur.eveil:.2f}", flush=True)
 
+    def _verifie_bonjour(self):
+        h = self.horloge()
+        jour = getattr(h, "tm_yday", None)
+        if jour == self._jour_bonjour:
+            return
+        minutes = h.tm_hour * 60 + getattr(h, "tm_min", 0)
+        debut = self.bonjour[0] * 60 + self.bonjour[1]
+        if not (0 <= minutes - debut < self.BONJOUR_FENETRE_H * 60):
+            return
+        if self.mode_calme or self.tombe or self.courant.nom not in ("chill", "look"):
+            return                              # on attend un moment de repos (ne jamais interrompre une activite)
+        self._jour_bonjour = jour
+        print(f"[{self.t_global:6.1f}s] routine du matin : bonjour", flush=True)
+        self._bascule("bonjour")
+
     def tick(self, state, dt):
         """Un pas du cerveau, a appeler une fois par trame robot.state."""
         self.ctx.state = state
@@ -821,6 +896,8 @@ class Brain:
                 self._bascule("ebouriffe")
 
         self._traite_evenements()
+        if self.bonjour is not None:
+            self._verifie_bonjour()                 # apres les evenements : un "calme_on" en attente passe d'abord
         self.humeur.avance(dt, self.courant.nom)
         self.t_etat += dt
         self.courant.pas(self, self.t_etat)
@@ -833,10 +910,12 @@ class Brain:
         self.ctx.calme()
 
 
-def run(client, duree, humeur=None, evenements=None, seed=None, source=None, a_chaque_tick=None, extras=None):
+def run(client, duree, humeur=None, evenements=None, seed=None, source=None, a_chaque_tick=None, extras=None,
+        **options):
     """`source()` : appelee a chaque trame, renvoie les noms d'evenements arrives depuis l'exterieur (pont
-    Home Assistant...). `a_chaque_tick(brain, state)` : crochet facultatif (publication d'etat...)."""
-    brain = Brain(client, humeur=humeur, seed=seed, extras=extras)
+    Home Assistant...). `a_chaque_tick(brain, state)` : crochet facultatif (publication d'etat...). `options` :
+    reglages optionnels de Brain (heures_calmes, bonjour...)."""
+    brain = Brain(client, humeur=humeur, seed=seed, extras=extras, **options)
     evenements = sorted(evenements or [])
     last_t = None
     t0 = time.monotonic()

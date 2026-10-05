@@ -70,7 +70,12 @@ entite = "A_REMPLIR"
 nom = "A_REMPLIR"                   # un prénom ou surnom
 entite = "A_REMPLIR"                # ex. "person.raphael"
 
-# ---- 6. Tes notes (ignorées par le programme) ------------------------------------------------------
+# ---- 6. Routines du cerveau (facultatif : supprime une ligne pour la desactiver) --------------------
+[cerveau]
+# heures_calmes = [23, 7]           # de 23h a 7h : assis, silencieux, comme l'interrupteur calme
+# bonjour = "7:30"                  # une fois par jour, a partir de 7h30 : etirement + bonjour (si quelqu'un est la)
+
+# ---- 7. Tes notes (ignorées par le programme) ------------------------------------------------------
 [notes]
 libre = """
 Écris ici ce que tu veux me dire : noms de pièces, habitudes, ce qui doit réveiller / ne pas réveiller le canard...

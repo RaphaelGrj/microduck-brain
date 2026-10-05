@@ -81,6 +81,7 @@ def lire_config(chemin):
         "surveillance": list(brut.get("surveillance", [])),
         "interrupteur_calme": ha.get("interrupteur_calme"),
         "satellite_vocal": ha.get("satellite_vocal"),
+        "cerveau": brut.get("cerveau", {}),
         "ignorees": [],
     }
     for hab in brut.get("habitant", []):        # presence HA (person.*) -> accueil au retour
@@ -98,6 +99,23 @@ def lire_config(chemin):
     if est_vide(cfg["url"]):
         cfg["url"] = None
     return cfg
+
+
+def options_cerveau(cfg):
+    """Section [cerveau] de ha.toml -> options de brain.Brain (routines a heure fixe). Tout est optionnel."""
+    c = cfg.get("cerveau") or {}
+    options = {}
+    hc = c.get("heures_calmes")
+    if isinstance(hc, (list, tuple)) and len(hc) == 2 and all(isinstance(h, int) and 0 <= h < 24 for h in hc):
+        options["heures_calmes"] = (hc[0], hc[1])
+    bj = c.get("bonjour")
+    if isinstance(bj, int) and 0 <= bj < 24:
+        options["bonjour"] = bj
+    elif isinstance(bj, str) and ":" in bj:
+        h, _, m = bj.partition(":")
+        if h.strip().isdigit() and m.strip().isdigit() and 0 <= int(h) < 24 and 0 <= int(m) < 60:
+            options["bonjour"] = (int(h), int(m))
+    return options
 
 
 def lire_jeton(cfg):
@@ -560,7 +578,7 @@ def main():
     c.request("robot.subscribe", {"hz": int(hz)} if isinstance(hz, int) and 10 <= hz <= 50 else {})
     pont.demarrer()
     try:
-        brain.run(c, duree, source=pont.source, a_chaque_tick=pont.photographier)
+        brain.run(c, duree, source=pont.source, a_chaque_tick=pont.photographier, **options_cerveau(cfg))
     finally:
         pont.stop()
 

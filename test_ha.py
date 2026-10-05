@@ -250,6 +250,15 @@ reactions = {{ complete = "impression_finie" }}
     print("config + verifier : OK (champs A_REMPLIR ignores, imprimantes listees, jeton jamais affiche, mauvais jeton explique)")
 
 
+def test_options_cerveau():
+    """Section [cerveau] de ha.toml -> routines du cerveau ; valeurs absentes ou invalides ignorees."""
+    assert pont_ha.options_cerveau({"cerveau": {"heures_calmes": [23, 7], "bonjour": "7:30"}}) == \
+        {"heures_calmes": (23, 7), "bonjour": (7, 30)}
+    assert pont_ha.options_cerveau({"cerveau": {"bonjour": 8}}) == {"bonjour": 8}
+    assert pont_ha.options_cerveau({"cerveau": {"heures_calmes": [25, 7], "bonjour": "matin"}}) == {}
+    assert pont_ha.options_cerveau({}) == {}
+
+
 def test_calme():
     """Interrupteur calme : etat initial lu au demarrage, on/off -> evenements ; cerveau : sieste, silence, pas de promenade."""
     ha = mock_ha.MockHA(JETON)
