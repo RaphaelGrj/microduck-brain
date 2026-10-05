@@ -41,6 +41,24 @@ class Humeur:
         self.eveil = min(1.0, max(0.0, self.eveil))
 
 
+# Fatigue progressive VISIBLE a basse energie (ROADMAP "chantier actif", 2026-10-05) : amplitude et cadence des
+# mouvements de tete seulement. Jamais vx/vyaw - ils doivent rester au-dessus de la zone morte de la politique de
+# marche (ZONE_MORTE.md : vx >= 0.3, |vyaw| >= 1.2), sous peine de jambes figees malgre la commande envoyee.
+FATIGUE_PLEIN = 0.6   # energie au-dessus de laquelle : aucun ralentissement visible
+FATIGUE_BAS = 0.25    # = Brain.SEUIL_SIESTE (juste avant la sieste) : lenteur la plus marquee prevue ici
+FATIGUE_MIN = 0.6     # jamais moins de 60% : il continue de bouger, pas un arret visuel
+
+
+def fatigue(brain):
+    """Multiplicateur (FATIGUE_MIN..1.0) applique a l'amplitude ET a la frequence d'un mouvement de tete : plus
+    l'energie est basse, plus les gestes sont lents et discrets, sans jamais s'arreter net."""
+    e = brain.humeur.energie
+    if e >= FATIGUE_PLEIN:
+        return 1.0
+    k = max(0.0, (e - FATIGUE_BAS) / (FATIGUE_PLEIN - FATIGUE_BAS))
+    return FATIGUE_MIN + (1.0 - FATIGUE_MIN) * k
+
+
 class Ctx:
     """Ce que voit un etat : client robotd, derniere trame, aide pour commander."""
 
@@ -140,8 +158,9 @@ class LookAround(Etat):
         return 6.0
 
     def pas(self, brain, t):
-        yaw = 0.6 * math.sin(2 * math.pi * t / 6.0)
-        brain.ctx.head((0.0, 0.1 * math.sin(2 * math.pi * t / 3.0), yaw, 0.0))
+        f = fatigue(brain)                                        # fatigue progressive : plus lent, plus discret
+        yaw = 0.6 * f * math.sin(2 * math.pi * t / (6.0 / f))
+        brain.ctx.head((0.0, 0.1 * f * math.sin(2 * math.pi * t / (3.0 / f)), yaw, 0.0))
 
 
 # Vitesses AU-DESSUS de la zone morte de la politique de marche (ZONE_MORTE.md) : en dessous, les jambes restent figees.

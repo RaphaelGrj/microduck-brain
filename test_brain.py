@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Tests du cerveau sans robot : faux client, temps simule (1 trame = 20 ms)."""
-from brain import Brain, Humeur
+from brain import Brain, Humeur, fatigue, FATIGUE_PLEIN, FATIGUE_BAS, FATIGUE_MIN
 
 
 class FauxClient:
@@ -123,6 +123,34 @@ def test_rituel_depart_ignore_pendant_sieste():
     simule(b, 20, evenements=[(18.0, "depart:Raphael")])
     assert b.courant.nom == "nap"
     assert "rituel_depart" not in {e[1] for e in b.journal}
+
+
+def test_fatigue_progressive_amplitude_tete():
+    # fatigue() ne descend jamais sous FATIGUE_MIN, reste a 1.0 bien reposee, et un "look" a basse energie a une
+    # amplitude de tete reduite par rapport a un "look" bien repose - jamais vx/vyaw (zone morte de la marche).
+    c = FauxClient()
+    b_repose = Brain(c, Humeur(energie=0.9), seed=20)
+    assert fatigue(b_repose) == 1.0
+    b_fatigue = Brain(c, Humeur(energie=FATIGUE_BAS), seed=21)
+    assert abs(fatigue(b_fatigue) - FATIGUE_MIN) < 1e-9
+    b_mi = Brain(c, Humeur(energie=(FATIGUE_PLEIN + FATIGUE_BAS) / 2), seed=22)
+    assert FATIGUE_MIN < fatigue(b_mi) < 1.0
+
+    c2 = FauxClient()
+    b2 = Brain(c2, Humeur(energie=0.3), seed=23)
+    b2._bascule("look")
+    yaws_fatigue = []
+    for i in range(300):
+        b2.courant.pas(b2, i * 0.02)
+    yaws_fatigue = [p["head_yaw"] for m, p in c2.appels if m == "robot.head"]
+    c3 = FauxClient()
+    b3 = Brain(c3, Humeur(energie=0.9), seed=24)
+    b3._bascule("look")
+    for i in range(300):
+        b3.courant.pas(b3, i * 0.02)
+    yaws_repose = [p["head_yaw"] for m, p in c3.appels if m == "robot.head"]
+    assert max(abs(y) for y in yaws_fatigue) < max(abs(y) for y in yaws_repose), \
+        "l'amplitude de tete en 'look' devrait etre reduite a basse energie"
 
 
 def test_chute_memorise_une_zone_noire():
