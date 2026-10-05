@@ -78,6 +78,7 @@ def test_publication():
         assert ha.etats["sensor.microduck_batterie"]["attributes"]["device_class"] == "battery"
         assert ha.etats["binary_sensor.microduck_tombe"]["state"] == "off"
         assert ha.etats["sensor.microduck_etat"]["state"] == "chill"
+        assert ha.etats["sensor.microduck_eveil"]["state"] == "20"
         assert ha.etats["sensor.microduck_position"]["state"] == "1.00,2.00"
         etat = faux_etat()
         etat["safety"]["fallen"] = True                               # une chute doit remonter vite

@@ -377,6 +377,8 @@ class PontHA:
             "sensor.microduck_etat": (i["etat"], {"friendly_name": "Microduck - etat d'esprit", "icon": "mdi:duck"}),
             "sensor.microduck_energie": (round(i["energie"] * 100), {
                 "friendly_name": "Microduck - energie", "unit_of_measurement": "%", "icon": "mdi:flash"}),
+            "sensor.microduck_eveil": (round(i["eveil"] * 100), {
+                "friendly_name": "Microduck - eveil", "unit_of_measurement": "%", "icon": "mdi:eye"}),
             "sensor.microduck_politique": (i["politique"], {"friendly_name": "Microduck - politique active"}),
             "binary_sensor.microduck_tombe": ("on" if i["tombe"] else "off", {
                 "friendly_name": "Microduck - tombe", "device_class": "problem"}),
