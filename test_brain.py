@@ -2,7 +2,7 @@
 """Tests du cerveau sans robot : faux client, temps simule (1 trame = 20 ms)."""
 import math
 
-from brain import Brain, Humeur, fatigue, FATIGUE_PLEIN, FATIGUE_BAS, FATIGUE_MIN, V_PROMENADE
+from brain import Brain, Humeur, RegardeChat, fatigue, FATIGUE_PLEIN, FATIGUE_BAS, FATIGUE_MIN, V_PROMENADE
 
 
 class FauxClient:
@@ -333,6 +333,69 @@ def test_integration_longue_simulation_toutes_fonctions():
     assert b.exploration.chutes, "la chute doit laisser une zone noire"
     assert b.exploration.coin_favori("chill", b.t_global) is not None
     assert b.tombe is False and 0.0 <= b.humeur.energie <= 1.0
+
+
+class FauxVeilleChatDistance:
+    """Imite VeilleChat juste assez pour RegardeChat.pas : .estimation piloté pas à pas par le test (instant, x, y
+    au sol, repère du tronc), .cible_regard renvoie un point fixe (le regard lui-même n'est pas sous test ici)."""
+    def __init__(self):
+        class _Suivi:
+            pass
+        self.suivi = _Suivi()
+        self.suivi.visible = True
+        self.estimation = None
+
+    def cible_regard(self, hauteur_tronc, age_max=1.5):
+        return (1.0, 0.0, 0.0)
+
+
+def dernier_vx(client):
+    for m, p in reversed(client.appels):
+        if m == "robot.move":
+            return p["vx"]
+    return None
+
+
+def test_recule_si_chat_approche_vite():
+    # garde-fou "reculer s'il approche vite" (ROADMAP, table chat) : une approche rapide sous le seuil de
+    # proximite declenche un petit pas en arriere (|vx| >= 0.3, zone morte respectee) ; une approche lente, ou
+    # une distance encore confortable, ne doit rien declencher (une visite normale ne doit pas faire fuir le canard).
+    c = FauxClient()
+    chat = FauxVeilleChatDistance()
+    b = Brain(c, Humeur(energie=0.9), seed=11, extras={"chat": chat})
+    b.ctx.state = {"odom": {"position": [0.0, 0.0, 0.0], "yaw": 0.0}}
+    etat = b.etats["regarde_chat"]
+    etat.entre(b)
+
+    chat.estimation = (0.0, 0.5, 0.0)      # 0,5 m devant : encore loin du seuil de proximite (0,35 m)
+    etat.pas(b, 0.0)
+    assert dernier_vx(c) == 0.0, "pas de recul alors que le chat est encore loin"
+
+    chat.estimation = (0.1, 0.1, 0.0)      # 0,4 m parcourus en 0,1 s = 4 m/s de fermeture, sous 0,35 m
+    etat.pas(b, 0.1)
+    assert dernier_vx(c) == RegardeChat.VX_RECUL, "pas de recul malgre une approche rapide et proche"
+
+    etat.pas(b, 0.5)                       # toujours dans la fenetre de recul (DUREE_RECUL_S = 1.0 s)
+    assert dernier_vx(c) == RegardeChat.VX_RECUL
+
+    etat.pas(b, 2.0)                       # fenetre de recul passee, pas de nouvelle approche rapide
+    assert dernier_vx(c) == 0.0, "le recul doit s'arreter, pas devenir une fuite continue"
+
+
+def test_pas_de_recul_si_approche_lente():
+    # le chat se rapproche, mais lentement (visite normale) : aucun recul, meme tres pres.
+    c = FauxClient()
+    chat = FauxVeilleChatDistance()
+    b = Brain(c, Humeur(energie=0.9), seed=12, extras={"chat": chat})
+    b.ctx.state = {"odom": {"position": [0.0, 0.0, 0.0], "yaw": 0.0}}
+    etat = b.etats["regarde_chat"]
+    etat.entre(b)
+
+    chat.estimation = (0.0, 0.5, 0.0)
+    etat.pas(b, 0.0)
+    chat.estimation = (1.0, 0.3, 0.0)      # 0,2 m parcourus en 1 s = 0,2 m/s, sous le seuil (0,3 m/s)
+    etat.pas(b, 1.0)
+    assert dernier_vx(c) == 0.0, "une approche lente ne doit pas declencher de recul"
 
 
 if __name__ == "__main__":

@@ -344,11 +344,21 @@ class Nap(Etat):
 class RegardeChat(Etat):
     """Le chat vient d'apparaitre : petit son interrogatif, puis on le suit des yeux quelques secondes. La position du
     chat vient de la veille (chat.py) ; c'est robotd qui calcule l'orientation de la tete (`robot.look`), on renvoie
-    ensuite ces angles a chaque trame pour tenir le regard."""
+    ensuite ces angles a chaque trame pour tenir le regard.
+
+    Garde-fou "reculer s'il approche vite" (ROADMAP, table chat) : si le chat se rapproche tres vite en dessous d'un
+    seuil de proximite, petit pas en arriere (vx negatif) le temps qu'il passe le seuil - jamais une poursuite dans
+    l'autre sens, jamais si le chat est deja loin ou s'approche lentement (une visite normale ne doit pas le faire
+    fuir). vx reste dans la plage marche arriere documentee pour le chat (ZONE_MORTE.md : |vx| >= 0.3)."""
     nom = "regarde_chat"
 
     # familiarite (memoire.py) -> (son, duree du regard) : mefiant au debut, chaleureux avec le temps
     ACCUEIL = ((0.3, "inquire", 8.0), (0.6, "greet", 7.0), (1.01, "coo", 6.0))
+
+    SEUIL_PROXIMITE_M = 0.35       # distance chat-robot en dessous de laquelle une approche rapide inquiete
+    SEUIL_VITESSE_APPROCHE = 0.3   # m/s de fermeture pour declencher le recul (bruit normal du suivi sinon)
+    VX_RECUL = -0.35               # au-dessus de la zone morte en valeur absolue (vx >= 0.3)
+    DUREE_RECUL_S = 1.0            # un seul petit pas, pas une fuite continue
 
     def entre(self, brain):
         mem = brain.ctx.extras.get("memoire")
@@ -359,12 +369,16 @@ class RegardeChat(Etat):
         self.tete = (0.0, 0.0, 0.0, 0.0)
         self.t_vise = None
         self.n_look = 0
+        self._dist_prec = None
+        self._t_dist_prec = None
+        self._recule_jusqua = -1.0
 
     def duree(self, brain):
         return self.duree_s
 
     def pas(self, brain, t):
         veille, s = brain.ctx.extras.get("chat"), brain.ctx.state
+        recul = t < self._recule_jusqua
         if veille is not None and s is not None:
             e = veille.estimation
             if e is not None and e[0] != self.t_vise:
@@ -376,7 +390,15 @@ class RegardeChat(Etat):
                     if h:
                         self.tete = (h["neck_pitch"], h["head_pitch"], h["head_yaw"], h["head_roll"])
                         self.n_look += 1
+                distance = math.hypot(e[1], e[2])
+                if self._dist_prec is not None and e[0] > self._t_dist_prec:
+                    vitesse_approche = (self._dist_prec - distance) / (e[0] - self._t_dist_prec)
+                    if distance < self.SEUIL_PROXIMITE_M and vitesse_approche > self.SEUIL_VITESSE_APPROCHE:
+                        self._recule_jusqua = t + self.DUREE_RECUL_S
+                        recul = True
+                self._dist_prec, self._t_dist_prec = distance, e[0]
         brain.ctx.head(self.tete)
+        brain.ctx.move(vx=self.VX_RECUL if recul else 0.0)
 
 
 class Ecoute(Etat):
