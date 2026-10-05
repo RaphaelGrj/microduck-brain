@@ -107,6 +107,12 @@ def lire_config(chemin):
         cfg["surveillance"].append({
             "entite": imp["entite"], "nom": imp.get("nom", imp["entite"]),
             "reactions": imp.get("reactions") or REACTIONS_PAR_TYPE.get(imp.get("type", ""), {})})
+    for dec in brut.get("declencheur", []):     # n'importe quelle entite HA -> un evenement du cerveau (jeu...)
+        if est_vide(dec.get("entite")) or est_vide(dec.get("evenement")):
+            cfg["ignorees"].append(dec.get("evenement", "?"))
+            continue
+        cfg["surveillance"].append({"entite": dec["entite"], "nom": dec.get("nom", dec["entite"]),
+                                    "reactions": {str(dec.get("etat", "*")): dec["evenement"]}})
     for app in brut.get("appareil", []):        # messager : sonnette, lave-linge, lave-vaisselle...
         if est_vide(app.get("entite")):
             cfg["ignorees"].append(app.get("nom", "?"))
@@ -235,6 +241,9 @@ class PublieurMQTT:
     DECOUVERTE = "homeassistant"
     APPAREIL = {"identifiers": ["microduck"], "name": "Microduck", "manufacturer": "Pollen Robotics", "model": "Microduck"}
     CLES_CONFIG = ("unit_of_measurement", "device_class", "icon")
+    # (objet, nom dans HA, icone, charge MQTT = evenement du cerveau) ; seules ces charges sont acceptees
+    BOUTONS = (("jouer_soleil", "jouer a 1-2-3 soleil", "mdi:weather-sunny", "jeu_soleil"),
+               ("fin_jeu", "fin du jeu", "mdi:stop-circle-outline", "fin_jeu"))
 
     def __init__(self, mq, log=print, sur_evenement=None):
         import paho.mqtt.client as mqtt
@@ -266,7 +275,11 @@ class PublieurMQTT:
         self._annoncer("switch", "calme", {
             "name": "calme", "icon": "mdi:sleep", "command_topic": f"{self.PREFIXE}/calme/set",
             "state_topic": f"{self.PREFIXE}/calme/etat"})
-        client.subscribe([(f"{self.PREFIXE}/calme/set", 1), (f"{self.PREFIXE}/calme/etat", 1)])
+        for objet, nom, icone, charge in self.BOUTONS:          # jeux et commandes : un bouton dans HA -> un evenement
+            self._annoncer("button", objet, {"name": nom, "icon": icone, "command_topic": f"{self.PREFIXE}/commande",
+                                             "payload_press": charge})
+        client.subscribe([(f"{self.PREFIXE}/calme/set", 1), (f"{self.PREFIXE}/calme/etat", 1),
+                          (f"{self.PREFIXE}/commande", 1)])
         self.log(f"[MQTT] connecte a {self.hote}:{self.port} (decouverte Home Assistant)")
 
     def _sur_deconnexion(self, client, userdata, drapeaux, code, proprietes=None):
@@ -275,6 +288,11 @@ class PublieurMQTT:
         self.connecte = False
 
     def _sur_message(self, client, userdata, msg):
+        if msg.topic == f"{self.PREFIXE}/commande":
+            commande = msg.payload.decode(errors="replace").strip()
+            if commande in {b[3] for b in self.BOUTONS} and self.sur_evenement:
+                self.sur_evenement(commande)
+            return
         charge = msg.payload.decode(errors="replace").strip().upper()
         if charge not in ("ON", "OFF"):
             return

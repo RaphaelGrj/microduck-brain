@@ -279,6 +279,9 @@ nom = "Lave-linge"
 type = "puissance"
 entite = "sensor.prise_lave_linge_puissance"
 fin_apres_s = 120
+[[declencheur]]
+evenement = "jeu_soleil"
+entite = "input_button.microduck_soleil"
 [[appareil]]
 nom = "Seche-linge"
 type = "puissance"
@@ -294,6 +297,8 @@ entite = "A_REMPLIR"
     pont._sur_changement("event.sonnette_entree", None, "2026-10-05T10:00:00+00:00")
     pont._sur_changement("event.sonnette_entree", "2026-10-05T10:00:00+00:00", "2026-10-05T10:05:00+00:00")
     assert pont.source() == ["sonnette:Sonnette", "sonnette:Sonnette"], "chaque appui doit sonner"
+    pont._sur_changement("input_button.microduck_soleil", "2026-10-05T10:00:00", "2026-10-05T10:01:00")
+    assert pont.source() == ["jeu_soleil:input_button.microduck_soleil"]
     pont._sur_changement("sensor.lave_vaisselle_operation_state", "run", "Finished")
     assert pont.source() == ["machine_finie:Lave-vaisselle"]
     lv = "sensor.prise_lave_linge_puissance"
@@ -510,6 +515,13 @@ def test_mqtt():
         assert br.retenus["microduck/disponible"] == b"online"
         assert json.loads(br.retenus["homeassistant/binary_sensor/microduck/tombe/config"])["payload_on"] == "on"
         assert "homeassistant/switch/microduck/calme/config" in br.retenus
+        bouton = json.loads(br.retenus["homeassistant/button/microduck/jouer_soleil/config"])
+        assert bouton["payload_press"] == "jeu_soleil" and bouton["command_topic"] == "microduck/commande", bouton
+        br.publier("microduck/commande", "jeu_soleil")                      # le bouton dans HA
+        assert attendre(lambda: pont.source() == ["jeu_soleil"]), log
+        br.publier("microduck/commande", "robot.init")                      # charge inconnue : refusee
+        time.sleep(0.3)
+        assert pont.source() == [], "seules les commandes des boutons annonces sont acceptees"
         assert "sensor.microduck_batterie" not in ha.etats, "avec MQTT, pas de publication REST en double"
         br.publier("microduck/calme/set", "ON")                              # l'interrupteur dans HA
         assert attendre(lambda: pont.source() == ["calme_on"]), log

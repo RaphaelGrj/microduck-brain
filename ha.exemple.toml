@@ -89,6 +89,14 @@ nom = "Lave-linge"
 type = "puissance"
 entite = "A_REMPLIR"                # ex. "sensor.prise_lave_linge_puissance"
 
+# Déclencheurs : n'importe quelle entité HA -> un événement du cerveau. Avec MQTT, les boutons « jouer à 1-2-3 soleil »
+# et « fin du jeu » apparaissent tout seuls sur l'appareil Microduck ; sans MQTT, crée une Entrée « Bouton »
+# (input_button) dans HA et relie-la ici (chaque appui change son état : etat = "*").
+# Événements utiles : "jeu_soleil", "fin_jeu", "caresse", "bruit", "info".
+[[declencheur]]
+evenement = "jeu_soleil"
+entite = "A_REMPLIR"                # ex. "input_button.microduck_soleil"
+
 # ---- 7. Routines du cerveau (facultatif : supprime une ligne pour la desactiver) --------------------
 [cerveau]
 # heures_calmes = [23, 7]           # de 23h a 7h : assis, silencieux, comme l'interrupteur calme

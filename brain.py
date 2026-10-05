@@ -507,6 +507,162 @@ class Caresse(Etat):
         brain.ctx.move()
 
 
+class Soleil(Etat):
+    """Jeu "1-2-3 soleil" (ROADMAP, table Humains "Jeux" et prochaine etape n°4) : le canard se retourne, compte en
+    chirps (rythme variable : c'est tout le jeu), se retourne d'un coup et regarde ; s'il voit quelque chose bouger
+    (mouvement.py, difference d'images, camera immobile), "vu !" (alarme + non de la tete). Le joueur gagne s'il
+    arrive tout pres (ToF devant < 30 cm au moment ou le canard regarde) ou s'il le caresse : tremoussement + wheee.
+    Fin apres MANCHES_MAX manches, sur "fin_jeu", ou si le joueur ne se fait jamais voir ni n'arrive (parti ?).
+
+    Les demi-tours se font a l'odometrie, vers des caps absolus (le joueur, puis le dos au joueur) (vyaw 1,5 au-dessus de la zone morte, ~50 deg/s : ~3,5 s par demi-tour) ; la
+    detection de mouvement n'est armee qu'une fois le canard stabilise (STABILISATION_S apres l'arret)."""
+    nom = "soleil"
+    MANCHES_MAX = 10
+    REGARD_S = 3.5
+    STABILISATION_S = 0.8
+    DEMI_TOUR_MAX_S = 5.0
+    ARRIVEE_M = 0.30
+    ABANDON_MANCHES = 6          # manches d'affilee sans mouvement vu ni arrivee : le joueur est sans doute parti
+
+    def entre(self, brain):
+        self.veille = brain.ctx.extras.get("mouvement")
+        self.manche, self.vus, self.calmes = 0, 0, 0
+        self.resultat = None
+        o = (brain.ctx.state or {}).get("odom")
+        self.cap_joueur = o["yaw"] if o else None          # le joueur est en face au moment ou il lance le jeu
+        brain.ctx.sound("greet")
+        self._phase(brain, "annonce", 0.0)
+
+    def duree(self, brain):
+        return 600.0                             # le jeu decide lui-meme de sa fin (brain.fin_etat)
+
+    def _phase(self, brain, nom, t):
+        self.phase, self.t_phase = nom, t
+        if self.veille is not None:
+            self.veille.desarmer()
+        if nom == "compte":
+            self.duree_compte = brain.rng.uniform(1.5, 4.0)
+            self.bips = sorted(brain.rng.uniform(0.2, self.duree_compte - 0.3) for _ in range(2)) + [self.duree_compte - 0.2]
+            self.n_bips = 0
+        elif nom == "regarde":
+            self.arme = False
+
+    def _tourne(self, brain, t, cap):
+        """Rotation sur place vers le cap ABSOLU `cap` (odometrie), par le plus court : le cap du joueur est memorise
+        au debut du jeu, sinon les petites erreurs de chaque demi-tour s'additionnent et le canard finit par ne plus
+        lui faire face. True quand c'est fait (a ~20 deg pres, l'inertie finit le virage), ou au bout de
+        DEMI_TOUR_MAX_S."""
+        o = (brain.ctx.state or {}).get("odom")
+        fait, signe = t - self.t_phase >= self.DEMI_TOUR_MAX_S, 1.0
+        if o and cap is not None:
+            ecart = math.remainder(cap - o["yaw"], 2 * math.pi)
+            fait = fait or abs(ecart) <= 0.35
+            signe = 1.0 if ecart > 0 else -1.0
+        brain.ctx.head((0.0, 0.0, 0.0, 0.0))
+        brain.ctx.move(vyaw=0.0 if fait else V_ROTATION * signe)
+        return fait
+
+    def _fin(self, brain, t, resultat):
+        self.resultat = resultat
+        print(f"[{brain.t_global:6.1f}s] 1-2-3 soleil : {resultat} (manche {self.manche}, vu {self.vus} fois)", flush=True)
+        if self.veille is not None:
+            self.veille.desarmer()
+        if resultat == "gagne":
+            brain.ctx.sound("wheee")
+            self._phase(brain, "fete", t)
+        else:
+            brain.ctx.sound("coo")
+            self._phase(brain, "salut", t)
+
+    def sur_evenement(self, brain, base):
+        """Evenements pendant le jeu : une caresse = le joueur l'a touche, il a gagne ; fin_jeu = on arrete."""
+        if self.resultat is not None:
+            return base in ("caresse", "fin_jeu")
+        if base == "caresse":
+            self._fin(brain, brain.t_etat, "gagne")
+            return True
+        if base == "fin_jeu":
+            self._fin(brain, brain.t_etat, "arrete")
+            return True
+        return False
+
+    def pas(self, brain, t):
+        ctx, dt = brain.ctx, t - self.t_phase
+        if self.phase == "annonce":
+            ctx.head(gestures.oui(min(dt, 1.2)) if dt < 1.2 else (0, 0, 0, 0))
+            ctx.move()
+            if dt >= 1.5:
+                self.manche += 1
+                self._phase(brain, "demi_tour", t)
+        elif self.phase == "demi_tour":
+            dos = None if self.cap_joueur is None else self.cap_joueur + math.pi
+            if self._tourne(brain, t, dos):
+                self._phase(brain, "compte", t)
+        elif self.phase == "compte":
+            ctx.head((0.0, 0.3, 0.0, 0.0))       # tete baissee : "les yeux fermes"
+            ctx.move()
+            if self.n_bips < len(self.bips) and dt >= self.bips[self.n_bips]:
+                ctx.sound("chirp" if self.n_bips < 2 else "inquire")
+                self.n_bips += 1
+            if dt >= self.duree_compte:
+                self._phase(brain, "retour", t)
+        elif self.phase == "retour":
+            if self._tourne(brain, t, self.cap_joueur):
+                self._phase(brain, "regarde", t)
+        elif self.phase == "regarde":
+            ctx.head((0.0, -0.15, 0.0, 0.0))     # le regard un peu leve, vers le joueur debout
+            ctx.move()
+            if not self.arme and dt >= self.STABILISATION_S and self.veille is not None:
+                self.veille.armer()
+                self.arme = True
+            tof = ctx.extras.get("tof")
+            lib = tof.libre(ctx.state) if tof is not None and ctx.state is not None and dt >= self.STABILISATION_S else None
+            if lib is not None and lib["devant"] < self.ARRIVEE_M:
+                self._fin(brain, t, "gagne")
+            elif self.arme and self.veille.a_bouge():
+                self.vus += 1
+                self.calmes = 0
+                ctx.sound("alarm")
+                self._phase(brain, "vu", t)
+            elif dt >= self.REGARD_S:
+                self.calmes += 1
+                if self.manche >= self.MANCHES_MAX:
+                    self._fin(brain, t, "fini")
+                elif self.calmes >= self.ABANDON_MANCHES:
+                    self._fin(brain, t, "abandon")
+                else:
+                    self.manche += 1
+                    ctx.sound("chirp")
+                    self._phase(brain, "demi_tour", t)
+        elif self.phase == "vu":
+            d, fn = gestures.GESTES["non"]
+            ctx.head(fn(dt) if dt < d else (0, 0, 0, 0))
+            ctx.move()
+            if dt >= d + 0.3:
+                if self.manche >= self.MANCHES_MAX:
+                    self._fin(brain, t, "fini")
+                else:
+                    self.manche += 1
+                    self._phase(brain, "demi_tour", t)
+        elif self.phase == "fete":
+            d, fn = gestures.GESTES["content"]
+            ctx.head(fn(dt) if dt < d else (0, 0, 0, 0))
+            ctx.pose(gestures.content_corps(dt) if dt < d else None)
+            ctx.move()
+            if dt >= d + 0.3:
+                brain.fin_etat = t
+        else:                                    # salut : un petit "oui" et on rend la main
+            ctx.head(gestures.oui(dt) if dt < 1.2 else (0, 0, 0, 0))
+            ctx.move()
+            if dt >= 1.5:
+                brain.fin_etat = t
+
+    def sort(self, brain):
+        if self.veille is not None:
+            self.veille.desarmer()
+        brain.ctx.calme()
+
+
 class Accueil(Etat):
     """Un habitant rentre a la maison (presence Home Assistant, voir pont_ha.py). L'accueil depend de la familiarite
     (memoire.py : reservee au debut, chaleureuse avec le temps) et de la duree de l'absence (simple signe s'il est sorti
@@ -768,6 +924,7 @@ class Brain:
             "messager": Sequence("messager", [("curieux", "inquire"), ("oui", "chirp")]),
             "main_tendue": MainTendue(),                           # une main tendue devant lui (ToF) : il picore
             "caresse": Caresse(),                                  # on le caresse : roucoulement, tete contre la main
+            "soleil": Soleil(),                                    # jeu "1-2-3 soleil" (camera + ToF)
         }
         self.detecteur_caresse = DetecteurCaresse()
         self.detecteur_main = DetecteurMain()
@@ -861,6 +1018,18 @@ class Brain:
                     self.messages = (self.messages + [nom])[-self.MESSAGES_MAX:]
                 print(f"[{self.t_global:6.1f}s] notification maison : {nom}", flush=True)
                 self._bascule(etat)
+                continue
+            sur_evt = getattr(self.courant, "sur_evenement", None)
+            if sur_evt is not None and sur_evt(self, base):
+                continue                        # l'etat en cours (un jeu) a pris l'evenement pour lui
+            if base == "jeu_soleil":
+                if self.mode_calme or self.courant.nom in ("soleil", "nap"):
+                    continue                    # pas de jeu en mode calme ; pas pendant la sieste (ne pas reveiller)
+                if self.ctx.extras.get("mouvement") is None:
+                    print(f"[{self.t_global:6.1f}s] 1-2-3 soleil impossible : pas de camera (veille mouvement)", flush=True)
+                    continue
+                self.humeur.eveil = min(1.0, self.humeur.eveil + 0.4)
+                self._bascule("soleil")
                 continue
             if base == "caresse":
                 if self.courant.nom == "nap" or self.mode_calme:
