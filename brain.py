@@ -324,7 +324,7 @@ class Nap(Etat):
         elif not self.assis:
             ctx.toggle_sit()
             self.assis = True
-        elif t >= self.total - 4.0 and not self.leve and not brain.mode_calme:
+        elif t >= self.total - 4.0 and not self.leve and not brain.reste_assis():
             ctx.toggle_sit()
             self.leve = True
             ctx.head((0, 0, 0, 0))
@@ -340,7 +340,7 @@ class Nap(Etat):
                     break
 
     def sort(self, brain):
-        if brain.ctx.sitting and not brain.mode_calme:
+        if brain.ctx.sitting and not brain.reste_assis():
             brain.ctx.toggle_sit()
         brain.ctx.calme()
 
@@ -909,6 +909,13 @@ class Brain:
     # jamais se declencher plus souvent que le geste "rare" habituel, quelle que soit la cause.
     SEUIL_IMMOBILE_S = 1200.0    # 20 min sans bouger de plus de SEUIL_DEPLACEMENT
     SEUIL_DEPLACEMENT = 0.1      # m : en dessous, on considere que le canard n'a pas vraiment bouge
+    # Garde-fou "chat agace" (ROADMAP, garde-fous du chat, non negociable) : renverse plusieurs fois de suite -> il
+    # s'assoit et passe en veille plutot que de recommencer. Valable quelle que soit la cause (chat, enfant, sol
+    # glissant) : tomber en serie n'est jamais une raison de repartir aussitot.
+    CHUTES_AGACE = 3
+    FENETRE_CHUTES_S = 600.0
+    VEILLE_AGACE_S = 900.0
+    TAQUIN_PROBA = 0.2          # "non" theatral avant d'accepter de jouer (registre du jeu seulement, jamais la securite)
     # evenement de la maison -> (etat de reaction, hausse d'eveil)
     REACTIONS_MAISON = {
         "impression_finie": ("celebre", 0.4),
@@ -977,7 +984,10 @@ class Brain:
             "caresse": Caresse(),                                  # on le caresse : roucoulement, tete contre la main
             "soleil": Soleil(),                                    # jeu "1-2-3 soleil" (camera + ToF)
             "va_au_coin": VaAuCoin(),                              # fatigue : rejoindre son coin de sieste
+            "taquin": Sequence("taquin", [("non", "inquire")]),    # "non..." puis il joue quand meme
         }
+        self.chutes = []                        # t_global des dernieres chutes (garde-fou "chat agace")
+        self.veille_jusqua = -1.0               # repos force apres une serie de chutes
         self.detecteur_caresse = DetecteurCaresse()
         self.detecteur_main = DetecteurMain()
         self._tete_prec, self._t_tete_change = None, 0.0     # derniere consigne de tete vue, et quand elle a change
@@ -1082,7 +1092,11 @@ class Brain:
                     print(f"[{self.t_global:6.1f}s] 1-2-3 soleil impossible : pas de camera (veille mouvement)", flush=True)
                     continue
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.4)
-                self._bascule("soleil")
+                if self.rng.random() < self.TAQUIN_PROBA:
+                    self.suivant_force = "soleil"    # taquinerie : "non..." de la tete, puis il joue quand meme
+                    self._bascule("taquin")
+                else:
+                    self._bascule("soleil")
                 continue
             if base == "caresse":
                 if self.courant.nom == "nap" or self.mode_calme:
@@ -1105,6 +1119,10 @@ class Brain:
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.3)
                 self._bascule("curious")
 
+    def reste_assis(self):
+        """Pendant le mode calme ou la veille apres des chutes, on ne se releve pas entre deux siestes."""
+        return self.mode_calme or self.t_global < self.veille_jusqua
+
     COIN_DISTANCE = (0.5, 4.0)               # m : plus pres, inutile de bouger ; plus loin, l'odometrie a trop derive
 
     def _coin_atteignable(self):
@@ -1124,8 +1142,8 @@ class Brain:
         if force:
             self.suivant_force = None
             return force
-        if self.mode_calme:
-            return "nap"                        # sieste prolongee, assis, sans bruit, tant que l'interrupteur est actif
+        if self.mode_calme or self.t_global < self.veille_jusqua:
+            return "nap"                        # sieste prolongee, assis : interrupteur calme, ou veille apres des chutes
         h = self.humeur
         batterie_basse = self._batterie_pct is not None and self._batterie_pct < self.BATTERIE_BASSE_PCT
         if h.energie < self.SEUIL_SIESTE or batterie_basse:
@@ -1256,6 +1274,13 @@ class Brain:
                 print(f"[{self.t_global:6.1f}s] CHUTE : cerveau en pause (robotd se charge du relevement)", flush=True)
                 if self._derniere_position is not None:
                     self.exploration.chute(*self._derniere_position, self.t_global)   # "zone noire" apprise
+                self.chutes = [t for t in self.chutes if self.t_global - t <= self.FENETRE_CHUTES_S] + [self.t_global]
+                if len(self.chutes) >= self.CHUTES_AGACE:
+                    self.veille_jusqua = self.t_global + self.VEILLE_AGACE_S
+                    chat = self.ctx.extras.get("chat")
+                    qui = "le chat" if chat is not None and getattr(chat.suivi, "visible", False) else "quelque chose"
+                    print(f"[{self.t_global:6.1f}s] {len(self.chutes)} chutes en {self.FENETRE_CHUTES_S / 60:.0f} min "
+                          f"({qui}) : veille {self.VEILLE_AGACE_S / 60:.0f} min, assis", flush=True)
             self.tombe = True
             self.ctx.calme()
             return
@@ -1264,7 +1289,9 @@ class Brain:
             # remet d'une glissade, puis reprend sa vie. Pas en mode calme (silence et immobilite d'abord).
             self.tombe = False
             print(f"[{self.t_global:6.1f}s] releve apres la chute", flush=True)
-            if not self.mode_calme:
+            if self.t_global < self.veille_jusqua:
+                self._bascule("nap")             # serie de chutes : il s'assoit et ne recommence pas
+            elif not self.mode_calme:
                 self._bascule("ebouriffe")
         if self.tombe:
             return                              # pas encore la politique 'stand' : on attend sans rien commander

@@ -519,6 +519,52 @@ def test_message_transmis_au_retour_puis_oublie():
     assert b.messages == [], "quelqu'un est la : rien a garder, il l'a vu en direct"
 
 
+def test_chat_agace_trois_chutes_veille_assis():
+    # garde-fou "chat agace" (ROADMAP, non negociable) : renverse 3 fois en 10 min -> il s'assoit et passe en veille
+    # au lieu de recommencer ; au bout de la veille, il reprend sa vie.
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.9), seed=80)
+    for k in range(3):
+        simule(b, 30, tombe_entre=(10.0, 13.0))
+    assert b.veille_jusqua > b.t_global, "pas de veille apres 3 chutes"
+    noms = [e[1] for e in b.journal]
+    assert noms[-1] == "nap" and noms.count("ebouriffe") == 2, noms
+    simule(b, 600)
+    assert {e[1] for e in b.journal[len(noms):]} <= {"nap"}, "pendant la veille : seulement des siestes"
+    assert b.ctx.sitting, "il reste assis pendant la veille"
+    simule(b, 400)
+    assert b.t_global > b.veille_jusqua and not b.ctx.sitting, "la veille finie, il se releve"
+
+
+def test_deux_chutes_espacees_pas_de_veille():
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.9), seed=81)
+    simule(b, 30, tombe_entre=(10.0, 13.0))
+    simule(b, 700)
+    simule(b, 30, tombe_entre=(10.0, 13.0))
+    simule(b, 30, tombe_entre=(10.0, 13.0))
+    assert b.veille_jusqua < 0, "3 chutes, mais pas dans la meme fenetre de 10 min"
+
+
+def test_taquinerie_non_puis_joue_quand_meme():
+    class Veille:
+        def armer(self): pass
+        def desarmer(self): pass
+        def a_bouge(self): return False
+    vus = 0
+    for seed in range(40):
+        c = FauxClient()
+        b = Brain(c, Humeur(energie=0.9), seed=seed, extras={"mouvement": Veille()})
+        b.fin_etat = 1e9
+        simule(b, 6, evenements=[(0.5, "jeu_soleil")])
+        noms = [e[1] for e in b.journal]
+        assert "soleil" in noms, (seed, noms)
+        if "taquin" in noms:
+            vus += 1
+            assert noms.index("taquin") + 1 == noms.index("soleil"), "apres le non, il joue"
+    assert 2 <= vus <= 16, f"taquinerie {vus}/40 : elle doit rester occasionnelle"
+
+
 if __name__ == "__main__":
     import sys
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
