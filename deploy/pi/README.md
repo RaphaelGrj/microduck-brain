@@ -1,5 +1,8 @@
 # Faire tourner le pont Home Assistant + cerveau sur un Raspberry Pi 3B+ (24 h/24, sans le PC)
 
+> **Solution de repli.** La cible est le cerveau **sur le canard lui-même** (`deploy/robot/`), sans appareil externe.
+> Ce dossier ne sert que si le robot manque de marge (CPU/RAM) une fois mesuré.
+
 **État : préparé, NON TESTÉ sur un Pi** (je n'en ai pas ; mesures faites sur le PC, voir plus bas). À essayer avec ton
 Pi de rechange, de préférence **avant** la livraison du robot, en pointant le tunnel sur le simulateur ou en attendant.
 
@@ -52,7 +55,7 @@ brain.py pont_ha.py canard.py ...`, test statique), donc le Python de Raspberry 
 
 `robotd` n'écoute que sur un socket Unix du robot (`/run/robotd.sock`). `ssh -L socket_local:socket_distant` le rend disponible sur le
 Pi (`/run/microduck/robotd.sock`), et le cerveau le lit via la variable `ROBOTD_SOCK`. Aucun changement de code. Même chose pour le
-capteur de distance (`tofd` → `/run/microduck/tofd.sock`, variable `TOFD_SOCK` ; chemin sur le robot **supposé** `/run/tofd.sock`) et la
+capteur de distance (`tofd` → `/run/microduck/tofd.sock`, variable `TOFD_SOCK` ; chemin sur le robot `/run/tofd/tof.sock`, lu dans le code officiel) et la
 caméra (route `/frame` de `mediad` ramenée sur `127.0.0.1:8080` du Pi : l'image ne sort jamais du tunnel, règle de vie « vie privée »). **À valider sur le vrai
 robot** (droits sur le socket, compte SSH dédié, comportement à la perte du Wi-Fi : le deadman de `robotd` arrête le robot si les
 commandes cessent, et le service redémarre tout seul).
