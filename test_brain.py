@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Tests du cerveau sans robot : faux client, temps simule (1 trame = 20 ms)."""
-from brain import Brain, Humeur, fatigue, FATIGUE_PLEIN, FATIGUE_BAS, FATIGUE_MIN
+import math
+
+from brain import Brain, Humeur, fatigue, FATIGUE_PLEIN, FATIGUE_BAS, FATIGUE_MIN, V_PROMENADE
 
 
 class FauxClient:
@@ -165,6 +167,32 @@ def test_coin_favori_accumule_pendant_chill():
     favori = b.exploration.coin_favori("chill", b.t_global)
     assert favori is not None, "aucun coin favori appris pendant le chill"
     assert favori == (int(0.6 // 0.25) * 0.25 + 0.125, int(0.6 // 0.25) * 0.25 + 0.125)
+
+
+class FauxTof:
+    """Imite tof.py.Tof.libre() : couloir etroit des deux cotes, rien devant."""
+    def libre(self, state):
+        return {"devant": 2.0, "gauche": 0.3, "droite": 0.3, "vide": math.inf, "n": 10}
+
+
+def test_pause_avant_passage_etroit():
+    # Wander marque une pause (vx=0) avant de s'engager dans un passage etroit detecte par le ToF, puis reprend
+    # la marche normale - une seule pause par traversee, pas un arret repete (ROADMAP "chantier actif").
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.9), seed=15, extras={"tof": FauxTof(), "exploration": False})
+    b.ctx.state = {"t": 0.0, "odom": {"position": [0.0, 0.0], "yaw": 0.0}}
+    b._bascule("wander")
+    w = b.etats["wander"]
+    for i in range(20):                              # 0.4 s de reglage de la tete, pas encore de detection
+        w.pas(b, i * 0.02)
+    assert w.pause_jusqua is None
+    w.pas(b, 0.42)                                    # premiere trame post-reglage : couloir etroit detecte
+    assert w.pause_faite and w.pause_jusqua is not None
+    assert [p["vx"] for m, p in c.appels if m == "robot.move"][-1] == 0.0
+    w.pas(b, 0.42 + 0.6 + 0.02)                        # fin de la pause (detectee cette trame, encore immobile)
+    assert w.pause_jusqua is None
+    w.pas(b, 0.42 + 0.6 + 0.04)                        # trame suivante : reprend la marche normale
+    assert [p["vx"] for m, p in c.appels if m == "robot.move"][-1] == V_PROMENADE
 
 
 def test_chute_memorise_une_zone_noire():

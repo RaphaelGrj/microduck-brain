@@ -201,10 +201,14 @@ class Wander(Etat):
     `turn`."""
     nom = "wander"
 
+    SEUIL_PASSAGE_ETROIT = 0.5   # m, de chaque cote : en dessous des deux, pause avant de s'y engager
+
     def entre(self, brain):
         self.duree_s = brain.rng.uniform(2.5, 6.0)
         self.arrets = 0
         self.virage = None
+        self.pause_faite = False     # une seule pause par traversee, pas a chaque trame dans le passage
+        self.pause_jusqua = None
         # Exploration : avant de partir, regarder si une direction mene vers des zones moins visitees (sauf si on vient
         # justement de tourner pour ca).
         o = brain.ctx.state.get("odom") if brain.ctx.state is not None else None
@@ -230,6 +234,11 @@ class Wander(Etat):
             brain.suivant_force = "turn"
             brain.ctx.move()
             return
+        if self.pause_jusqua is not None:
+            brain.ctx.move()                                 # immobile : on "jauge" le passage avant de s'y engager
+            if t >= self.pause_jusqua:
+                self.pause_jusqua = None
+            return
         tof = brain.ctx.extras.get("tof")
         lib = tof.libre(brain.ctx.state) if tof is not None and brain.ctx.state is not None else None
         if lib is None:
@@ -239,6 +248,14 @@ class Wander(Etat):
             o = brain.ctx.state["odom"]
             brain.exploration.obstacle(o["position"][0] + lib["devant"] * math.cos(o["yaw"]),
                                        o["position"][1] + lib["devant"] * math.sin(o["yaw"]), brain.t_global)
+        # Passage etroit (ROADMAP "chantier actif") : une pause VISIBLE avant de s'y engager, comme un animal qui
+        # jauge un couloir serre - pas un evitement (on continue ensuite), distinct de l'arret sur obstacle ci-dessous.
+        if (not self.pause_faite and lib["devant"] >= LIBRE_MIN
+                and lib["gauche"] < self.SEUIL_PASSAGE_ETROIT and lib["droite"] < self.SEUIL_PASSAGE_ETROIT):
+            self.pause_faite = True
+            self.pause_jusqua = t + 0.6
+            brain.ctx.move()
+            return
         if lib["devant"] < LIBRE_MIN:
             brain.ctx.move()
             brain.cote_degage = 1.0 if lib["gauche"] >= lib["droite"] else -1.0
