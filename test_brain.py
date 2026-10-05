@@ -90,6 +90,22 @@ def test_chute_met_le_cerveau_en_pause():
     assert not j, f"transition pendant la chute: {j}"
 
 
+def test_reves_pendant_sieste_profonde():
+    # sieste assez longue pour garantir une phase de sommeil profond -> au moins un tressaillement de tete
+    # (robot.head avec un petit yaw non nul), jamais pendant les 2 premieres s (endormissement) ni les 4
+    # dernieres (reveil).
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.1), seed=11)
+    simule(b, 30)
+    assert b.courant.nom in ("nap", "etirement"), f"pas en sieste: {b.courant.nom}"
+    nap = b.etats["nap"]
+    assert nap.total - 2.0 - 4.0 >= 3.0, "la sieste de ce test doit avoir une phase profonde"
+    yaws = [p["head_yaw"] for m, p in c.appels if m == "robot.head" and p["head_yaw"] != 0.0]
+    assert yaws, "aucun tressaillement de tete pendant la sieste"
+    for t0, duree, _ in nap.reves:
+        assert t0 >= 2.0 and t0 + duree <= nap.total - 4.0, f"reve hors de la phase profonde: {t0}, {duree}"
+
+
 def test_chute_memorise_une_zone_noire():
     # une chute avec odom connu note une "zone noire" a l'endroit precis (exploration.py), pas seulement
     # la pause du cerveau deja testee par test_chute_met_le_cerveau_en_pause.

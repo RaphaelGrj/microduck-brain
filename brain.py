@@ -264,6 +264,15 @@ class Nap(Etat):
         self.assis = brain.ctx.sitting           # deja assis (sieste prolongee en mode calme) : on ne se rassoit pas
         self.leve = False
         self.total = 2.0 + 4.0 + brain.rng.uniform(8.0, 14.0) + 4.0
+        # "Reves" pendant le sommeil profond (ROADMAP "chantier actif", 2026-10-05) : 0 a 2 petits tressaillements
+        # de tete, jamais pendant l'endormissement (< 2s) ni le reveil (derniers 4s) - juste de quoi distinguer une
+        # sieste "vivante" d'une simple pause, sans RL ni capteur supplementaire.
+        profond = self.total - 2.0 - 4.0
+        self.reves = []
+        if profond >= 3.0:
+            for _ in range(brain.rng.randint(0, 2)):
+                t0 = 2.0 + brain.rng.uniform(0.5, profond - 1.5)
+                self.reves.append((t0, brain.rng.uniform(0.6, 1.2), brain.rng.choice((-1, 1))))
 
     def duree(self, brain):
         return self.total
@@ -279,6 +288,12 @@ class Nap(Etat):
             ctx.toggle_sit()
             self.leve = True
             ctx.head((0, 0, 0, 0))
+        elif self.assis and not self.leve:
+            for t0, duree, signe in self.reves:
+                if t0 <= t < t0 + duree:
+                    k = math.sin(math.pi * (t - t0) / duree)      # monte puis redescend a 0 : jamais de saut brusque
+                    ctx.head((0.0, 0.7 + 0.05 * signe * k, 0.08 * signe * k, 0.0))
+                    break
 
     def sort(self, brain):
         if brain.ctx.sitting and not brain.mode_calme:
