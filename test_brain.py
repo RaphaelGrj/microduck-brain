@@ -106,6 +106,25 @@ def test_reves_pendant_sieste_profonde():
         assert t0 >= 2.0 and t0 + duree <= nap.total - 4.0, f"reve hors de la phase profonde: {t0}, {duree}"
 
 
+def test_rituel_depart_signe_discret():
+    # un depart (presence HA) declenche le petit rituel discret, pas une fete, et met bien a jour presents/memoire.
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.9), seed=12)
+    b.presents.add("Raphael")
+    simule(b, 5, evenements=[(2.0, "depart:Raphael")])
+    assert "rituel_depart" in {e[1] for e in b.journal}, f"pas de rituel au depart: {b.journal}"
+    assert "Raphael" not in b.presents
+
+
+def test_rituel_depart_ignore_pendant_sieste():
+    # ne jamais interrompre une sieste pour un simple depart (pas d'insistance, coherent avec l'accueil au retour).
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.1), seed=13)
+    simule(b, 20, evenements=[(18.0, "depart:Raphael")])
+    assert b.courant.nom == "nap"
+    assert "rituel_depart" not in {e[1] for e in b.journal}
+
+
 def test_chute_memorise_une_zone_noire():
     # une chute avec odom connu note une "zone noire" a l'endroit precis (exploration.py), pas seulement
     # la pause du cerveau deja testee par test_chute_met_le_cerveau_en_pause.

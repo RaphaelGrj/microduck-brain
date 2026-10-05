@@ -514,6 +514,7 @@ class Brain:
             "info": Geste("info", "curieux", son="inquire"),       # information a signaler
             "regarde_chat": RegardeChat(),                         # le chat vient d'apparaitre
             "accueil": Accueil(),                                  # un habitant rentre (presence HA)
+            "rituel_depart": Geste("rituel_depart", "oui", son="chirp"),  # signe discret au depart, symetrique
             "ecoute": Ecoute(),                                    # conversation vocale en cours (quacksat)
             # vocabulaire M9 (gestes de tete scriptes) : initiatives RARES, voir RARES / _choisit_suivant
             "etirement": Geste("etirement", "etirement", son="coo"),
@@ -580,6 +581,11 @@ class Brain:
                     self.presents.discard(qui)
                     if mem is not None:
                         mem.depart(qui)
+                    # Petit rituel de presence, symetrique de l'accueil au retour (ROADMAP "chantier actif") : un
+                    # signe discret et reconnaissable, jamais une "fete" - et jamais pendant la sieste, le calme ou
+                    # une conversation en cours (ne jamais interrompre pour un simple depart).
+                    if not self.mode_calme and self.courant.nom not in ("nap", "ecoute"):
+                        self._bascule("rituel_depart")
                     continue
                 self.presents.add(qui)
                 absence = float(absence) if absence else (mem.absence_s(qui) if mem is not None else None)
