@@ -188,8 +188,8 @@ class Wander(Etat):
         self.virage = None
         # Exploration : avant de partir, regarder si une direction mene vers des zones moins visitees (sauf si on vient
         # justement de tourner pour ca).
-        if brain.explo_actif and brain.ctx.state is not None and not getattr(brain, "cap_choisi", False):
-            o = brain.ctx.state["odom"]
+        o = brain.ctx.state.get("odom") if brain.ctx.state is not None else None
+        if brain.explo_actif and o is not None and not getattr(brain, "cap_choisi", False):
             ecart = brain.exploration.meilleur_ecart(o["position"][0], o["position"][1], o["yaw"], brain.t_global)
             if abs(ecart) >= math.radians(30):
                 self.virage = ecart
@@ -407,10 +407,73 @@ class Accueil(Etat):
         brain.ctx.pose(corps)
 
 
+class JeuSolitaire(Etat):
+    """Occupation autonome (ROADMAP "Occupation autonome et recherche d'attention") : personne n'est disponible pour
+    s'en occuper, le canard s'amuse seul plutot que de rester simplement passif. Petit mouvement ludique sur place
+    (avance/recule comme s'il poussait un objet, tete qui suit), pas une vraie recherche de balle (ca demande la
+    vision, Phase 2) : juste de quoi distinguer visuellement ce moment d'un `Chill` au repos."""
+    nom = "jeu_solitaire"
+
+    def duree(self, brain):
+        return brain.rng.uniform(5.0, 9.0)
+
+    def entre(self, brain):
+        brain.ctx.sound("chirp")
+
+    def pas(self, brain, t):
+        brain.ctx.head((0.0, 0.0, 0.5 * math.sin(2 * math.pi * t / 2.0), 0.0))
+        brain.ctx.move(vx=0.2 * math.sin(2 * math.pi * t / 2.0))
+
+
+class RechercheAttention(Etat):
+    """Occupation autonome, variante "aller chercher l'attention" : un habitant (presence HA) ou le chat (veille
+    camera) est disponible, le canard va vers lui plutot que de jouer seul. Une seule tentative, jamais insistee
+    (regle de vie) : `brain.derniere_fois["ennui"]` sert de temporisation, pas de boucle ici.
+
+    Vers le chat : on reutilise `cible_regard` comme `RegardeChat`, on a sa position. Vers un humain : pas de
+    position fiable sans balises UWB (meme limite que `Accueil`, voir sa docstring) -> juste un appel sonore et un
+    regard qui balaie, sans deplacement vers une direction qu'on ne connait pas."""
+    nom = "cherche_attention"
+
+    def __init__(self):
+        self.cible = None   # "humain" ou "chat", pose par Brain._choisit_suivant avant la bascule
+
+    def duree(self, brain):
+        return 5.0
+
+    def entre(self, brain):
+        brain.ctx.sound("inquire" if self.cible == "humain" else "chirp")
+        self.t_vise = None
+
+    def pas(self, brain, t):
+        if self.cible == "chat":
+            veille, s = brain.ctx.extras.get("chat"), brain.ctx.state
+            if veille is not None and s is not None:
+                e = veille.estimation
+                if e is not None and e[0] != self.t_vise:
+                    self.t_vise = e[0]
+                    cible = veille.cible_regard(s["odom"]["position"][2])
+                    if cible:
+                        r = brain.ctx.client.request("robot.look", {"x": float(cible[0]), "y": float(cible[1]), "z": float(cible[2])})
+                        h = (r.get("result") or {}).get("head") if isinstance(r, dict) else None
+                        if h:
+                            brain.ctx.head((h["neck_pitch"], h["head_pitch"], h["head_yaw"], h["head_roll"]))
+                            return
+            brain.ctx.head((0.0, 0.0, 0.0, 0.0))
+            return
+        yaw = 0.5 * math.sin(2 * math.pi * t / 4.0)       # pas de position connue : un regard qui balaie, pas une marche
+        brain.ctx.head((0.0, 0.0, yaw, 0.0))
+
+
 class Brain:
     SEUIL_SIESTE = 0.25
     RARES = {"lissage": 0.015, "ebouriffe": 0.01, "etirement": 0.008, "eternuement": 0.005}   # poids face a ~1 pour le reste
     DELAI_RARE = 300.0
+    # Occupation autonome / recherche d'attention (ROADMAP "chantier actif", 2026-10-05) : si rien ne s'est passe
+    # depuis SEUIL_ENNUI_S, le canard ne reste pas simplement passif en Chill -> jeu solitaire ou recherche
+    # d'attention (humain present, sinon chat visible). Jamais plus souvent que DELAI_ENNUI_S (ne jamais insister).
+    SEUIL_ENNUI_S = 600.0
+    DELAI_ENNUI_S = 300.0
     # evenement de la maison -> (etat de reaction, hausse d'eveil)
     REACTIONS_MAISON = {
         "impression_finie": ("celebre", 0.4),
@@ -442,6 +505,8 @@ class Brain:
             "ebouriffe": Geste("ebouriffe", "ebouriffe"),
             "lissage": Geste("lissage", "lissage"),
             "eternuement": Geste("eternuement", "eternuement", son="peck"),
+            "jeu_solitaire": JeuSolitaire(),                       # occupation autonome, personne de disponible
+            "cherche_attention": RechercheAttention(),             # occupation autonome, humain/chat disponible
         }
         self.derniere_fois = {}                 # etat rare -> t_global de la derniere fois
         self.mode_calme = False                 # interrupteur "calme" de Home Assistant (regle de vie)
@@ -456,6 +521,8 @@ class Brain:
         self.journal = []  # (t_global, nom_etat, energie, eveil)
         self.t_global = 0.0
         self.tombe = False
+        self.presents = set()                   # habitants actuellement a la maison (presence HA, retour/depart)
+        self.derniere_interaction = 0.0         # dernier evenement externe notable (hors bascule calme/ecoute)
 
     # -- evenements externes (plus tard : micro, camera, HA...) --
     def evenement(self, nom):
@@ -474,6 +541,9 @@ class Brain:
                     print(f"[{self.t_global:6.1f}s] mode calme {'ACTIVE' if actif else 'desactive'}", flush=True)
                     self._bascule("nap" if actif else ("etirement" if self.courant.nom == "nap" else "chill"))
                 continue
+            # Occupation autonome : tout evenement reel (hors bascule "calme") remet le compteur d'ennui a zero,
+            # qu'il soit ou non traite immediatement (differe pendant une conversation, ignore pendant la sieste...).
+            self.derniere_interaction = self.t_global
             if base in ("ecoute_on", "ecoute_off"):
                 # conversation vocale (satellite Assist) : on se tait ; a la fin, on reprend et on rejoue ce qui attendait
                 if base == "ecoute_on" and self.courant.nom != "ecoute":
@@ -491,9 +561,11 @@ class Brain:
                 qui, _, absence = detail.partition("|")
                 mem = self.ctx.extras.get("memoire")
                 if base == "depart":
+                    self.presents.discard(qui)
                     if mem is not None:
                         mem.depart(qui)
                     continue
+                self.presents.add(qui)
                 absence = float(absence) if absence else (mem.absence_s(qui) if mem is not None else None)
                 longue = absence is not None and absence >= Accueil.ABSENCE_LONGUE_S
                 if self.mode_calme or (self.courant.nom == "nap" and not longue):
@@ -541,6 +613,19 @@ class Brain:
             return "etirement"                  # on s'etire en se reveillant
         if self.courant.nom != "chill":
             return "chill"
+        # Occupation autonome / recherche d'attention : rien ne s'est passe depuis longtemps -> le canard ne reste
+        # pas simplement passif. Priorite sur les initiatives habituelles (look/turn/wander/RARES), mais seulement
+        # si le delai minimal est passe (ne jamais insister).
+        sans_interaction = self.t_global - self.derniere_interaction
+        depuis_ennui = self.t_global - self.derniere_fois.get("ennui", -1e9)
+        if sans_interaction >= self.SEUIL_ENNUI_S and depuis_ennui >= self.DELAI_ENNUI_S:
+            self.derniere_fois["ennui"] = self.t_global
+            chat = self.ctx.extras.get("chat")
+            chat_visible = chat is not None and getattr(chat.suivi, "visible", False)
+            if self.presents or chat_visible:
+                self.etats["cherche_attention"].cible = "humain" if self.presents else "chat"
+                return "cherche_attention"
+            return "jeu_solitaire"
         poids = {"look": 0.4, "turn": 0.2 + 0.3 * h.energie,
                  "wander": 0.15 + 0.4 * h.energie * (0.5 + h.eveil)}
         # Initiative rare et surprenante (principe Pollen : un duo surprise est un plaisir, un juke-box non) :

@@ -23,7 +23,10 @@ def simule(brain, secondes, tombe_entre=None, evenements=None):
         while evenements and evenements[0][0] <= t:
             brain.evenement(evenements.pop(0)[1])
         fallen = bool(tombe_entre and tombe_entre[0] <= t < tombe_entre[1])
-        brain.tick({"t": t, "safety": {"fallen": fallen}}, 0.02)
+        # policy="stand" hors chute : imite robotd, qui annonce toujours une politique active (ici debout immobile) ;
+        # sans ce champ le cerveau ne peut jamais detecter le relevement (policy reste a None pour toujours).
+        policy = None if fallen else "stand"
+        brain.tick({"t": t, "safety": {"fallen": fallen}, "policy": policy}, 0.02)
 
 
 def nb(client, skill):
@@ -85,6 +88,49 @@ def test_chute_met_le_cerveau_en_pause():
     assert b.tombe is False
     j = [e for e in b.journal if 10.0 <= e[0] < 20.0]
     assert not j, f"transition pendant la chute: {j}"
+
+
+class FauxVeilleChat:
+    """Imite VeilleChat (chat.py) juste assez pour _choisit_suivant/RechercheAttention.pas : .suivi.visible pour
+    le choix de cible, .estimation=None pour que pas() se contente du regard qui balaie (pas de position connue)."""
+    def __init__(self, visible):
+        class _Suivi:
+            pass
+        self.suivi = _Suivi()
+        self.suivi.visible = visible
+        self.estimation = None
+
+
+def test_ennui_sans_personne_disponible_jeu_solitaire():
+    # personne a la maison, pas de chat visible : au-dela de SEUIL_ENNUI_S sans interaction, le canard
+    # s'occupe seul plutot que de rester simplement passif en chill.
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.9), seed=7)
+    simule(b, 650)
+    assert "jeu_solitaire" in {e[1] for e in b.journal}, f"pas de jeu solitaire apres l'ennui: {b.journal}"
+    assert "cherche_attention" not in {e[1] for e in b.journal}
+
+
+def test_ennui_avec_humain_present_cherche_attention():
+    # un habitant est present (retour/depart HA, pas un evenement ici pour ne pas remettre a zero le
+    # compteur d'ennui) : le canard va chercher son attention plutot que de jouer seul.
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.9), seed=8)
+    b.presents.add("Raphael")
+    simule(b, 650)
+    assert "cherche_attention" in {e[1] for e in b.journal}, f"pas de recherche d'attention: {b.journal}"
+    assert b.etats["cherche_attention"].cible == "humain"
+    assert "jeu_solitaire" not in {e[1] for e in b.journal}
+
+
+def test_ennui_avec_chat_visible_cherche_attention():
+    # pas d'habitant present, mais le chat est visible a la camera : cible = "chat".
+    c = FauxClient()
+    chat = FauxVeilleChat(visible=True)
+    b = Brain(c, Humeur(energie=0.9), seed=9, extras={"chat": chat})
+    simule(b, 650)
+    assert "cherche_attention" in {e[1] for e in b.journal}, f"pas de recherche d'attention: {b.journal}"
+    assert b.etats["cherche_attention"].cible == "chat"
 
 
 if __name__ == "__main__":
