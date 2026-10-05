@@ -77,3 +77,88 @@ def test_demarrage_sur_un_canard_assis():
     assert b.ctx.sitting, "le cerveau doit savoir que le canard est deja assis"
     b.arret()
     assert not b.ctx.sitting and ("robot.do", {"skill": "sit_toggle"}) in c.appels
+
+
+class TofAleatoire:
+    """ToF factice dont la scene change toutes les quelques secondes : mur proche, bord de vide, main, rien."""
+    def __init__(self, rng):
+        self.rng, self.t, self.scene = rng, 0.0, None
+        self.change()
+
+    def change(self):
+        self.scene = self.rng.choice(("rien", "mur", "vide", "main", "couloir"))
+
+    def noter_etat(self, s):
+        if self.rng.random() < 0.005:
+            self.change()
+
+    def points(self, s):
+        return {"main": [(0.12, 0.0, 0.1)], "mur": [(0.35, 0.0, 0.1)]}.get(self.scene, [])
+
+    def libre(self, s):
+        return {"rien": {"devant": 3.0, "gauche": 3.0, "droite": 3.0, "vide": float("inf")},
+                "mur": {"devant": 0.35, "gauche": 1.0, "droite": 0.6, "vide": float("inf")},
+                "vide": {"devant": 0.25, "gauche": 2.0, "droite": 2.0, "vide": 0.25},
+                "main": {"devant": 0.12, "gauche": 2.0, "droite": 2.0, "vide": float("inf")},
+                "couloir": {"devant": 2.0, "gauche": 0.3, "droite": 0.3, "vide": float("inf")}}[self.scene] | {"n": 3}
+
+
+class Leurre:
+    """Veilles camera factices (balle, mouvement, chat) aux reponses aleatoires."""
+    def __init__(self, rng):
+        self.rng = rng
+        self.suivi = type("S", (), {"visible": False})()
+        self.estimation = None
+
+    def position(self, age_max=1.5):
+        return (0.12, 0.0) if self.rng.random() < 0.3 else None
+
+    def armer(self):
+        pass
+
+    def desarmer(self):
+        pass
+
+    def a_bouge(self):
+        return self.rng.random() < 0.01
+
+    def cible_regard(self, h):
+        return None
+
+
+def test_endurance_tous_capteurs_jamais_vers_un_vide():
+    for seed in (11, 12):
+        rng = random.Random(seed)
+        tof = TofAleatoire(rng)
+        leurre = Leurre(rng)
+        violations, marches = [], []
+        ref = [None]
+
+        class C(Client):
+            def notify(self, method, params=None):
+                b = self.b[0]
+                if method == "robot.move" and params["vx"] > 0.25:
+                    marches.append(b.courant.nom)
+                    lib = tof.libre(None)
+                    if lib["vide"] < 0.3:
+                        violations.append((round(b.t_global, 1), b.courant.nom, "pas vers un vide"))
+
+        c = C(ref)
+        b = Brain(c, Humeur(energie=0.8), seed=seed, horloge=FauxHorloge(14),
+                  extras={"tof": tof, "balle": leurre, "mouvement": leurre, "chat": leurre, "exploration": False})
+        ref[0] = b
+        b.presents.add("Raphael")
+        t, prochain = 0.0, 5.0
+        while t < 3600.0:
+            if t >= prochain:
+                b.evenement(rng.choice(EVENEMENTS))
+                prochain = t + rng.expovariate(1 / 30.0)
+            leurre.suivi.visible = rng.random() < 0.002 or (leurre.suivi.visible and rng.random() < 0.995)
+            b.tick({"t": t, "safety": {"fallen": False}, "policy": "stand", "battery": {"percent": 70.0},
+                    "odom": {"position": [0.0, 0.0, 0.11], "yaw": 0.0}, "joints": [0.0] * 15}, 0.02)
+            t += 0.02
+        b.arret()
+        assert not violations, violations[:5]
+        assert len(marches) > 500, f"le test doit faire marcher le canard ({len(marches)} commandes)"
+        assert not c.sons_en_calme, c.sons_en_calme[:5]
+        assert not b.ctx.sitting
