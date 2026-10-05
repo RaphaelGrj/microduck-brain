@@ -1255,6 +1255,25 @@ class AssisDemande(Etat):
         brain.ctx.calme()
 
 
+class Porte(Etat):
+    """On le prend dans les bras (robot.state.safety.picked_up, detecteur officiel de robotd, qui met aussi la marche
+    en pause) - etat "Held" du M9 : un "wheee" surpris et ravi, la tete qui regarde partout ce monde vu d'en haut,
+    aucune commande de marche. Reposé : il s'ebroue (Brain.tick)."""
+    nom = "porte"
+
+    def entre(self, brain):
+        brain.ctx.sound("wheee")
+
+    def duree(self, brain):
+        return 300.0
+
+    def pas(self, brain, t):
+        if 3.0 <= t % 12.0 < 3.03:
+            brain.ctx.sound("inquire")
+        brain.ctx.head((0.0, 0.2 * math.sin(2 * math.pi * t / 7.0), 0.6 * math.sin(2 * math.pi * t / 5.0), 0.0))
+        brain.ctx.move()
+
+
 class Fier(Etat):
     """Petit air fier apres une blague devenue un running gag ; amplitude = Malice.fierte (trophee de malice)."""
     nom = "fier"
@@ -1579,6 +1598,8 @@ class Brain:
             "fausse_chute": FausseChute(), "fausse_notif": FausseNotif(),
             # la maison
             "alarme": AlarmeFumee(), "toupie": Toupie(), "assis_demande": AssisDemande(),
+            "porte": Porte(),                                                     # dans les bras (M9 "Held")
+            "son_bref": Sequence("son_bref", [("curieux", None)]),               # robotd a entendu un son bref
             "salut": Sequence("salut", [("oui", "greet"), ("content", "wheee")]),
             # social
             "signature": Sequence("signature", [("curieux", "coo"), ("fier", "wheee")]),
@@ -1595,6 +1616,8 @@ class Brain:
         self.meteo = None                       # groupe meteo courant (Home Assistant) : soleil, pluie, neige, orage...
         self.chargeur = None                    # (x, y) odom ou la batterie est deja remontee (session en cours)
         self._charge_ref = None                 # (t, pourcentage, position) depuis le dernier deplacement
+        self._audio_prec = None                 # derniers compteurs robot.state.audio (patch contrib/)
+        self.porte = False                      # dans les bras (safety.picked_up)
         self.ignores, self._t_tentative, self._tentative_jugee = 0, None, False   # demandes d'attention ignorees
         self.bruits = []                        # t_global des bruits forts recents (detonations -> refuge)
         self._jour_signature = None             # geste signature : une fois par jour au plus
@@ -1791,6 +1814,11 @@ class Brain:
                 choix = self._taquinerie(("dernier_mot",), humain=True, proba=0.5)
                 if choix and not getattr(self.courant, "taquinerie", False):
                     self._bascule(choix)
+            elif base == "son_bref":
+                if self.courant.nom in ("chill", "look"):
+                    self._bascule("son_bref")            # un claquement, une porte : il tourne la tete, curieux
+            elif base == "voix":
+                self.humeur.eveil = min(1.0, self.humeur.eveil + 0.1)   # on parle : il s'eveille un peu
             elif base == "applaudissements":
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.3)
                 self._bascule("bravo")
@@ -2042,14 +2070,54 @@ class Brain:
             for e in evts:
                 self.evenement(e)
 
+    def _surveille_robotd(self, state):
+        """Ce que robotd sait deja : la tete entendue par son micro (robot.state.audio : compteurs, voir
+        contrib/robotd-audio-state.patch) et le canard pris dans les bras (safety.picked_up)."""
+        a = state.get("audio")
+        if a:
+            prec, self._audio_prec = self._audio_prec, a
+            if prec is not None:
+                if a.get("pettings", 0) > prec.get("pettings", 0):
+                    self.evenement("caresse")
+                if a.get("noises", 0) > prec.get("noises", 0):
+                    self.evenement("son_bref")
+                if a.get("voices", 0) > prec.get("voices", 0):
+                    self.evenement("voix")
+        porte = bool((state.get("safety") or {}).get("picked_up"))
+        if porte != self.porte:
+            self.porte = porte
+            if porte:
+                print(f"[{self.t_global:6.1f}s] pris dans les bras", flush=True)
+                self._bascule("porte")
+            elif self.courant.nom == "porte":
+                print(f"[{self.t_global:6.1f}s] repose", flush=True)
+                self._bascule("ebouriffe" if not self.mode_calme else "nap")
+
+    def _traite_evenements_porte(self):
+        """Dans les bras : seules l'alarme et une caresse (un roucoulement) comptent ; le reste attend."""
+        garde = []
+        for nom in self.evenements:
+            if nom.startswith("alarme_fumee"):
+                self.ctx.silence = False
+                self.ctx.sound("alarm")
+                self.ctx.silence = self.mode_calme
+            elif nom == "caresse":
+                self.ctx.sound("coo")
+                self.derniere_interaction = self.t_global
+            else:
+                garde.append(nom)
+        self.evenements = garde
+
     def _surveille_caresse(self, state):
         joints = state.get("joints")
         if not joints or len(joints) < 9:
             return
         immobile = self.courant.nom == "chill" or (     # sieste : pas pendant qu'il s'assoit ni qu'il se releve
             self.courant.nom == "nap" and 6.0 <= self.t_etat < self.fin_etat - 4.0)
+        courants = state.get("currents_ma")
+        courants = courants[5:9] if courants and len(courants) >= 9 else None
         for e in self.detecteur_caresse.mise_a_jour(self.t_global, getattr(self.ctx, "tete_cmd", None),
-                                                    joints[5:9], immobile):
+                                                    joints[5:9], immobile, courants):
             self.evenement(e)
 
     def _apprend_chargeur(self, pct, position):
@@ -2158,6 +2226,12 @@ class Brain:
                 self._t_ref_immobile = self.t_global     # redemarre la fenetre : pas de declenchement en boucle
                 self._bascule("ebouriffe")
 
+        self._surveille_robotd(state)
+        if self.courant.nom == "porte":
+            self._traite_evenements_porte()
+            self.t_etat += dt
+            self.courant.pas(self, self.t_etat)
+            return                              # dans les bras : rien d'autre ne compte
         self._surveille_main(state)
         self._surveille_caresse(state)
         self._traite_evenements()

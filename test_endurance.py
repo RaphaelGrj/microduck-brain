@@ -26,10 +26,13 @@ class Client:
         b = self.b[0]
         if method == "robot.move" and params["vx"] > 0.25 and b.ctx.extras.get("tof") is None:
             self.violations.append((round(b.t_global, 1), b.courant.nom, "marche sans capteur de distance"))
+        if method == "robot.move" and (params["vx"] or params["vyaw"]) and b.porte:
+            self.violations.append((round(b.t_global, 1), b.courant.nom, "commande de marche dans les bras"))
 
     def request(self, method, params=None, **kw):
         b = self.b[0]
-        if method == "robot.sound" and b.mode_calme and b.courant.nom != "alarme":
+        # en mode calme, seule l'alarme incendie parle (etat alarme, ou dans les bras) : les autres "alarm" sont coupes
+        if method == "robot.sound" and b.mode_calme and params["tag"] != "alarm":
             self.sons_en_calme.append((round(b.t_global, 1), b.courant.nom, params))
         return {"result": {"accepted": True}}
 
@@ -43,15 +46,18 @@ def _endurance(seed, secondes=7200.0):
     b.detecteur_main.main = (0.0, 0.12, 0.0, 0.1)
     t, dt = 0.0, 0.02
     prochain = rng.expovariate(1 / 40.0)
-    tombe_jusqua = -1.0
+    tombe_jusqua = porte_jusqua = -1.0
     while t < secondes:
         if t >= prochain:
             b.evenement(rng.choice(EVENEMENTS))
             prochain = t + rng.expovariate(1 / 40.0)
         if rng.random() < 1 / (20 * 60 / dt) and t > tombe_jusqua:
             tombe_jusqua = t + 3.0                  # une chute toutes les ~20 min
+        if rng.random() < 1 / (15 * 60 / dt) and t > porte_jusqua and t > tombe_jusqua:
+            porte_jusqua = t + rng.uniform(3.0, 30.0)  # pris dans les bras toutes les ~15 min
         fallen = t < tombe_jusqua
-        b.tick({"t": t, "safety": {"fallen": fallen}, "policy": None if fallen else "stand",
+        b.tick({"t": t, "safety": {"fallen": fallen, "picked_up": t < porte_jusqua},
+                "policy": None if fallen else "stand",
                 "battery": {"percent": max(5.0, 90.0 - t / 100.0)},
                 "odom": {"position": [0.0, 0.0, 0.11], "yaw": 0.0},
                 "joints": [0.0] * 15}, dt)
@@ -67,6 +73,7 @@ def test_endurance_deux_heures_invariants():
         assert not c.sons_en_calme, c.sons_en_calme[:5]
         assert not b.ctx.sitting, f"seed {seed} : reste assis apres l'arret"
         assert len({e[1] for e in b.journal}) >= 15, "trop peu d'etats visites : flux d'evenements mal branche ?"
+        assert "porte" in {e[1] for e in b.journal}
 
 
 def test_demarrage_sur_un_canard_assis():

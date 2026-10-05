@@ -1,0 +1,161 @@
+From 1d2992d44f7145843447a626fbd50833948a70e8 Mon Sep 17 00:00:00 2001
+From: Raphael Gorju <raphael.gorju@gmail.com>
+Date: Mon, 5 Oct 2026 20:48:00 +0000
+Subject: [PATCH] robotd: publish what the head mic heard on robot.state
+ (audio: petting + noise/voice counters)
+
+The petting classifier and the ambient sound sentry already run in robotd, but their
+events stopped at a log line ("no consumer until the autonomous brain arrives"), and the
+capture device is single-client, so a client brain cannot listen for itself. This adds
+RobotState.audio = {petting, pettings, noises, voices}: counters rather than edges, so a
+decimated subscriber never misses an event; absent while the mic worker is not running.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011L4Y66NLTymVdcdaznYLmJ
+---
+ duck-ipc-proto/src/lib.rs | 47 +++++++++++++++++++++++++++++++++++++++
+ robotctl/src/monitor.rs   |  1 +
+ robotd/src/main.rs        | 19 +++++++++++++---
+ 3 files changed, 64 insertions(+), 3 deletions(-)
+
+diff --git a/duck-ipc-proto/src/lib.rs b/duck-ipc-proto/src/lib.rs
+index f2f4890..70071a7 100644
+--- a/duck-ipc-proto/src/lib.rs
++++ b/duck-ipc-proto/src/lib.rs
+@@ -3795,6 +3795,30 @@ pub struct RobotState {
+     /// for real. `frames` is a few leaves of this. Empty from a daemon predating it. (v25)
+     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+     pub skeleton: Vec<PoseState>,
++    /// What the head microphone heard, from the petting classifier and the ambient sound sentry
++    /// `robotd` already runs on it. The capture device is single-client and `robotd` holds it, so
++    /// this is the only way a client — an autonomous brain reacting to being petted or called — can
++    /// know. Absent while the mic worker is not running (audio off, no model, a bench robotd).
++    #[serde(default, skip_serializing_if = "Option::is_none")]
++    pub audio: Option<AudioState>,
++}
++
++/// The head microphone, in [`RobotState::audio`].
++///
++/// **Counters, not edges.** A subscriber decimated to 10 Hz, or one that drops a frame, would miss
++/// an event carried by one tick; a count since the daemon started is never missed — a client reacts
++/// when it goes up.
++#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
++#[serde(default)]
++pub struct AudioState {
++    /// The petting classifier's verdict this tick, with its hysteresis: true from `Start` to `End`.
++    pub petting: bool,
++    /// Petting episodes (`Start` events) since the daemon started.
++    pub pettings: u64,
++    /// Sharp transients (clap, bang, door) heard by the sentry since the daemon started.
++    pub noises: u64,
++    /// Sustained utterances (speech, a quack at the duck) heard by the sentry since the daemon started.
++    pub voices: u64,
+ }
+ 
+ /// The trunk IMU, in [`RobotState::imu`]. Trunk frame: x forward, y left, z up.
+@@ -6179,6 +6203,28 @@ mod tests {
+ 
+     /// `move` and `loop` are Rust keywords, so the fields are renamed on the wire. A typo
+     /// in either rename is invisible in Rust and breaks every consumer, so pin the JSON.
++    #[test]
++    fn audio_is_absent_when_not_reported_and_counts_when_it_is() {
++        let line = serde_json::to_string(&a_state()).unwrap();
++        assert!(!line.contains("audio"), "{line}");
++        let heard = RobotState {
++            audio: Some(AudioState {
++                petting: true,
++                pettings: 2,
++                noises: 5,
++                voices: 1,
++            }),
++            ..a_state()
++        };
++        let line = serde_json::to_string(&heard).unwrap();
++        assert!(
++            line.contains(r#""audio":{"petting":true,"pettings":2,"noises":5,"voices":1}"#),
++            "{line}"
++        );
++        let back: RobotState = serde_json::from_str(&line).unwrap();
++        assert_eq!(back.audio, heard.audio);
++    }
++
+     #[test]
+     fn robot_state_uses_the_documented_field_names() {
+         // Only the fields this test is about; everything else is `a_state()`'s business, so
+@@ -6299,6 +6345,7 @@ mod tests {
+             imu: None,
+             frames: None,
+             skeleton: Vec::new(),
++            audio: None,
+         }
+     }
+ 
+diff --git a/robotctl/src/monitor.rs b/robotctl/src/monitor.rs
+index 87e6b2f..0e34866 100644
+--- a/robotctl/src/monitor.rs
++++ b/robotctl/src/monitor.rs
+@@ -4884,6 +4884,7 @@ mod tests {
+             imu: None,
+             frames: None,
+             skeleton: Vec::new(),
++            audio: None,
+         }
+     }
+ }
+diff --git a/robotd/src/main.rs b/robotd/src/main.rs
+index 595811f..bcad80d 100644
+--- a/robotd/src/main.rs
++++ b/robotd/src/main.rs
+@@ -1988,6 +1988,9 @@ async fn control_loop<T: RobotIo>(
+         // model, or audio off. Quietly so on purpose — the mic is optional equipment.
+         None
+     };
++    // What the mic heard, for the state stream (see `proto::AudioState`): counters, so a decimated
++    // subscriber never misses an event.
++    let mut heard = proto::AudioState::default();
+ 
+     // Pick-up detection (`[pickup]`). Off by default, and then this is `None` and nothing in
+     // the loop below loads, scores or pauses anything. A model that will not load is a
+@@ -2278,6 +2281,8 @@ async fn control_loop<T: RobotIo>(
+                 while let Some(ev) = pet.try_recv_event() {
+                     match ev {
+                         pet_detect::PettingEvent::Start => {
++                            heard.petting = true;
++                            heard.pettings += 1;
+                             let calm =
+                                 !safety.fallen() && controller.as_ref().is_none_or(|c| !c.busy());
+                             if calm {
+@@ -2287,12 +2292,19 @@ async fn control_loop<T: RobotIo>(
+                                 tracing::debug!("petting detected (ignored: busy or down)");
+                             }
+                         }
+-                        pet_detect::PettingEvent::End => tracing::debug!("petting ended"),
++                        pet_detect::PettingEvent::End => {
++                            heard.petting = false;
++                            tracing::debug!("petting ended");
++                        }
+                     }
+                 }
+-                // Ambient sound events have no consumer until the autonomous brain arrives;
+-                // surfaced at debug so mic tuning on a bench has data to look at.
++                // Ambient sound events: counted onto the state stream for a client brain, and
++                // still surfaced at debug so mic tuning on a bench has data to look at.
+                 while let Some(ev) = pet.try_recv_sound() {
++                    match ev {
++                        pet_detect::worker::SoundEvent::Noise => heard.noises += 1,
++                        pet_detect::worker::SoundEvent::Voice => heard.voices += 1,
++                    }
+                     tracing::debug!(event = ?ev, "ambient sound");
+                 }
+             }
+@@ -3392,6 +3404,7 @@ async fn control_loop<T: RobotIo>(
+                     &sensors.positions,
+                 ))),
+                 skeleton: mapping::skeleton_at(&sensors.positions),
++                audio: pet.as_ref().map(|_| heard),
+             });
+         }
+ 
+-- 
+2.43.0
+
