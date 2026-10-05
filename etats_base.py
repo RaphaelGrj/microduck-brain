@@ -242,8 +242,11 @@ class Wander(Etat):
             return
         if lib["devant"] < 9.0 and brain.ctx.state.get("odom"):    # obstacle vu devant : on le note dans la grille
             o = brain.ctx.state["odom"]
-            brain.exploration.obstacle(o["position"][0] + lib["devant"] * math.cos(o["yaw"]),
-                                       o["position"][1] + lib["devant"] * math.sin(o["yaw"]), brain.t_global)
+            if brain.exploration.obstacle(o["position"][0] + lib["devant"] * math.cos(o["yaw"]),
+                                          o["position"][1] + lib["devant"] * math.sin(o["yaw"]), brain.t_global) \
+                    and lib["devant"] <= 1.5:
+                brain.objet_nouveau = lib["devant"]                   # tiens, ce n'etait pas la avant
+                brain.evenement("objet_nouveau")
         # Passage etroit (ROADMAP "chantier actif") : une pause VISIBLE avant de s'y engager, comme un animal qui
         # jauge un couloir serre - pas un evitement (on continue ensuite), distinct de l'arret sur obstacle ci-dessous.
         if (not self.pause_faite and lib["devant"] >= LIBRE_MIN

@@ -6,7 +6,7 @@ import math
 import zlib
 
 import gestures
-from etats_base import Etat, Sequence, TETE_PROMENADE
+from etats_base import Etat, Sequence, TETE_PROMENADE, _regarder
 from navigation import AllerVers
 
 
@@ -387,3 +387,25 @@ class Bonjour(Sequence):
         if brain.presents:
             return [("etirement", "coo"), ("oui", "greet")]
         return [("etirement", "coo")]
+
+
+class Remarque(Etat):
+    """Un objet qui n'etait pas la avant (Exploration.obstacle : obstacle dans une case ou il est deja passe) : il
+    s'arrete, le regarde (robot.look, un peu au-dessus du sol), un "inquire" et la tete qui se penche - puis il reprend
+    sa vie (et contourne, comme tout obstacle)."""
+    nom = "remarque"
+
+    def entre(self, brain):
+        d = brain.objet_nouveau or 0.5
+        h = ((brain.ctx.state or {}).get("odom") or {}).get("position", [0, 0, 0.1])[2]
+        self.vise = _regarder(brain, d, 0.0, 0.06 - h, (0.0, 0.3, 0.0, 0.0))
+        brain.ctx.sound("inquire")
+
+    def duree(self, brain):
+        return 3.5
+
+    def pas(self, brain, t):
+        n, p, y, r = self.vise
+        penche = 0.2 * gestures._smooth(t, 1.2, 1.8) * (1.0 - gestures._smooth(t, 2.8, 3.4))
+        brain.ctx.head((n, p, y, r + penche))
+        brain.ctx.move()

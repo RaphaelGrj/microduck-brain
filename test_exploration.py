@@ -45,3 +45,40 @@ def test():
 
 if __name__ == "__main__":
     test()
+
+
+def test_objet_nouveau_dans_une_case_ou_il_est_passe():
+    from exploration import Exploration
+    e = Exploration()
+    e.noter(1.1, 0.1, 0.0)                         # il est passe par la (la case etait libre)
+    assert e.obstacle(1.1, 0.1, 300.0), "un obstacle la ou il est passe : c'est nouveau"
+    assert not e.obstacle(1.1, 0.1, 400.0), "deja remarque"
+    assert not e.obstacle(3.0, 3.0, 400.0), "case jamais traversee : rien a comparer"
+    e.noter(2.0, 0.0, 500.0)
+    assert not e.obstacle(2.0, 0.0, 520.0), "il vient juste d'y passer : c'est lui qui bouge, pas l'objet"
+
+
+def test_le_cerveau_remarque_l_objet_nouveau():
+    import math
+    from brain import Brain, Humeur
+    from test_brain import FauxClient
+
+    class Tof:
+        def noter_etat(self, s):
+            pass
+
+        def libre(self, s):
+            return {"devant": 0.6, "gauche": 2.0, "droite": 2.0, "vide": math.inf, "n": 3}
+
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.9), seed=600, extras={"tof": Tof(), "exploration": False})
+    b.exploration.noter(0.6, 0.0, 0.0)            # il etait passe la, il y a longtemps
+    b.t_global = 1000.0
+    b._bascule("wander")
+    b.fin_etat = 1e9
+    for i in range(100):
+        b.tick({"t": i * 0.02, "safety": {"fallen": False}, "policy": "stand",
+                "odom": {"position": [0.0, 0.0, 0.11], "yaw": 0.0}}, 0.02)
+    noms = [e[1] for e in b.journal]
+    assert "remarque" in noms, noms
+    assert any(m == "robot.sound" and p == {"tag": "inquire"} for m, p in c.appels)

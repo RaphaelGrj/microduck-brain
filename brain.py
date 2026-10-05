@@ -31,7 +31,7 @@ from etats_maison import AlarmeFumee, AssisDemande, Toupie
 from etats_taquineries import (Aspirateur, Baillement, CompteEternuements, DernierMot, Esquive, FausseChute,
                                FausseNotif, FauxEndormi, FeinteBec, Fier, MimeTon, MimeVol, PousseBalle, RegardMystere,
                                SourdeOreille)
-from etats_vie import (Accueil, Bonjour, Caresse, Danse, JeuSolitaire, MainTendue, Porte, RechercheAttention,
+from etats_vie import (Remarque, Accueil, Bonjour, Caresse, Danse, JeuSolitaire, MainTendue, Porte, RechercheAttention,
                        RegardeChat, VaAuCoin)
 
 class Brain:
@@ -166,6 +166,7 @@ class Brain:
             "hesite": Sequence("hesite", [("curieux", "inquire")]),              # il n'a pas compris
             "compliment": Sequence("compliment", [("fier", "coo")]),             # "bravo" : fierte discrete
             "chaud": Sequence("chaud", [("fatigue", "coo")]),                    # servos chauds : il s'affale
+            "remarque": Remarque(),                                              # un objet qui n'etait pas la
             # social
             "signature": Sequence("signature", [("curieux", "coo"), ("fier", "wheee")]),
             "gene": Sequence("gene", [("gene", "peck")]),                     # trebuche devant quelqu'un
@@ -181,6 +182,7 @@ class Brain:
         self.meteo = None                       # groupe meteo courant (Home Assistant) : soleil, pluie, neige, orage...
         self.chargeur = None                    # (x, y) odom ou la batterie est deja remontee (session en cours)
         self._charge_ref = None                 # (t, pourcentage, position) depuis le dernier deplacement
+        self.objet_nouveau = None               # distance (m) devant de l'objet nouvellement remarque
         self.surchauffe = False                 # servos trop chauds (robot.health.motors.max_c)
         self.cpu_chaud = False                  # carte trop chaude (robot.health.cpu_temp_c) : camera en pause
         self.temperatures = {}                  # derniere lecture : {"moteurs": max_c, "cpu": c}
@@ -386,6 +388,9 @@ class Brain:
                 choix = self._taquinerie(("dernier_mot",), humain=True, proba=0.5)
                 if choix and not getattr(self.courant, "taquinerie", False):
                     self._bascule(choix)
+            elif base == "objet_nouveau":
+                self.ctx.move()
+                self._bascule("remarque")
             elif base == "son_bref":
                 if self.courant.nom in ("chill", "look"):
                     self._bascule("son_bref")            # un claquement, une porte : il tourne la tete, curieux

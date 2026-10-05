@@ -12,7 +12,8 @@ DEMI_VIE_S = 600.0          # une case visitee redevient "nouvelle" de moitie en
 PORTEE = 1.0                # on juge un cap sur le premier metre devant
 DEMI_VIE_OBSTACLE_S = 1800.0  # un meuble ne bouge pas souvent : on s'en souvient ~30 min
 DEMI_VIE_CHUTE_S = 30 * 86400.0  # une "zone noire" (deja tombe ici) s'oublie tres lentement (~1 mois)
-DEMI_VIE_PREFERENCE_S = 3 * 86400.0  # un "coin favori" s'oublie en quelques jours, pas en 10 min comme la novelty grid
+DEMI_VIE_PREFERENCE_S = 3 * 86400.0
+MEMOIRE_PASSAGES_S = 7 * 86400.0     # "il passait par la" : souvenir d'une case traversee, une semaine  # un "coin favori" s'oublie en quelques jours, pas en 10 min comme la novelty grid
 
 
 class Exploration:
@@ -21,6 +22,7 @@ class Exploration:
         self.obstacles = {}     # (i, j) -> instant ou le ToF y a vu un obstacle
         self.chutes = {}        # (i, j) -> instant ou le canard est deja tombe ici ("zone noire" apprise,
                                  # ROADMAP "Occupation autonome..." : distincte de l'evitement ToF generique)
+        self.passages = {}      # (i, j) -> dernier instant ou le canard a TRAVERSE la case (elle etait donc libre)
         self.activites = {}     # (i, j) -> {activite: (poids = temps cumule pondere, instant de la derniere maj)}
                                  # "deux coins favoris distincts selon l'activite" (chill/nap) - memoire longue,
                                  # separee de `visites` (qui sert a explorer, pas a se souvenir d'un endroit prefere).
@@ -35,10 +37,19 @@ class Exploration:
         """Le canard est en (x, y) (odometrie) a l'instant t (s) : la case compte une visite de plus."""
         cle = (math.floor(x / CASE), math.floor(y / CASE))
         self.visites[cle] = (self._poids(cle, t) + 1.0, t)
+        self.passages[cle] = t
 
     def obstacle(self, x, y, t):
-        """Le capteur de distance voit un obstacle en (x, y) (odometrie)."""
-        self.obstacles[(math.floor(x / CASE), math.floor(y / CASE))] = t
+        """Le capteur de distance voit un obstacle en (x, y) (odometrie). Renvoie True si c'est NOUVEAU : un obstacle
+        dans une case ou le canard est deja passe (elle etait libre) et ou aucun obstacle n'a ete vu depuis - un objet
+        qui n'etait pas la avant (ROADMAP "Remarque un objet qui n'etait pas la avant")."""
+        cle = (math.floor(x / CASE), math.floor(y / CASE))
+        passe = self.passages.get(cle)
+        deja = self.obstacles.get(cle)
+        nouveau = (passe is not None and t - passe <= MEMOIRE_PASSAGES_S and t - passe >= 60.0
+                   and (deja is None or deja < passe))
+        self.obstacles[cle] = t
+        return nouveau
 
     def chute(self, x, y, t):
         """Le canard vient de tomber en (x, y) (derniere position connue avant la chute) : "zone noire" apprise,
