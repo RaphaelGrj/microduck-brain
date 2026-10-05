@@ -252,6 +252,31 @@ def test_ennui_avec_chat_visible_cherche_attention():
     assert b.etats["cherche_attention"].cible == "chat"
 
 
+def test_integration_longue_simulation_toutes_fonctions():
+    # filet de securite : depart, retour, chute et ennui dans la MEME simulation longue, pour verifier que les
+    # fonctionnalites de cette session (occupation autonome, rituel de depart, zone noire, coin favori) ne
+    # s'interferent pas entre elles (pas de crash, pas de blocage, pas d'incoherence d'etat).
+    c = FauxClient()
+    chat = FauxVeilleChat(visible=False)
+    b = Brain(c, Humeur(energie=0.95), seed=42, extras={"chat": chat})
+    evenements = sorted([(100.0, "depart:Raphael"), (200.0, "retour:Raphael|0")])
+    n = int(900 / 0.02)
+    for i in range(n):
+        t = i * 0.02
+        while evenements and evenements[0][0] <= t:
+            b.evenement(evenements.pop(0)[1])
+        fallen = 650.0 <= t < 652.0
+        policy = None if fallen else "stand"
+        b.tick({"t": t, "safety": {"fallen": fallen}, "policy": policy,
+                "odom": {"position": [1.0, 1.0, 0.0], "yaw": 0.0}}, 0.02)
+    vus = {e[1] for e in b.journal}
+    assert {"accueil", "rituel_depart", "cherche_attention"} <= vus, f"etats attendus manquants: {vus}"
+    assert b.presents == {"Raphael"}
+    assert b.exploration.chutes, "la chute doit laisser une zone noire"
+    assert b.exploration.coin_favori("chill", b.t_global) is not None
+    assert b.tombe is False and 0.0 <= b.humeur.energie <= 1.0
+
+
 if __name__ == "__main__":
     import sys
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
