@@ -554,7 +554,7 @@ def test_taquinerie_non_puis_joue_quand_meme():
     vus = 0
     for seed in range(40):
         c = FauxClient()
-        b = Brain(c, Humeur(energie=0.9), seed=seed, extras={"mouvement": Veille()})
+        b = Brain(c, Humeur(energie=0.9), seed=seed, extras={"mouvement": Veille()}, horloge=FauxHorloge(15))
         b.fin_etat = 1e9
         simule(b, 6, evenements=[(0.5, "jeu_soleil")])
         noms = [e[1] for e in b.journal]

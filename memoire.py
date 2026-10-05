@@ -68,6 +68,16 @@ class Memoire:
             return None
         return self.horloge() - e["parti"]
 
+    def blague(self, nom):
+        """Une taquinerie de plus (taquineries.py : running gag, trophee de malice) ; sauvegarde."""
+        with self.verrou:
+            b = self.donnees.setdefault("blagues", {})
+            b[nom] = b.get(nom, 0) + 1
+            self._sauver()
+
+    def blagues(self):
+        return dict(self.donnees.get("blagues", {}))
+
     def heure_habituelle(self, nom):
         """L'heure de la journee ou on le rencontre le plus souvent (None si jamais)."""
         e = self.donnees["etres"].get(nom)

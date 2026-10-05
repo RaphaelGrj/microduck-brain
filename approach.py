@@ -75,6 +75,10 @@ MAX_AJUSTEMENTS = 10
 X_SWING = 0.13                           # en dessous, le pied qui avance peut pousser la balle
 MAX_PROPAGATIONS = 2                     # mesures "a l'odometrie" consecutives avant de chercher
 T_TETE_NEUTRE = 1.4                      # attente, tete ramenee au neutre, avant de lancer le tir
+# Fausse feinte (taquinerie, ROADMAP lot A) : avant le tir, la tete regarde ostensiblement d'un cote pendant T_FEINTE,
+# puis revient au neutre et on attend T_TETE_NEUTRE comme d'habitude - le tir lui-meme est inchange. A MESURER en arene
+# (approach_eval.py --feinte) : 38 % de la masse dans la tete, le tronc peut se decaler dans la fenetre de 3-4 cm.
+T_FEINTE, YAW_FEINTE = 0.9, 0.5
 
 V_MARCHE, V_ROT, V_COTE = 0.4, 1.5, 0.4  # au-dessus de la zone morte
 
@@ -118,13 +122,14 @@ def wrap(a):
 
 class Approche:
     def __init__(self, client, couleur="orange", verite=False, log=print, cap_vise=None, profil=None, cible_vise=None,
-                 arret=None):
+                 arret=None, feinte=False):
         """`cible_vise` (x, y repere de l'odometrie) : tirer VERS ce point (un joueur) ; la direction est calculee depuis
         la balle quand on la localise. `arret()` : appelee a chaque tour, True = abandon immediat (mode calme...)."""
         if cible_vise is not None and cap_vise is None:
             cap_vise = 0.0                       # provisoire : remplace dans planifier_visee
         self.cible_vise = cible_vise
         self.arret = arret
+        self.feinte = feinte                       # fausse feinte avant le tir (taquinerie, desactivee par defaut)
         self.c = client
         self.couleur = couleur
         self.log = log
@@ -406,6 +411,12 @@ class Approche:
         self.yaw = self.pitch = 0.0
         self.t_tir = time.monotonic() + T_TETE_NEUTRE
         self.etat = "TIR"
+        if self.feinte:                          # "regarde la-bas"... puis tire ailleurs
+            self.yaw = YAW_FEINTE * (1.0 if self.cote == "right" else -1.0)   # du cote oppose au pied qui tire
+            self.t_feinte = time.monotonic() + T_FEINTE
+            self.t_tir = self.t_feinte + T_TETE_NEUTRE
+            self.etat = "FEINTE"
+            self.resultat["feinte"] = True
 
     def declencher_tir(self):
         if self.avant_tir:                       # mesure externe (evaluation), jamais utilisee pour decider
@@ -426,6 +437,11 @@ class Approche:
                 self.resultat["etat"] = "INTERROMPU"
                 self.resultat["duree"] = time.monotonic() - t0
                 return self.resultat
+            if self.etat == "FEINTE":                 # tete tournee d'un cote, puis retour au neutre et tir normal
+                if time.monotonic() >= self.t_feinte:
+                    self.yaw = 0.0
+                    self.etat = "TIR"
+                continue
             if self.etat == "TIR":                    # tete au neutre pendant T_TETE_NEUTRE, puis coup
                 if time.monotonic() >= self.t_tir:
                     self.declencher_tir()

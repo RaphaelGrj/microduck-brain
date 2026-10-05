@@ -243,7 +243,8 @@ class PublieurMQTT:
     CLES_CONFIG = ("unit_of_measurement", "device_class", "icon")
     # (objet, nom dans HA, icone, charge MQTT = evenement du cerveau) ; seules ces charges sont acceptees
     BOUTONS = (("jouer_soleil", "jouer a 1-2-3 soleil", "mdi:weather-sunny", "jeu_soleil"),
-               ("fin_jeu", "fin du jeu", "mdi:stop-circle-outline", "fin_jeu"))
+               ("fin_jeu", "fin du jeu", "mdi:stop-circle-outline", "fin_jeu"),
+               ("stop_taquinerie", "arrete de me taquiner", "mdi:hand-back-left", "stop_taquinerie"))
 
     def __init__(self, mq, log=print, sur_evenement=None):
         import paho.mqtt.client as mqtt

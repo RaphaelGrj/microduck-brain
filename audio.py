@@ -7,7 +7,9 @@ le pipeline micro qui manquait (journal du 2026-10-05 : "aucun pipeline micro/FF
   - "appel"            : 2 ou 3 claquements de mains rapproches et reguliers -> le canard repond, comme appele ;
   - "applaudissements" : 5 claquements ou plus en 2,5 s, serres (>= 3 par seconde) -> joie ;
   - "musique:<bpm>"    : un battement regulier (60 a 180 BPM) tenu plusieurs secondes -> il hoche la tete en rythme ;
-  - "musique_fin"      : le battement s'est arrete.
+  - "musique_fin"      : le battement s'est arrete ;
+  - "discussion_longue" : des voix (son actif, hors musique) sur plus de 25 % des blocs de 2 min -> faux baillement ;
+  - "silence_conversation" : un silence d'au moins 1,2 s juste apres plusieurs secondes de voix -> "dernier mot".
 Methode : niveau par bloc (dB), bruit de fond suivi par le bas (monte lentement, descend tout de suite), transitoires =
 saut de niveau au-dessus du fond qui retombe vite ; tempo = autocorrelation de la "force d'attaque" sur 6 s.
 Seuils a etalonner sur le vrai micro (reglables a la construction).
@@ -42,6 +44,8 @@ class AnalyseurSon:
         self.dernier = {}                        # evenement -> instant de la derniere emission
         self.musique = None                      # bpm si un battement est en cours
         self.enveloppe = []                      # (instant, dB) par sous-bloc de 2,5 ms, sur 0,5 s
+        self.voix = []                           # 1 si le bloc est "actif" (voix probable), sur 2 min
+        self.silence_depuis = None               # debut du silence en cours
 
     def _peut(self, nom, delai):
         if self.t - self.dernier.get(nom, -1e9) < delai:
@@ -84,6 +88,23 @@ class AnalyseurSon:
             elif duree > 0.4:                                  # son tenu : ni claquement ni choc
                 self.transitoire = None
 
+        # 2 bis. voix / conversation (son actif ni bref ni rythme : parole probable)
+        actif = niveau - self.fond >= 10.0 and self.musique is None
+        self.voix = (self.voix + [1 if actif else 0])[-6000:]
+        if actif:
+            self.silence_depuis = None
+        elif self.silence_depuis is None:
+            self.silence_depuis = self.t
+            parle = sum(self.voix[-400:-1])                 # 8 s avant ce silence
+            self._silence_apres_voix = parle >= 150         # >= 3 s de voix
+        elif (self.t - self.silence_depuis >= 1.2 and getattr(self, "_silence_apres_voix", False)):
+            self._silence_apres_voix = False
+            if self._peut("silence_conversation", 20.0):
+                out.append("silence_conversation")
+        if len(self.voix) >= 6000 and int(self.t / 0.02) % 50 == 0 and sum(self.voix) / len(self.voix) >= 0.25:
+            if self._peut("discussion_longue", 900.0):
+                out.append("discussion_longue")
+
         # 2. groupe de claquements : on juge quand il n'en vient plus depuis 0,8 s
         if self.claps and self.t - self.claps[-1] > 0.8:
             out += self._juge_claps()
@@ -121,11 +142,18 @@ class AnalyseurSon:
         fort = np.mean(np.array(self.niveaux) > self.fond + 6.0) > 0.5
         bpm = None
         if ac0 > 1e-9 and fort:
-            lags = range(17, 51)                               # 180 a 60 BPM avec des blocs de 20 ms
-            notes = [(float(np.dot(a[:-k], a[k:])) / ac0, k) for k in lags]
+            # un battement se REPETE : correle a sa periode ET au double (le debit de syllabes d'une discussion
+            # donne un pic a une periode, rarement au double) ; puis le meme tempo deux evaluations de suite
+            ac = lambda k: float(np.dot(a[:-k], a[k:])) / ac0
+            notes = [(min(ac(k), ac(2 * k)), k) for k in range(17, 51)]   # 180 a 60 BPM, blocs de 20 ms
             meilleur, k = max(notes)
-            if meilleur >= 0.3:
+            if meilleur >= 0.25:
                 bpm = round(60.0 / (k * BLOC / TAUX))
+        # le meme tempo (a 6 % pres) sur 4 evaluations de suite (2 s) avant d'y croire
+        self._bpms = (getattr(self, "_bpms", []) + [bpm])[-4:]
+        if bpm is not None and self.musique is None and not (
+                len(self._bpms) == 4 and all(b is not None and abs(b - bpm) <= 0.06 * bpm for b in self._bpms)):
+            return []
         if bpm is not None and self.musique is None:
             self.musique = bpm
             return [f"musique:{bpm}"]

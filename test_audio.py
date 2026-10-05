@@ -89,6 +89,33 @@ def test_parole_irreguliere_ni_musique_ni_appel():
     assert not any(e.startswith("musique") for e in evts) and "appel" not in evts, evts
 
 
+def parole(sig, debut, fin, rng=None):
+    rng = rng or RNG
+    t = debut
+    while t < fin:
+        d = rng.uniform(0.08, 0.25)
+        n = int(d * TAUX)
+        i = int(t * TAUX)
+        sig[i:i + n] += rng.normal(0, 0.03, n) * np.hanning(n)
+        t += d + rng.uniform(0.03, 0.15)
+
+
+def test_discussion_longue_et_silences():
+    s = fond(150)
+    for k in range(15):                          # 10 s de discussion, 2 s de silence, en boucle
+        parole(s, 1 + 10 * k, 9 + 10 * k)
+    evts = noms(analyse(s))
+    assert evts.count("discussion_longue") == 1, evts
+    assert 3 <= evts.count("silence_conversation") <= 8, evts      # pas plus d'un toutes les 20 s
+    assert "appel" not in evts and not any(e.startswith("musique") for e in evts), evts
+
+
+def test_silence_sans_discussion_avant():
+    s = fond(10)
+    parole(s, 2.0, 3.0)                           # une seule seconde de voix
+    assert "silence_conversation" not in noms(analyse(s))
+
+
 # --- cerveau -------------------------------------------------------------------------------------------------------
 from brain import Brain, Humeur  # noqa: E402
 from test_brain import FauxClient, simule  # noqa: E402
@@ -100,7 +127,8 @@ def test_cerveau_reflexes_sonores():
     simule(b, 40, evenements=[(1.0, "appel"), (10.0, "applaudissements"), (20.0, "musique:120"), (30.0, "musique_fin")])
     j = [e for e in b.journal]
     noms_ = [e[1] for e in j]
-    assert "appel" in noms_ and "bravo" in noms_ and "danse" in noms_, noms_
+    assert {"appel", "faux_endormi", "sourde_oreille"} & set(noms_), noms_      # repond, ou taquine (taquineries.py)
+    assert "bravo" in noms_ and "danse" in noms_, noms_
     debut = next(e[0] for e in j if e[1] == "danse")
     fin = next(e[0] for e in j if e[0] > debut)
     assert 29.5 <= fin <= 31.5, f"la danse doit s'arreter avec la musique ({debut} -> {fin})"

@@ -23,6 +23,7 @@ from exploration import Exploration
 from caresse import DetecteurCaresse
 from main_tendue import DetecteurMain
 from navigation import AllerVers
+from taquineries import Malice
 
 DT_DEFAUT = 0.02  # une trame robot.state = 20 ms
 
@@ -122,6 +123,11 @@ class Ctx:
             self.bec_fin = None
             return
         self.client.notify("robot.mouth", {"open": 0.45 + 0.35 * math.cos(2 * math.pi * 8.0 * (now - self.bec_t0))})
+
+    def bouche(self, ouverture):
+        """Ouvre le bec sans son (robot.mouth, consigne continue) - pour un baillement."""
+        self.bec_fin = None
+        self.client.notify("robot.mouth", {"open": float(ouverture)})
 
     def calme(self):
         self.head((0.0, 0.0, 0.0, 0.0))
@@ -438,8 +444,11 @@ class MainTendue(Etat):
     COUP = 0.3                   # s, duree d'un coup de bec
     AMPLITUDE = 0.25             # rad de head_pitch en plus du regard
 
+    son_entree = "inquire"           # "coo" quand il accepte la main apres l'avoir esquivee (taquinerie)
+
     def entre(self, brain):
-        brain.ctx.sound("inquire")
+        brain.ctx.sound(self.son_entree)
+        self.son_entree = MainTendue.son_entree
         self.tete = (0.0, 0.25, 0.0, 0.0)       # en attendant robot.look : la tete se baisse un peu vers l'avant
         self.t_vise = None
         self.n_coups = 0
@@ -744,6 +753,196 @@ class Danse(Etat):
         brain.ctx.move()
 
 
+# --- Taquineries, lot A (ROADMAP "Chantier suivant : taquiner l'humain") -----------------------------------------
+# Chaque etat a `taquinerie = True` : le cerveau le note dans la memoire des blagues (taquineries.py) et peut enchainer
+# un petit air fier si c'est devenu un running gag. Toutes sont breves (< 8 s) et s'arretent net sur un signal "stop".
+
+def _regarder(brain, x, y, z, defaut):
+    """robot.look vers (x, y, z) du repere du tronc -> angles de tete renvoyes par robotd, sinon `defaut`."""
+    r = brain.ctx.client.request("robot.look", {"x": float(x), "y": float(y), "z": float(z)})
+    h = (r.get("result") or {}).get("head") if isinstance(r, dict) else None
+    return (h["neck_pitch"], h["head_pitch"], h["head_yaw"], h["head_roll"]) if h else defaut
+
+
+class FeinteBec(Etat):
+    """Feinte affectueuse : il regarde la main tendue, avance lentement le bec vers elle... et devie au dernier moment
+    en reculant d'un petit bond (0,5 s de marche arriere, ~5 cm), avec un chirp : "je t'aurai pas"."""
+    nom = "feinte_bec"
+    taquinerie = True
+
+    def entre(self, brain):
+        m = brain.detecteur_main.main
+        h = (brain.ctx.state or {}).get("odom", {}).get("position", [0, 0, 0.1])[2]
+        self.vise = _regarder(brain, m[1], m[2], m[3] - h, (0.0, 0.25, 0.0, 0.0)) if m else (0.0, 0.25, 0.0, 0.0)
+        self.cote = 1.0 if brain.rng.random() < 0.5 else -1.0
+
+    def duree(self, brain):
+        return 3.2
+
+    def pas(self, brain, t):
+        n, p, y, r = self.vise
+        if t < 1.4:                              # le bec s'approche, de plus en plus
+            k = gestures._smooth(t, 0.2, 1.4)
+            brain.ctx.head((n, p + 0.3 * k, y, r))
+            brain.ctx.move()
+            return
+        if t < 1.45:
+            brain.ctx.sound("chirp")
+        k = 1.0 - gestures._smooth(t, 2.4, 3.1)  # ecart brusque, tenu, puis retour
+        brain.ctx.head((0.0, -0.2 * k, 0.6 * self.cote * k, -0.2 * self.cote * k))
+        brain.ctx.move(vx=-0.4 if t < 1.9 else 0.0)
+
+
+class Esquive(Etat):
+    """Se faire desirer : la premiere main qui approche est esquivee (tete detournee, petit son interrogatif) ; la
+    suivante, dans la minute, est acceptee avec un roucoulement (Brain.ESQUIVE_S)."""
+    nom = "esquive"
+    taquinerie = True
+
+    def entre(self, brain):
+        brain.ctx.sound("inquire")
+        self.cote = 1.0 if brain.rng.random() < 0.5 else -1.0
+        brain.t_esquive = brain.t_global
+
+    def duree(self, brain):
+        return 2.4
+
+    def pas(self, brain, t):
+        k = gestures._smooth(t, 0.0, 0.25) * (1.0 - gestures._smooth(t, 1.6, 2.2))
+        brain.ctx.head((0.0, -0.15 * k, 0.7 * self.cote * k, 0.25 * self.cote * k))
+        brain.ctx.move()
+
+
+class FauxEndormi(Etat):
+    """Appele (deux claquements de mains), il fait mine de dormir : tete qui tombe, immobile... puis se "reveille" d'un
+    coup, tout content de sa blague."""
+    nom = "faux_endormi"
+    taquinerie = True
+
+    def entre(self, brain):
+        self.reveil = brain.rng.uniform(4.0, 7.0)
+
+    def duree(self, brain):
+        return self.reveil + gestures.GESTES["surpris"][0] + 0.8
+
+    def pas(self, brain, t):
+        if t < self.reveil:
+            brain.ctx.head(gestures.fatigue(min(t, 2.0)))
+        else:
+            if t - self.reveil < 0.03:
+                brain.ctx.sound("wheee")
+            d, fn = gestures.GESTES["surpris"]
+            brain.ctx.head(fn(t - self.reveil) if t - self.reveil < d else (0, 0, 0, 0))
+        brain.ctx.move()
+
+
+class SourdeOreille(Etat):
+    """Appele, il fait mine de ne pas entendre : regarde ostensiblement ailleurs, puis double-prise exageree (la tete
+    revient d'un coup) et repond enfin."""
+    nom = "sourde_oreille"
+    taquinerie = True
+
+    def entre(self, brain):
+        self.cote = 1.0 if brain.rng.random() < 0.5 else -1.0
+
+    def duree(self, brain):
+        return 6.2
+
+    def pas(self, brain, t):
+        if t < 3.4:                              # nonchalant : il detourne lentement la tete et le bec en l'air
+            k = gestures._smooth(t, 0.0, 1.2)
+            brain.ctx.head((0.0, -0.2 * k, 0.75 * self.cote * k, 0.0))
+        elif t < 3.6:                            # double-prise : retour brutal
+            k = 1.0 - (t - 3.4) / 0.2
+            brain.ctx.head((0.0, -0.2 * k, 0.75 * self.cote * k, 0.0))
+        else:
+            if t - 3.6 < 0.03:
+                brain.ctx.sound("inquire")
+            u = t - 3.6
+            brain.ctx.head(gestures.surpris(u) if u < 1.2 else gestures.oui(u - 1.2) if u < 2.4 else (0, 0, 0, 0))
+        brain.ctx.move()
+
+
+class RegardMystere(Etat):
+    """Regard mysterieux vers un point vide : il fixe intensement un coin de la piece, immobile, penche un peu la tete...
+    puis rien. Gag pur, sans aucune alerte derriere (pas de son d'alarme, pas d'evenement HA)."""
+    nom = "regard_mystere"
+    taquinerie = True
+
+    def entre(self, brain):
+        cote = brain.rng.choice((-1.0, 1.0))
+        self.vise = _regarder(brain, 1.2, 0.7 * cote, 0.6, (0.0, -0.35, 0.5 * cote, 0.0))
+
+    def duree(self, brain):
+        return 7.0
+
+    def pas(self, brain, t):
+        n, p, y, r = self.vise
+        k = gestures._smooth(t, 0.0, 0.8) * (1.0 - gestures._smooth(t, 6.2, 7.0))
+        penche = 0.15 * gestures._smooth(t, 3.0, 3.6)
+        brain.ctx.head((n * k, p * k, y * k, (r + penche) * k))
+        brain.ctx.move()
+
+
+class Baillement(Etat):
+    """Faux baillement d'ennui pendant une discussion qui s'eternise (audio.py : discussion_longue) - exagere, bec grand
+    ouvert, tete en arriere, soupir. Commentaire ironique sur la longueur, rien de plus."""
+    nom = "baillement"
+    taquinerie = True
+
+    def duree(self, brain):
+        return gestures.GESTES["baillement"][0] + 0.4
+
+    def pas(self, brain, t):
+        brain.ctx.head(gestures.baillement(t))
+        if 0.4 <= t < 0.43:
+            brain.ctx.sound("coo")
+        if 0.7 <= t < 2.2:
+            brain.ctx.bouche(0.9 * math.sin(math.pi * (t - 0.7) / 1.5))
+        elif 2.2 <= t < 2.25:
+            brain.ctx.bouche(0.0)
+        brain.ctx.move()
+
+    def sort(self, brain):
+        brain.ctx.bouche(0.0)
+        brain.ctx.calme()
+
+
+class DernierMot(Etat):
+    """Il a toujours le dernier mot : dans un silence de la conversation (audio.py : silence_conversation), un petit son
+    de canard et un hochement, comme s'il participait - sans jamais rien dire d'utile."""
+    nom = "dernier_mot"
+    taquinerie = True
+
+    def entre(self, brain):
+        brain.ctx.sound(brain.rng.choice(("peck", "chirp", "inquire")))
+
+    def duree(self, brain):
+        return 1.0
+
+    def pas(self, brain, t):
+        brain.ctx.head(gestures.oui(t) if t < 0.6 else (0, 0, 0, 0))
+        brain.ctx.move()
+
+
+class Fier(Etat):
+    """Petit air fier apres une blague devenue un running gag ; amplitude = Malice.fierte (trophee de malice)."""
+    nom = "fier"
+
+    def __init__(self):
+        self.k = 0.5
+
+    def entre(self, brain):
+        brain.ctx.sound("chirp")
+
+    def duree(self, brain):
+        return gestures.GESTES["fier"][0] + 0.3
+
+    def pas(self, brain, t):
+        brain.ctx.head(tuple(self.k * v for v in gestures.fier(t)) if t < gestures.GESTES["fier"][0] else (0, 0, 0, 0))
+        brain.ctx.move()
+
+
 class Accueil(Etat):
     """Un habitant rentre a la maison (presence Home Assistant, voir pont_ha.py). L'accueil depend de la familiarite
     (memoire.py : reservee au debut, chaleureuse avec le temps) et de la duree de l'absence (simple signe s'il est sorti
@@ -946,7 +1145,10 @@ class Brain:
     FENETRE_CHUTES_S = 600.0
     VEILLE_AGACE_S = 900.0
     DELAI_DANSE_S = 300.0       # une danse au plus toutes les 5 min (initiative rare, pas un juke-box)
-    TAQUIN_PROBA = 0.2          # "non" theatral avant d'accepter de jouer (registre du jeu seulement, jamais la securite)
+    TAQUIN_PROBA = 0.2
+    P_TAQUINE = 0.35            # quand une taquinerie est permise, elle remplace la reaction normale 1 fois sur 3
+    P_REGARD_MYSTERE = 0.04     # par passage par chill, quand c'est permis
+    ESQUIVE_S = 60.0          # "non" theatral avant d'accepter de jouer (registre du jeu seulement, jamais la securite)
     # evenement de la maison -> (etat de reaction, hausse d'eveil)
     REACTIONS_MAISON = {
         "impression_finie": ("celebre", 0.4),
@@ -1020,7 +1222,15 @@ class Brain:
             "appel": Sequence("appel", [("curieux", "inquire"), ("oui", "greet")]),   # deux claquements : "oui ?"
             "bravo": Sequence("bravo", [("content", "wheee")]),                       # applaudissements
             "danse": Danse(),                                                        # musique : hochements en rythme
+            # taquineries, lot A (socle : taquineries.py)
+            "feinte_bec": FeinteBec(), "esquive": Esquive(), "faux_endormi": FauxEndormi(),
+            "sourde_oreille": SourdeOreille(), "regard_mystere": RegardMystere(), "baillement": Baillement(),
+            "dernier_mot": DernierMot(), "fier": Fier(),
         }
+        self.etats["taquin"].taquinerie = True
+        self.malice = Malice(self.ctx.extras.get("memoire"))
+        self.t_esquive = -1e9                   # derniere main esquivee (la suivante, dans la minute, est acceptee)
+        self.t_dernier_accueil = -1e9
         self.chutes = []                        # t_global des dernieres chutes (garde-fou "chat agace")
         self.veille_jusqua = -1.0               # repos force apres une serie de chutes
         self.detecteur_caresse = DetecteurCaresse()
@@ -1117,6 +1327,15 @@ class Brain:
                 print(f"[{self.t_global:6.1f}s] notification maison : {nom}", flush=True)
                 self._bascule(etat)
                 continue
+            if base in ("stop_taquinerie", "non"):
+                # signal "stop" (bouton HA, "non" vocal) : la taquinerie en cours s'arrete net, plus aucune pendant un moment
+                self.malice.stop(self)
+                print(f"[{self.t_global:6.1f}s] stop : plus de taquinerie pendant {self.malice.stop_jusqua - self.t_global:.0f} s",
+                      flush=True)
+                if getattr(self.courant, "taquinerie", False) or self.courant.nom == "fier":
+                    self.suivant_force = None        # ex. le jeu qui devait suivre le "non" theatral : annule aussi
+                    self._bascule("chill")
+                continue
             sur_evt = getattr(self.courant, "sur_evenement", None)
             if sur_evt is not None and sur_evt(self, base):
                 continue                        # l'etat en cours (un jeu) a pris l'evenement pour lui
@@ -1127,7 +1346,7 @@ class Brain:
                     print(f"[{self.t_global:6.1f}s] 1-2-3 soleil impossible : pas de camera (veille mouvement)", flush=True)
                     continue
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.4)
-                if self.rng.random() < self.TAQUIN_PROBA:
+                if self.rng.random() < self.TAQUIN_PROBA and self.malice.permise(self, "taquin", humain=True):
                     self.suivant_force = "soleil"    # taquinerie : "non..." de la tete, puis il joue quand meme
                     self._bascule("taquin")
                 else:
@@ -1149,7 +1368,15 @@ class Brain:
                 self._bascule("regarde_chat" if "chat" in self.ctx.extras else "curious")
             elif base == "appel":
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.3)
-                self._bascule("appel")
+                self._bascule(self._taquinerie(("faux_endormi", "sourde_oreille"), humain=True) or "appel")
+            elif base == "discussion_longue":
+                choix = self._taquinerie(("baillement",), humain=True, proba=1.0)
+                if choix:
+                    self._bascule(choix)
+            elif base == "silence_conversation":
+                choix = self._taquinerie(("dernier_mot",), humain=True, proba=0.5)
+                if choix and not getattr(self.courant, "taquinerie", False):
+                    self._bascule(choix)
             elif base == "applaudissements":
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.3)
                 self._bascule("bravo")
@@ -1159,7 +1386,12 @@ class Brain:
                 self._bascule("danse")
             elif nom == "main":
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.2)
-                self._bascule("main_tendue")
+                if self.t_global - self.t_esquive < self.ESQUIVE_S:
+                    self.t_esquive = -1e9
+                    self.etats["main_tendue"].son_entree = "coo"     # esquivee la fois d'avant : cette fois il accepte
+                    self._bascule("main_tendue")
+                else:
+                    self._bascule(self._taquinerie(("feinte_bec", "esquive"), humain=True) or "main_tendue")
             elif nom == "personne":
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.3)
                 self._bascule("curious")
@@ -1182,6 +1414,13 @@ class Brain:
         d = math.hypot(coin[0] - p[0], coin[1] - p[1])
         return coin if self.COIN_DISTANCE[0] <= d <= self.COIN_DISTANCE[1] else None
 
+    def _taquinerie(self, noms, humain=False, proba=None):
+        """Une taquinerie a la place de la reaction normale ? -> son nom, ou None (budget, familiarite, stop, hasard)."""
+        if self.rng.random() >= (self.P_TAQUINE if proba is None else proba):
+            return None
+        permises = [n for n in noms if self.malice.permise(self, n, humain=humain)]
+        return self.rng.choice(permises) if permises else None
+
     def _choisit_suivant(self):
         force = getattr(self, "suivant_force", None)
         if force:
@@ -1203,6 +1442,11 @@ class Brain:
         if self.courant.nom == "nap":
             self.derniere_fois["etirement"] = self.t_global
             return "etirement"                  # on s'etire en se reveillant
+        if getattr(self.courant, "taquinerie", False):
+            k = self.malice.fierte(self.courant.nom)
+            if k > 0.0:
+                self.etats["fier"].k = k             # running gag : petit air fier, qui grandit avec l'historique
+                return "fier"
         if self.courant.nom != "chill":
             return "chill"
         # Occupation autonome / recherche d'attention : rien ne s'est passe depuis longtemps -> le canard ne reste
@@ -1218,6 +1462,8 @@ class Brain:
                 self.etats["cherche_attention"].cible = "humain" if self.presents else "chat"
                 return "cherche_attention"
             return "jeu_solitaire"
+        if self.rng.random() < self.P_REGARD_MYSTERE and self.malice.permise(self, "regard_mystere"):
+            return "regard_mystere"
         poids = {"look": 0.4, "turn": 0.2 + 0.3 * h.energie,
                  "wander": 0.15 + 0.4 * h.energie * (0.5 + h.eveil)}
         # Initiative rare et surprenante (principe Pollen : un duo surprise est un plaisir, un juke-box non) :
@@ -1235,6 +1481,10 @@ class Brain:
         if nom in self.RARES:
             self.derniere_fois[nom] = self.t_global
         self.courant.sort(self)
+        if nom == "accueil":
+            self.t_dernier_accueil = self.t_global
+        if getattr(self.etats[nom], "taquinerie", False):
+            self.malice.noter(self, nom)
         self.courant = self.etats[nom]
         self.courant.entre(self)
         self.t_etat = 0.0
