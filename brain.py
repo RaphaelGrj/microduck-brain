@@ -20,6 +20,7 @@ import time
 
 import gestures
 from exploration import Exploration
+from main_tendue import DetecteurMain
 
 DT_DEFAUT = 0.02  # une trame robot.state = 20 ms
 
@@ -68,6 +69,7 @@ class Ctx:
         self.sitting = False
 
     def head(self, vals):
+        self.tete_cmd = tuple(vals)             # derniere consigne de tete (detecteurs : main tendue, caresse)
         self.client.notify("robot.head", {"neck_pitch": vals[0], "head_pitch": vals[1],
                                           "head_yaw": vals[2], "head_roll": vals[3]})
 
@@ -423,6 +425,58 @@ class Ecoute(Etat):
         pass                                    # pas de consigne de tete au milieu d'une reponse de quacksat
 
 
+class MainTendue(Etat):
+    """Une main vient d'etre tendue devant le canard (main_tendue.py, ToF) : petit son interrogatif, il la regarde
+    (`robot.look`, comme le chat), puis la "picore" doucement - de petits coups de tete vers elle. Le corps ne bouge
+    pas : approcher de quelques centimetres est impossible a la marche (ZONE_MORTE.md : pas de pas plus fin que
+    ~2-3 cm, et le pied pourrait cogner la main). La main retiree, un petit chirp et c'est fini."""
+    nom = "main_tendue"
+    DUREE_MAX = 10.0
+    PERIODE_PICORE = 1.2         # s entre deux coups de bec
+    COUP = 0.3                   # s, duree d'un coup de bec
+    AMPLITUDE = 0.25             # rad de head_pitch en plus du regard
+
+    def entre(self, brain):
+        brain.ctx.sound("inquire")
+        self.tete = (0.0, 0.25, 0.0, 0.0)       # en attendant robot.look : la tete se baisse un peu vers l'avant
+        self.t_vise = None
+        self.n_coups = 0
+        self.parti = False
+
+    def duree(self, brain):
+        return self.DUREE_MAX
+
+    def pas(self, brain, t):
+        det, s = brain.detecteur_main, brain.ctx.state
+        if not det.presente(brain.t_global):
+            if t > 0.5 and not self.parti:
+                self.parti = True
+                brain.ctx.sound("chirp")
+                brain.fin_etat = min(brain.fin_etat, t + 0.6)     # on laisse le chirp sonner, puis on se remet
+            brain.ctx.head((0.0, 0.0, 0.0, 0.0))
+            brain.ctx.move()
+            return
+        m = det.main
+        if m[0] != self.t_vise and s is not None and s.get("odom"):
+            self.t_vise = m[0]
+            r = brain.ctx.client.request("robot.look", {"x": float(m[1]), "y": float(m[2]),
+                                                        "z": float(m[3] - s["odom"]["position"][2])})
+            h = (r.get("result") or {}).get("head") if isinstance(r, dict) else None
+            if h:
+                self.tete = (h["neck_pitch"], h["head_pitch"], h["head_yaw"], h["head_roll"])
+        tete = list(self.tete)
+        if t >= 1.0:                             # une seconde a la regarder, puis les coups de bec
+            phase = (t - 1.0) % self.PERIODE_PICORE
+            if phase < self.COUP:
+                if phase < 0.03 and int((t - 1.0) / self.PERIODE_PICORE) >= self.n_coups:
+                    self.n_coups += 1
+                    if self.n_coups <= 3:
+                        brain.ctx.sound("peck")
+                tete[1] += self.AMPLITUDE * math.sin(math.pi * phase / self.COUP)
+        brain.ctx.head(tuple(tete))
+        brain.ctx.move()
+
+
 class Accueil(Etat):
     """Un habitant rentre a la maison (presence Home Assistant, voir pont_ha.py). L'accueil depend de la familiarite
     (memoire.py : reservee au debut, chaleureuse avec le temps) et de la duree de l'absence (simple signe s'il est sorti
@@ -682,7 +736,10 @@ class Brain:
             # messager : "on sonne !" (tete qui se redresse + alarme, puis interrogatif) ; "c'est fini" (signe)
             "sonnette": Sequence("sonnette", [("surpris", "alarm"), ("curieux", "inquire")]),
             "messager": Sequence("messager", [("curieux", "inquire"), ("oui", "chirp")]),
+            "main_tendue": MainTendue(),                           # une main tendue devant lui (ToF) : il picore
         }
+        self.detecteur_main = DetecteurMain()
+        self._tete_prec, self._t_tete_change = None, 0.0     # derniere consigne de tete vue, et quand elle a change
         self.messages = []                      # notifications a redire au prochain habitant qui rentre
         self.derniere_fois = {}                 # etat rare -> t_global de la derniere fois
         self.mode_calme = False                 # interrupteur "calme" de Home Assistant (regle de vie)
@@ -781,6 +838,9 @@ class Brain:
             elif nom == "chat":
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.3)
                 self._bascule("regarde_chat" if "chat" in self.ctx.extras else "curious")
+            elif nom == "main":
+                self.humeur.eveil = min(1.0, self.humeur.eveil + 0.2)
+                self._bascule("main_tendue")
             elif nom == "personne":
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.3)
                 self._bascule("curious")
@@ -838,6 +898,32 @@ class Brain:
                              round(self.humeur.energie, 2), round(self.humeur.eveil, 2)))
         print(f"[{self.t_global:6.1f}s] -> {nom:8s} energie={self.humeur.energie:.2f} "
               f"eveil={self.humeur.eveil:.2f}", flush=True)
+
+    REPOS_MAIN = ("chill", "main_tendue")    # canard immobile, tete au repos : une main peut lui etre tendue
+    TETE_STABLE_S = 1.0                      # la tete doit etre immobile depuis 1 s (sinon un meuble "apparait")
+
+    def _surveille_main(self, state):
+        """Main tendue (main_tendue.py) : seulement quand le canard est immobile - en marchant, tout ce dont il
+        s'approche "apparait" devant lui. Jamais si le chat est la (une patte n'est pas une main, et pas de geste vif
+        pres du chat : garde-fou de la ROADMAP)."""
+        tof = self.ctx.extras.get("tof")
+        if tof is None or not hasattr(tof, "points"):
+            return
+        tete = getattr(self.ctx, "tete_cmd", None)
+        if tete != getattr(self, "_tete_prec", None):
+            self._tete_prec, self._t_tete_change = tete, self.t_global
+        en_suivi = self.courant.nom == "main_tendue"     # la tete suit la main : on continue de la localiser
+        if (self.courant.nom not in self.REPOS_MAIN or self.mode_calme
+                or (not en_suivi and self.t_global - self._t_tete_change < self.TETE_STABLE_S)):
+            self.detecteur_main.reinitialiser()
+            return
+        evts = self.detecteur_main.mise_a_jour(tof.points(state), self.t_global)
+        chat = self.ctx.extras.get("chat")
+        if chat is not None and getattr(getattr(chat, "suivi", None), "visible", False):
+            return
+        if self.courant.nom != "main_tendue":
+            for e in evts:
+                self.evenement(e)
 
     def _verifie_bonjour(self):
         h = self.horloge()
@@ -915,6 +1001,7 @@ class Brain:
                 self._t_ref_immobile = self.t_global     # redemarre la fenetre : pas de declenchement en boucle
                 self._bascule("ebouriffe")
 
+        self._surveille_main(state)
         self._traite_evenements()
         if self.bonjour is not None:
             self._verifie_bonjour()                 # apres les evenements : un "calme_on" en attente passe d'abord
