@@ -22,6 +22,7 @@ import gestures
 from exploration import Exploration
 from caresse import DetecteurCaresse
 from main_tendue import DetecteurMain
+from navigation import AllerVers
 
 DT_DEFAUT = 0.02  # une trame robot.state = 20 ms
 
@@ -663,6 +664,56 @@ class Soleil(Etat):
         brain.ctx.calme()
 
 
+class VaAuCoin(Etat):
+    """Fatigue : avant la sieste, il rejoint son coin de sieste prefere (Exploration.coin_favori("nap")) - pivote,
+    marche droit, tete un peu baissee comme en promenade. Arrive, bloque (obstacle, capteur muet plus d'1 s) ou trop
+    long : il fait la sieste la ou il est. Jamais un detour : c'est une envie, pas une mission."""
+    nom = "va_au_coin"
+    DUREE_MAX = 25.0
+    BLOQUE_MAX_S = 1.0
+
+    def __init__(self):
+        self.cible = None
+
+    def entre(self, brain):
+        self.nav = AllerVers(self.cible)
+        self.bloque_depuis = None
+        print(f"[{brain.t_global:6.1f}s] va faire la sieste dans son coin ({self.cible[0]:.2f}, {self.cible[1]:.2f})",
+              flush=True)
+
+    def duree(self, brain):
+        return self.DUREE_MAX
+
+    def _fin(self, brain, t, pourquoi):
+        brain.ctx.move()
+        brain.suivant_force = "nap"
+        brain.fin_etat = t
+        self.issue = pourquoi
+
+    def pas(self, brain, t):
+        s = brain.ctx.state or {}
+        o = s.get("odom")
+        brain.ctx.head((0.0, TETE_PROMENADE, 0.0, 0.0))
+        if t < 0.4 or o is None:
+            brain.ctx.move()
+            return
+        tof = brain.ctx.extras.get("tof")
+        lib = tof.libre(s) if tof is not None else None
+        statut, vx, vyaw = self.nav.commande(o["position"][0], o["position"][1], o["yaw"], lib)
+        if statut == "arrive":
+            return self._fin(brain, t, "arrive")
+        if statut == "bloque":
+            self.bloque_depuis = self.bloque_depuis if self.bloque_depuis is not None else t
+            if t - self.bloque_depuis >= self.BLOQUE_MAX_S:
+                return self._fin(brain, t, "bloque")
+        else:
+            self.bloque_depuis = None
+        if statut == "pivote":
+            brain.ctx.head((0.0, 0.0, 0.0, 0.0))     # tete baissee, la rotation est morte (ZONE_MORTE.md)
+        brain.ctx.move(vx=vx, vyaw=vyaw)
+
+
+
 class Accueil(Etat):
     """Un habitant rentre a la maison (presence Home Assistant, voir pont_ha.py). L'accueil depend de la familiarite
     (memoire.py : reservee au debut, chaleureuse avec le temps) et de la duree de l'absence (simple signe s'il est sorti
@@ -925,11 +976,13 @@ class Brain:
             "main_tendue": MainTendue(),                           # une main tendue devant lui (ToF) : il picore
             "caresse": Caresse(),                                  # on le caresse : roucoulement, tete contre la main
             "soleil": Soleil(),                                    # jeu "1-2-3 soleil" (camera + ToF)
+            "va_au_coin": VaAuCoin(),                              # fatigue : rejoindre son coin de sieste
         }
         self.detecteur_caresse = DetecteurCaresse()
         self.detecteur_main = DetecteurMain()
         self._tete_prec, self._t_tete_change = None, 0.0     # derniere consigne de tete vue, et quand elle a change
         self.messages = []                      # notifications a redire au prochain habitant qui rentre
+        self.suivant_force = None               # etat impose pour la prochaine bascule (un etat qui enchaine)
         self.derniere_fois = {}                 # etat rare -> t_global de la derniere fois
         self.mode_calme = False                 # interrupteur "calme" de Home Assistant (regle de vie)
         self.exploration = Exploration()        # memoire des zones visitees (novelty grid du M9)
@@ -1052,6 +1105,20 @@ class Brain:
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.3)
                 self._bascule("curious")
 
+    COIN_DISTANCE = (0.5, 4.0)               # m : plus pres, inutile de bouger ; plus loin, l'odometrie a trop derive
+
+    def _coin_atteignable(self):
+        """Coin de sieste appris (exploration.py), s'il est a une distance raisonnable et que le capteur de distance
+        est la (on ne marche jamais a l'aveugle)."""
+        if self.ctx.extras.get("tof") is None or not (self.ctx.state or {}).get("odom"):
+            return None
+        coin = self.exploration.coin_favori("nap", self.t_global)
+        if coin is None:
+            return None
+        p = self.ctx.state["odom"]["position"]
+        d = math.hypot(coin[0] - p[0], coin[1] - p[1])
+        return coin if self.COIN_DISTANCE[0] <= d <= self.COIN_DISTANCE[1] else None
+
     def _choisit_suivant(self):
         force = getattr(self, "suivant_force", None)
         if force:
@@ -1060,8 +1127,16 @@ class Brain:
         if self.mode_calme:
             return "nap"                        # sieste prolongee, assis, sans bruit, tant que l'interrupteur est actif
         h = self.humeur
-        if h.energie < self.SEUIL_SIESTE or (self._batterie_pct is not None and self._batterie_pct < self.BATTERIE_BASSE_PCT):
-            return "nap"                        # fatigue "jouee" OU vraie batterie basse : meme reponse (repos)
+        batterie_basse = self._batterie_pct is not None and self._batterie_pct < self.BATTERIE_BASSE_PCT
+        if h.energie < self.SEUIL_SIESTE or batterie_basse:
+            # fatigue "jouee" OU vraie batterie basse : meme reponse (repos) - dans son coin favori s'il est connu et
+            # pas trop loin (sauf batterie basse : on ne gaspille pas les derniers pourcents a marcher)
+            if not batterie_basse and self.courant.nom not in ("nap", "va_au_coin"):
+                coin = self._coin_atteignable()
+                if coin is not None:
+                    self.etats["va_au_coin"].cible = coin
+                    return "va_au_coin"
+            return "nap"
         if self.courant.nom == "nap":
             self.derniere_fois["etirement"] = self.t_global
             return "etirement"                  # on s'etire en se reveillant
