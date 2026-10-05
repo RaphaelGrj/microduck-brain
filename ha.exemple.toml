@@ -120,6 +120,7 @@ entite = "A_REMPLIR"                # ex. "input_button.microduck_soleil"
 [cerveau]
 # heures_calmes = [23, 7]           # de 23h a 7h : assis, silencieux, comme l'interrupteur calme
 # bonjour = "7:30"                  # une fois par jour, a partir de 7h30 : etirement + bonjour (si quelqu'un est la)
+# bonjour_weekend = "9:30"          # le samedi et le dimanche, a une autre heure
 # nom = "canard"                  # commandes vocales : on l'appelle par ce nom ("canard assis", "canard viens")
 # modele_vosk = "~/modeles/vosk-model-small-fr-0.22"   # reconnaissance HORS LIGNE sur le canard (lancer avec --micro)
 

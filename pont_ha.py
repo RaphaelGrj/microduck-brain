@@ -140,13 +140,14 @@ def options_cerveau(cfg):
     hc = c.get("heures_calmes")
     if isinstance(hc, (list, tuple)) and len(hc) == 2 and all(isinstance(h, int) and 0 <= h < 24 for h in hc):
         options["heures_calmes"] = (hc[0], hc[1])
-    bj = c.get("bonjour")
-    if isinstance(bj, int) and 0 <= bj < 24:
-        options["bonjour"] = bj
-    elif isinstance(bj, str) and ":" in bj:
-        h, _, m = bj.partition(":")
-        if h.strip().isdigit() and m.strip().isdigit() and 0 <= int(h) < 24 and 0 <= int(m) < 60:
-            options["bonjour"] = (int(h), int(m))
+    for cle in ("bonjour", "bonjour_weekend"):
+        bj = c.get(cle)
+        if isinstance(bj, int) and 0 <= bj < 24:
+            options[cle] = bj
+        elif isinstance(bj, str) and ":" in bj:
+            h, _, m = bj.partition(":")
+            if h.strip().isdigit() and m.strip().isdigit() and 0 <= int(h) < 24 and 0 <= int(m) < 60:
+                options[cle] = (int(h), int(m))
     return options
 
 

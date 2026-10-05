@@ -68,6 +68,11 @@ class Memoire:
             return None
         return self.horloge() - e["parti"]
 
+    def sauver(self):
+        """Sauvegarde explicite (ex. habitudes.py a chaque heure cloturee)."""
+        with self.verrou:
+            self._sauver()
+
     def blague(self, nom):
         """Une taquinerie de plus (taquineries.py : running gag, trophee de malice) ; sauvegarde."""
         with self.verrou:

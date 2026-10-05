@@ -384,11 +384,13 @@ def test_recule_si_chat_approche_vite():
 
 class FauxHorloge:
     """Imite time.localtime() juste assez pour Brain (heures_calmes, bonjour) : heure, minute, jour pilotes par le test."""
-    def __init__(self, heure, minute=0, jour=100):
+    def __init__(self, heure, minute=0, jour=100, semaine=None):
         self.heure, self.minute, self.jour = heure, minute, jour
+        self.semaine = semaine                  # jour de la semaine (0 = lundi) ; par defaut d'apres le jour de l'annee
 
     def __call__(self):
-        return type("T", (), {"tm_hour": self.heure, "tm_min": self.minute, "tm_yday": self.jour})()
+        wday = self.semaine if self.semaine is not None else self.jour % 7
+        return type("T", (), {"tm_hour": self.heure, "tm_min": self.minute, "tm_yday": self.jour, "tm_wday": wday})()
 
 
 def test_heures_calmes_nuit_force_le_repos():

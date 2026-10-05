@@ -19,6 +19,7 @@ import sys
 import time
 
 from exploration import Exploration
+from habitudes import Habitudes
 from caresse import DetecteurCaresse
 from main_tendue import DetecteurApproche, DetecteurMain
 from taquineries import Malice
@@ -95,7 +96,7 @@ class Brain:
     BONJOUR_FENETRE_H = 4       # le bonjour du matin n'est dit que dans les 4 h qui suivent l'heure prevue
 
     def __init__(self, client, humeur=None, seed=None, extras=None, heures_calmes=None, horloge=time.localtime,
-                 bonjour=None):
+                 bonjour=None, bonjour_weekend=None):
         self.ctx = Ctx(client)
         self.ctx.extras = extras or {}          # perceptions externes partagees (ex. {"chat": VeilleChat})
         # "Heures calmes" (ROADMAP, table Humains : routine "Heure, HA" -> Nap) : optionnel (None = desactive, le
@@ -111,6 +112,9 @@ class Brain:
         # seule fois par jour, des qu'il est au repos (chill/look) et hors mode calme ; rien apres la fenetre de
         # BONJOUR_FENETRE_H (un "bonjour" a 17h n'a pas de sens). None = desactive (opt-in, comme heures_calmes).
         self.bonjour = (bonjour, 0) if isinstance(bonjour, int) else (tuple(bonjour) if bonjour else None)
+        # rythme different le week-end (samedi, dimanche) : autre heure de bonjour si configuree
+        self.bonjour_weekend = ((bonjour_weekend, 0) if isinstance(bonjour_weekend, int)
+                                else (tuple(bonjour_weekend) if bonjour_weekend else None))
         self._jour_bonjour = None
         self.humeur = humeur or Humeur()
         self.rng = random.Random(seed)
@@ -166,7 +170,8 @@ class Brain:
             "hesite": Sequence("hesite", [("curieux", "inquire")]),              # il n'a pas compris
             "compliment": Sequence("compliment", [("fier", "coo")]),             # "bravo" : fierte discrete
             "chaud": Sequence("chaud", [("fatigue", "coo")]),                    # servos chauds : il s'affale
-            "remarque": Remarque(),                                              # un objet qui n'etait pas la
+            "remarque": Remarque(),
+            "silence_curieux": Sequence("silence_curieux", [("curieux", "inquire")]),   # la maison est trop calme                                              # un objet qui n'etait pas la
             # social
             "signature": Sequence("signature", [("curieux", "coo"), ("fier", "wheee")]),
             "gene": Sequence("gene", [("gene", "peck")]),                     # trebuche devant quelqu'un
@@ -182,6 +187,11 @@ class Brain:
         self.meteo = None                       # groupe meteo courant (Home Assistant) : soleil, pluie, neige, orage...
         self.chargeur = None                    # (x, y) odom ou la batterie est deja remontee (session en cours)
         self._charge_ref = None                 # (t, pourcentage, position) depuis le dernier deplacement
+        mem = self.ctx.extras.get("memoire")
+        donnees = mem.donnees.setdefault("ambiance", {}) if mem is not None and hasattr(mem, "donnees") else None
+        self.habitudes = Habitudes(donnees, horloge=self.horloge,   # sauvegarde avec la memoire (memoire.py)
+                                   sauver=mem.sauver if donnees is not None and hasattr(mem, "sauver") else None)
+        self._t_ecoute = None                   # premiere trame : debut de l'ecoute des habitudes sonores
         self.objet_nouveau = None               # distance (m) devant de l'objet nouvellement remarque
         self.surchauffe = False                 # servos trop chauds (robot.health.motors.max_c)
         self.cpu_chaud = False                  # carte trop chaude (robot.health.cpu_temp_c) : camera en pause
@@ -396,6 +406,7 @@ class Brain:
                     self._bascule("son_bref")            # un claquement, une porte : il tourne la tete, curieux
             elif base == "voix":
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.1)   # on parle : il s'eveille un peu
+                self.habitudes.voix(self.t_global)
             elif base == "applaudissements":
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.3)
                 self._bascule("bravo")
@@ -595,6 +606,12 @@ class Brain:
                 and 9 <= h_loc.tm_hour < 21 and self.rng.random() < self.P_SIGNATURE):
             self._jour_signature = getattr(h_loc, "tm_yday", None)
             return "signature"                  # son geste a lui, rare : une fois par jour au plus
+        if self._t_ecoute is not None and self.presents and self.ctx.extras.get("tof") is not None \
+                and self.t_global - self.derniere_fois.get("silence", -1e9) >= 7200.0 \
+                and self.habitudes.silence_inhabituel(self.t_global, self._t_ecoute):
+            self.derniere_fois["silence"] = self.t_global
+            self.suivant_force = "wander"       # que se passe-t-il ? un petit tour pour aller voir
+            return "silence_curieux"
         if self.rng.random() < self.P_ATTENTE and self.t_global - self.derniere_fois.get("attente", -1e9) >= 1800.0:
             if self._quelqu_un_tarde():
                 self.derniere_fois["attente"] = self.t_global
@@ -790,7 +807,8 @@ class Brain:
         if jour == self._jour_bonjour:
             return
         minutes = h.tm_hour * 60 + getattr(h, "tm_min", 0)
-        debut = self.bonjour[0] * 60 + self.bonjour[1]
+        heure = self.bonjour_weekend if (self.bonjour_weekend and getattr(h, "tm_wday", 0) >= 5) else self.bonjour
+        debut = heure[0] * 60 + heure[1]
         if not (0 <= minutes - debut < self.BONJOUR_FENETRE_H * 60):
             return
         if self.mode_calme or self.tombe or self.courant.nom not in ("chill", "look"):
@@ -878,6 +896,10 @@ class Brain:
 
         self._surveille_robotd(state)
         self._verifie_sante()
+        if self._t_ecoute is None:
+            self._t_ecoute = self.t_global
+        if int(self.t_global / 60.0) != int((self.t_global - dt) / 60.0):
+            self.habitudes.avance()             # une fois par minute : changement d'heure
         if self.courant.nom == "porte":
             self._traite_evenements_porte()
             self.t_etat += dt
