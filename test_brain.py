@@ -195,6 +195,38 @@ def test_pause_avant_passage_etroit():
     assert [p["vx"] for m, p in c.appels if m == "robot.move"][-1] == V_PROMENADE
 
 
+def test_ebrouement_apres_longue_immobilite_reelle():
+    # odom quasi fixe pendant SEUIL_IMMOBILE_S depuis un etat de repos (chill) -> ebouriffe se declenche, sans
+    # attendre le tirage RARES habituel (ici rendu impossible : rng truque pour ne jamais le tirer au hasard).
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.9), seed=16)
+    b._bascule("chill")
+    b.fin_etat = 10 ** 9              # on reste en chill (pas de bascule naturelle, donc pas de tirage RARES non
+                                       # plus) pour isoler l'effet de l'immobilite elle-meme
+    n = int((Brain.SEUIL_IMMOBILE_S + 2.0) / 0.02)
+    for i in range(n):
+        t = i * 0.02
+        b.tick({"t": t, "safety": {"fallen": False}, "policy": "stand",
+                "odom": {"position": [3.0, 3.0, 0.0], "yaw": 0.0}}, 0.02)
+    assert "ebouriffe" in {e[1] for e in b.journal}, f"pas d'ebrouement apres une longue immobilite: {b.journal}"
+
+
+def test_ebrouement_immobilite_pas_declenche_si_ca_bouge():
+    # le meme odom, mais qui derive doucement au-dela de SEUIL_DEPLACEMENT a chaque fois : jamais d'ebrouement
+    # "immobilite" (la reference se redemarre en continu).
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.9), seed=17)
+    b._bascule("chill")
+    b.fin_etat = 10 ** 9
+    n = int((Brain.SEUIL_IMMOBILE_S + 2.0) / 0.02)
+    for i in range(n):
+        t = i * 0.02
+        x = 3.0 + 0.2 * t            # derive continue, toujours > SEUIL_DEPLACEMENT par rapport a la reference
+        b.tick({"t": t, "safety": {"fallen": False}, "policy": "stand",
+                "odom": {"position": [x, 3.0, 0.0], "yaw": 0.0}}, 0.02)
+    assert "ebouriffe" not in {e[1] for e in b.journal}
+
+
 def test_chute_memorise_une_zone_noire():
     # une chute avec odom connu note une "zone noire" a l'endroit precis (exploration.py), pas seulement
     # la pause du cerveau deja testee par test_chute_met_le_cerveau_en_pause.

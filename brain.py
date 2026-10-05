@@ -525,6 +525,12 @@ class Brain:
     # d'attention (humain present, sinon chat visible). Jamais plus souvent que DELAI_ENNUI_S (ne jamais insister).
     SEUIL_ENNUI_S = 600.0
     DELAI_ENNUI_S = 300.0
+    # "S'ebroue apres une longue immobilite REELLE" (ROADMAP "chantier actif") : reutilise le geste `ebouriffe`
+    # existant, mais declenche par l'etat constate (odom qui ne bouge quasi pas) plutot que par l'horloge/le hasard
+    # des RARES ci-dessus - les deux partagent le meme garde-fou (`derniere_fois["ebouriffe"]`, DELAI_RARE) pour ne
+    # jamais se declencher plus souvent que le geste "rare" habituel, quelle que soit la cause.
+    SEUIL_IMMOBILE_S = 1200.0    # 20 min sans bouger de plus de SEUIL_DEPLACEMENT
+    SEUIL_DEPLACEMENT = 0.1      # m : en dessous, on considere que le canard n'a pas vraiment bouge
     # evenement de la maison -> (etat de reaction, hausse d'eveil)
     REACTIONS_MAISON = {
         "impression_finie": ("celebre", 0.4),
@@ -566,6 +572,8 @@ class Brain:
         self.explo_actif = self.ctx.extras.get("exploration", True)
         self._t_explo = -1.0
         self._derniere_position = None          # derniere position odom connue, pour noter une "zone noire" a la chute
+        self._pos_ref_immobile = None           # (x, y) de reference pour detecter l'immobilite reelle
+        self._t_ref_immobile = 0.0
         self.courant = self.etats["chill"]
         self.t_etat = 0.0
         self.fin_etat = self.courant.duree(self)
@@ -746,6 +754,20 @@ class Brain:
             # de position fiable connue d'avance, meme limite que Accueil).
             o = state["odom"]
             self.exploration.preference(o["position"][0], o["position"][1], self.courant.nom, dt, self.t_global)
+        if state.get("odom"):
+            # "S'ebroue apres une longue immobilite REELLE" (ROADMAP "chantier actif") : l'odom ne bouge quasi pas
+            # depuis SEUIL_IMMOBILE_S -> `ebouriffe`, uniquement depuis un etat de repos (chill/look), pas en
+            # interrompant autre chose (wander, accueil, ecoute...). Meme garde-fou que le tirage RARES habituel.
+            pos = (state["odom"]["position"][0], state["odom"]["position"][1])
+            if self._pos_ref_immobile is None or math.hypot(pos[0] - self._pos_ref_immobile[0],
+                                                              pos[1] - self._pos_ref_immobile[1]) > self.SEUIL_DEPLACEMENT:
+                self._pos_ref_immobile, self._t_ref_immobile = pos, self.t_global
+            elif (self.t_global - self._t_ref_immobile >= self.SEUIL_IMMOBILE_S
+                  and self.t_global - self.derniere_fois.get("ebouriffe", -1e9) >= self.DELAI_RARE
+                  and not self.mode_calme and self.courant.nom in ("chill", "look")):
+                self.derniere_fois["ebouriffe"] = self.t_global
+                self._t_ref_immobile = self.t_global     # redemarre la fenetre : pas de declenchement en boucle
+                self._bascule("ebouriffe")
 
         self._traite_evenements()
         self.humeur.avance(dt, self.courant.nom)
