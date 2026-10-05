@@ -14,8 +14,12 @@ Methode : niveau par bloc (dB), bruit de fond suivi par le bas (monte lentement,
 saut de niveau au-dessus du fond qui retombe vite ; tempo = autocorrelation de la "force d'attaque" sur 6 s.
 Seuils a etalonner sur le vrai micro (reglables a la construction).
 
-`MicroAlsa` : source optionnelle qui lit le micro par `arecord` (ALSA). NON TESTEE : le canard n'est pas livre, et
-quacksat utilise deja le micro (partage ALSA via dsnoop a prevoir, voir QUACKSAT_QUACKNAV.md). Vie privee : le son est
+`MicroAlsa` : source optionnelle qui lit le micro par `arecord` (ALSA). NON TESTEE, et probablement INUTILISABLE telle
+quelle sur le robot : d'apres le code officiel (pollen-robotics/microduck, pet-detect/src/worker.rs, lu le 2026-10-05),
+le micro de la tete n'accepte qu'UN client et c'est `robotd` qui l'occupe (detection de caresse PAR LE SON du grattage,
+roucoulement natif, et une "sentinelle" qui classe deja Noise / Voice par enveloppe RMS - sans les exposer aux clients :
+"no consumer until the autonomous brain arrives"). Voies : faire remonter ces evenements par robot.subscribe (contribution
+amont), ou un partage ALSA (dsnoop) ; quacksat utilise aussi le micro (QUACKSAT_QUACKNAV.md). Vie privee : le son est
 analyse en memoire, bloc par bloc, rien n'est enregistre ni envoye.
 """
 import subprocess
