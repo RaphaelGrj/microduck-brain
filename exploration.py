@@ -11,12 +11,15 @@ CASE = 0.25                 # m
 DEMI_VIE_S = 600.0          # une case visitee redevient "nouvelle" de moitie en 10 min
 PORTEE = 1.0                # on juge un cap sur le premier metre devant
 DEMI_VIE_OBSTACLE_S = 1800.0  # un meuble ne bouge pas souvent : on s'en souvient ~30 min
+DEMI_VIE_CHUTE_S = 30 * 86400.0  # une "zone noire" (deja tombe ici) s'oublie tres lentement (~1 mois)
 
 
 class Exploration:
     def __init__(self):
         self.visites = {}       # (i, j) -> (poids, instant de la derniere mise a jour)
         self.obstacles = {}     # (i, j) -> instant ou le ToF y a vu un obstacle
+        self.chutes = {}        # (i, j) -> instant ou le canard est deja tombe ici ("zone noire" apprise,
+                                 # ROADMAP "Occupation autonome..." : distincte de l'evitement ToF generique)
 
     def _poids(self, cle, t):
         v = self.visites.get(cle)
@@ -33,9 +36,18 @@ class Exploration:
         """Le capteur de distance voit un obstacle en (x, y) (odometrie)."""
         self.obstacles[(math.floor(x / CASE), math.floor(y / CASE))] = t
 
+    def chute(self, x, y, t):
+        """Le canard vient de tomber en (x, y) (derniere position connue avant la chute) : "zone noire" apprise,
+        a eviter specifiquement, pas juste un obstacle detecte a chaque fois (ex. carrelage glissant, bord de
+        tapis, marche) - voir ROADMAP "Occupation autonome et recherche d'attention"."""
+        self.chutes[(math.floor(x / CASE), math.floor(y / CASE))] = t
+
     def _bloque(self, cle, t):
         v = self.obstacles.get(cle)
-        return v is not None and math.pow(0.5, (t - v) / DEMI_VIE_OBSTACLE_S) > 0.5
+        if v is not None and math.pow(0.5, (t - v) / DEMI_VIE_OBSTACLE_S) > 0.5:
+            return True
+        v = self.chutes.get(cle)
+        return v is not None and math.pow(0.5, (t - v) / DEMI_VIE_CHUTE_S) > 0.5
 
     def nouveaute(self, x, y, cap, t, portee=PORTEE):
         """Nouveaute moyenne (0..1) des cases traversees en partant de (x, y) vers `cap` (rad, repere odometrie).

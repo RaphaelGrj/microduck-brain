@@ -20,7 +20,17 @@ def test():
     assert murs.nouveaute(0, 0, 0.0, 1) < 0.3 and abs(murs.meilleur_ecart(0, 0, 0.0, 1)) > 0, "le mur doit detourner"
     vierge = Exploration()
     assert vierge.meilleur_ecart(0, 0, 1.0, 0) == 0.0, "sans souvenir : tout droit"
-    print("exploration : OK (evite la zone connue, prefere tout droit a nouveaute egale, oubli progressif, obstacles connus evites)")
+
+    # "zone noire" apprise (ROADMAP "Occupation autonome...") : un point precis ou le canard est deja tombe
+    # doit etre evite comme un obstacle, meme si rien n'y est jamais detecte par le ToF.
+    zone_noire = Exploration()
+    zone_noire.chute(0.4, 0.05, 0)
+    assert zone_noire.nouveaute(0, 0, 0.0, 1) < 0.3 and abs(zone_noire.meilleur_ecart(0, 0, 0.0, 1)) > 0, \
+        "le point de chute doit detourner comme un obstacle"
+    assert zone_noire.nouveaute(0, 0, 0.0, 10 * 86400) < 0.3, "la zone noire ne s'oublie pas en quelques jours"
+
+    print("exploration : OK (evite la zone connue, prefere tout droit a nouveaute egale, oubli progressif, "
+          "obstacles connus evites, zone noire apprise au point de chute)")
 
 
 if __name__ == "__main__":

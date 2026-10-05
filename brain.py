@@ -513,6 +513,7 @@ class Brain:
         self.exploration = Exploration()        # memoire des zones visitees (novelty grid du M9)
         self.explo_actif = self.ctx.extras.get("exploration", True)
         self._t_explo = -1.0
+        self._derniere_position = None          # derniere position odom connue, pour noter une "zone noire" a la chute
         self.courant = self.etats["chill"]
         self.t_etat = 0.0
         self.fin_etat = self.courant.duree(self)
@@ -659,9 +660,13 @@ class Brain:
         if self.ctx.extras.get("tof") is not None:
             self.ctx.extras["tof"].noter_etat(state)     # pose de tete datee, pour placer chaque trame ToF a son instant
         self.t_global += dt
+        if state.get("odom"):
+            self._derniere_position = (state["odom"]["position"][0], state["odom"]["position"][1])
         if state.get("safety", {}).get("fallen"):
             if not self.tombe:
                 print(f"[{self.t_global:6.1f}s] CHUTE : cerveau en pause (robotd se charge du relevement)", flush=True)
+                if self._derniere_position is not None:
+                    self.exploration.chute(*self._derniere_position, self.t_global)   # "zone noire" apprise
             self.tombe = True
             self.ctx.calme()
             return

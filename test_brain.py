@@ -90,6 +90,20 @@ def test_chute_met_le_cerveau_en_pause():
     assert not j, f"transition pendant la chute: {j}"
 
 
+def test_chute_memorise_une_zone_noire():
+    # une chute avec odom connu note une "zone noire" a l'endroit precis (exploration.py), pas seulement
+    # la pause du cerveau deja testee par test_chute_met_le_cerveau_en_pause.
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.9), seed=10)
+    for i in range(50):      # 1 s, debout, odom connu a (1.2, 0.3)
+        b.tick({"t": i * 0.02, "safety": {"fallen": False}, "policy": "stand",
+                "odom": {"position": [1.2, 0.3, 0.0], "yaw": 0.0}}, 0.02)
+    b.tick({"t": 1.0, "safety": {"fallen": True}, "policy": None}, 0.02)   # chute, sans odom dans cette trame
+    assert b.exploration.chutes, "aucune zone noire memorisee a la chute"
+    cle = next(iter(b.exploration.chutes))
+    assert cle == (int(1.2 // 0.25), int(0.3 // 0.25)), f"mauvaise case memorisee: {cle}"
+
+
 class FauxVeilleChat:
     """Imite VeilleChat (chat.py) juste assez pour _choisit_suivant/RechercheAttention.pas : .suivi.visible pour
     le choix de cible, .estimation=None pour que pas() se contente du regard qui balaie (pas de position connue)."""
