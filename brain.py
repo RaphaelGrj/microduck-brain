@@ -15,6 +15,7 @@ Usage : python3 brain.py [duree_s] [--energy 0.2] [--events bruit@20,chat@40]
 """
 import math
 import random
+import zlib
 import sys
 import time
 
@@ -1284,8 +1285,16 @@ class Accueil(Etat):
     def __init__(self):
         self.qui, self.absence_s = None, None
 
+    # Salutation individualisee (ROADMAP) : une fois familier, chaque habitant a SON salut, toujours le meme (choisi
+    # d'apres son nom : stable d'un redemarrage a l'autre, sans rien stocker).
+    SIGNATURES = (("oui", "greet"), ("curieux", "greet"), ("ebouriffe", "greet"), ("content", "greet"))
+
     @classmethod
-    def sequence(cls, familiarite, absence_s):
+    def signature(cls, qui):
+        return cls.SIGNATURES[zlib.crc32(qui.encode()) % len(cls.SIGNATURES)]
+
+    @classmethod
+    def sequence(cls, familiarite, absence_s, qui=None):
         """-> [(geste de gestures.py, son robot.sound)] joues l'un apres l'autre."""
         if absence_s is not None and absence_s < cls.ABSENCE_COURTE_S:
             return [("oui", "chirp")]                         # il vient de sortir : un petit signe, pas une fete
@@ -1293,7 +1302,7 @@ class Accueil(Etat):
             return [("curieux", "inquire")]                   # encore un peu reserve
         seq = [("oui", "greet")]
         if familiarite >= 0.6:
-            seq.append(("curieux", "coo"))
+            seq = [cls.signature(qui) if qui else ("oui", "greet"), ("curieux", "coo")]
         if absence_s is not None and absence_s >= cls.ABSENCE_LONGUE_S:
             seq.append(("content", "wheee"))                  # tremoussement de joie apres une longue absence
         return seq
@@ -1307,7 +1316,7 @@ class Accueil(Etat):
             mem.rencontre(self.qui)
         self.etapes = []
         t = 0.0
-        seq = self.sequence(familiarite, self.absence_s)
+        seq = self.sequence(familiarite, self.absence_s, self.qui)
         self.messages, brain.messages = brain.messages, []
         if self.messages:
             seq = seq + [("curieux", "inquire"), ("oui", "chirp")]   # "pendant ton absence, il s'est passe quelque chose"
@@ -1477,6 +1486,8 @@ class Brain:
     TAQUIN_PROBA = 0.2
     P_TAQUINE = 0.35            # quand une taquinerie est permise, elle remplace la reaction normale 1 fois sur 3
     P_REGARD_MYSTERE = 0.04     # par passage par chill, quand c'est permis
+    P_SIGNATURE = 0.01          # par passage par chill : son geste signature (une fois par jour au plus)
+    P_ATTENTE = 0.05            # quelqu'un tarde a rentrer : un petit moment d'attente inquiete (toutes les 30 min max)
     P_TOILETTE = 0.5            # apres une impression terminee : il se lisse les plumes
     P_OBSERVER = 0.03           # par passage par chill, en journee : rejoindre son coin d'observation
     CHARGE_S, CHARGE_PCT = 120.0, 2.0     # immobile 2 min et +2 % de batterie : il est sur son chargeur
@@ -1569,6 +1580,10 @@ class Brain:
             # la maison
             "alarme": AlarmeFumee(), "toupie": Toupie(), "assis_demande": AssisDemande(),
             "salut": Sequence("salut", [("oui", "greet"), ("content", "wheee")]),
+            # social
+            "signature": Sequence("signature", [("curieux", "coo"), ("fier", "wheee")]),
+            "gene": Sequence("gene", [("gene", "peck")]),                     # trebuche devant quelqu'un
+            "attente": Sequence("attente", [("curieux", "inquire"), ("lissage", None)]),   # quelqu'un tarde
             "meteo_curieux": Sequence("meteo_curieux", [("curieux", "inquire")]),      # tiens, il pleut
             "meteo_neige": Sequence("meteo_neige", [("curieux", "inquire"), ("content", "wheee")]),
             "meteo_orage": Sequence("meteo_orage", [("surpris", "inquire")]),         # inquiet, puis va se blottir
@@ -1580,6 +1595,9 @@ class Brain:
         self.meteo = None                       # groupe meteo courant (Home Assistant) : soleil, pluie, neige, orage...
         self.chargeur = None                    # (x, y) odom ou la batterie est deja remontee (session en cours)
         self._charge_ref = None                 # (t, pourcentage, position) depuis le dernier deplacement
+        self.ignores, self._t_tentative, self._tentative_jugee = 0, None, False   # demandes d'attention ignorees
+        self.bruits = []                        # t_global des bruits forts recents (detonations -> refuge)
+        self._jour_signature = None             # geste signature : une fois par jour au plus
         self.eternuements = []                  # t_global des eternuements entendus (serie = moins de 60 s d'ecart)
         self.t_esquive = -1e9                   # derniere main esquivee (la suivante, dans la minute, est acceptee)
         self.t_dernier_accueil = -1e9
@@ -1636,6 +1654,7 @@ class Brain:
             # Occupation autonome : tout evenement reel (hors bascule "calme") remet le compteur d'ennui a zero,
             # qu'il soit ou non traite immediatement (differe pendant une conversation, ignore pendant la sieste...).
             self.derniere_interaction = self.t_global
+            self.ignores = 0                    # quelqu'un s'est manifeste : le decouragement s'efface
             if base in ("ecoute_on", "ecoute_off"):
                 # conversation vocale (satellite Assist) : on se tait ; a la fin, on reprend et on rejoue ce qui attendait
                 if base == "ecoute_on" and self.courant.nom != "ecoute":
@@ -1730,6 +1749,13 @@ class Brain:
                 continue  # ne jamais insister : on dort, l'evenement est perdu
             if nom == "bruit":
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.5)
+                self.bruits = [t for t in self.bruits if self.t_global - t <= 60.0] + [self.t_global]
+                if len(self.bruits) >= 3:        # detonations en serie (petards, orage) : il va se mettre a l'abri
+                    coin = self._coin_atteignable()
+                    if coin is not None:
+                        self.etats["va_au_coin"].cible = coin
+                    self.suivant_force = "va_au_coin" if coin is not None else "nap"
+                    self.bruits = []
                 self._bascule("startle")
             elif nom == "chat":
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.3)
@@ -1798,6 +1824,21 @@ class Brain:
             return False
         p = self.ctx.state["odom"]["position"]
         return distances[0] <= math.hypot(point[0] - p[0], point[1] - p[1]) <= distances[1]
+
+    def _quelqu_un_tarde(self):
+        """Un habitant parti depuis plus de 2 h et pas rentre plus d'une heure apres son heure de retour habituelle
+        (memoire.py : heure ou on le rencontre le plus souvent)."""
+        mem = self.ctx.extras.get("memoire")
+        if mem is None or not hasattr(mem, "donnees"):
+            return False
+        heure = self.horloge().tm_hour
+        for qui in mem.donnees.get("etres", {}):
+            if qui == "chat" or qui in self.presents:
+                continue
+            absence, habituelle = mem.absence_s(qui), mem.heure_habituelle(qui)
+            if absence is not None and absence > 7200 and habituelle is not None and 1 <= (heure - habituelle) % 24 <= 3:
+                return True
+        return False
 
     def _coin_atteignable(self):
         """Coin de sieste appris (exploration.py), s'il est a une distance raisonnable et que le capteur de distance
@@ -1894,16 +1935,32 @@ class Brain:
         # si le delai minimal est passe (ne jamais insister).
         sans_interaction = self.t_global - self.derniere_interaction
         depuis_ennui = self.t_global - self.derniere_fois.get("ennui", -1e9)
-        if sans_interaction >= self.SEUIL_ENNUI_S and depuis_ennui >= self.DELAI_ENNUI_S:
+        if (self._t_tentative is not None and not self._tentative_jugee
+                and self.t_global - self._t_tentative >= 60.0            # on lui a laisse une minute pour repondre
+                and self.derniere_interaction < self._t_tentative):
+            self.ignores += 1                   # sa derniere demande d'attention est restee sans reponse
+            self._tentative_jugee = True
+        delai = self.DELAI_ENNUI_S * 2 ** min(self.ignores, 3)      # decouragement progressif : il demande moins
+        if sans_interaction >= self.SEUIL_ENNUI_S and depuis_ennui >= delai:
             self.derniere_fois["ennui"] = self.t_global
             chat = self.ctx.extras.get("chat")
             chat_visible = chat is not None and getattr(chat.suivi, "visible", False)
-            if self.presents or chat_visible:
+            if (self.presents or chat_visible) and self.ignores < 2:
                 self.etats["cherche_attention"].cible = "humain" if self.presents else "chat"
+                self._t_tentative, self._tentative_jugee = self.t_global, False
                 return "cherche_attention"
-            return "jeu_solitaire"
+            return "jeu_solitaire"              # personne, ou ignore deux fois de suite : il s'occupe seul
         if self.rng.random() < self.P_REGARD_MYSTERE and self.malice.permise(self, "regard_mystere"):
             return "regard_mystere"
+        h_loc = self.horloge()
+        if (self.presents and getattr(h_loc, "tm_yday", None) != self._jour_signature
+                and 9 <= h_loc.tm_hour < 21 and self.rng.random() < self.P_SIGNATURE):
+            self._jour_signature = getattr(h_loc, "tm_yday", None)
+            return "signature"                  # son geste a lui, rare : une fois par jour au plus
+        if self.rng.random() < self.P_ATTENTE and self.t_global - self.derniere_fois.get("attente", -1e9) >= 1800.0:
+            if self._quelqu_un_tarde():
+                self.derniere_fois["attente"] = self.t_global
+                return "attente"
         if self.rng.random() < self.P_OBSERVER and h.energie > 0.4 and 9 <= self.horloge().tm_hour < 21:
             coin = self.exploration.coin_favori("chill", self.t_global)
             if coin is not None and self._atteignable(coin, (1.0, 4.0)):
@@ -2067,6 +2124,9 @@ class Brain:
             print(f"[{self.t_global:6.1f}s] releve apres la chute", flush=True)
             if self.t_global < self.veille_jusqua:
                 self._bascule("nap")             # serie de chutes : il s'assoit et ne recommence pas
+            elif not self.mode_calme and self.presents:
+                self.suivant_force = "ebouriffe" # devant quelqu'un : un peu gene d'abord, puis il s'ebroue
+                self._bascule("gene")
             elif not self.mode_calme:
                 self._bascule("ebouriffe")
         if self.tombe:
