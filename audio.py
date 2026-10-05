@@ -12,6 +12,10 @@ le pipeline micro qui manquait (journal du 2026-10-05 : "aucun pipeline micro/FF
   - "silence_conversation" : un silence d'au moins 1,2 s juste apres plusieurs secondes de voix -> "dernier mot" ;
   - "intonation:monte|descend" : un enonce de 0,4 a 3 s dont la hauteur (autocorrelation) monte ou descend d'au moins
     3 demi-tons -> le canard mime le ton (taquinerie) ;
+  - "alarme_fumee:son" : bips aigus (2,5-4,5 kHz) reguliers, au moins 9 en 15 s (motif T3 des detecteurs de fumee :
+    3 bips, pause, 3 bips...) -> l'alarme du canard, PRIORITAIRE, meme sans Home Assistant ;
+  - "toc_porte"        : 2 a 5 chocs brefs et GRAVES (centroide spectral < 1,5 kHz), espaces de 0,1 a 0,45 s -> on
+    frappe a la porte (un claquement de mains est aigu : il reste un "appel") ;
   - "eternuement"      : bruit large bande (platitude spectrale), attaque nette, 0,12 a 0,6 s, tres au-dessus du fond.
     Heuristique a etalonner : une chute d'objet peut y ressembler (consequence benigne : il "compte" au lieu de sursauter).
 Methode : niveau par bloc (dB), bruit de fond suivi par le bas (monte lentement, descend tout de suite), transitoires =
@@ -45,6 +49,25 @@ def platitude(x):
     f = np.fft.rfftfreq(len(x), 1.0 / TAUX)
     p = p[(f >= 300) & (f <= 6000)]
     return float(np.exp(np.mean(np.log(p))) / np.mean(p))
+
+
+def centroide(x):
+    """Centroide spectral (Hz) : grave (coup sur une porte) ou aigu (claquement de mains)."""
+    p = np.abs(np.fft.rfft(x * np.hanning(len(x)))) ** 2
+    f = np.fft.rfftfreq(len(x), 1.0 / TAUX)
+    return float(np.sum(f * p) / (np.sum(p) + 1e-12))
+
+
+def bip_aigu(x):
+    """Le bloc est-il un bip d'alarme ? Son quasi pur (>= 50 % de l'energie dans +-60 Hz autour du pic) entre 2,5 et
+    4,5 kHz."""
+    p = np.abs(np.fft.rfft(x * np.hanning(len(x)))) ** 2
+    f = np.fft.rfftfreq(len(x), 1.0 / TAUX)
+    k = int(np.argmax(p))
+    if not 2500.0 <= f[k] <= 4500.0:
+        return False
+    autour = p[(f >= f[k] - 60.0) & (f <= f[k] + 60.0)].sum()
+    return autour >= 0.5 * p.sum()
 
 
 def hauteurs(son, trame=640, pas=320):
@@ -96,6 +119,8 @@ class AnalyseurSon:
         self.enonce = []                         # echantillons de l'enonce (voix) en cours, 3 s au plus
         self.calme_enonce = 0                    # blocs silencieux depuis la derniere voix de l'enonce
         self.platitudes = []                     # platitude spectrale des blocs du transitoire en cours
+        self.bip_debut = None                    # debut du bip aigu en cours
+        self.bips = []                           # instants des bips d'alarme reconnus (15 s)
 
     def _peut(self, nom, delai):
         if self.t - self.dernier.get(nom, -1e9) < delai:
@@ -125,6 +150,7 @@ class AnalyseurSon:
         if self.transitoire is None and niveau - self.fond >= self.saut and niveau - prec >= self.saut * 0.6:
             self.transitoire = [self.t, niveau, self.fond]
             self.platitudes = [platitude(x)]
+            self.centroide_transitoire = centroide(x)
         elif self.transitoire is not None:
             self.transitoire[1] = max(self.transitoire[1], niveau)
             self.platitudes.append(platitude(x))
@@ -141,7 +167,7 @@ class AnalyseurSon:
                     if self._peut("bruit", self.delai_bruit_s):
                         out.append("bruit")
                 elif duree <= 0.15 and self.musique is None and montee <= MONTEE_CLAP_S:
-                    self.claps.append(debut)
+                    self.claps.append((debut, self.centroide_transitoire))
             elif duree > 0.6:                                  # son tenu : ni claquement, ni choc, ni eternuement
                 self.transitoire = None
 
@@ -162,6 +188,17 @@ class AnalyseurSon:
             if self._peut("discussion_longue", 900.0):
                 out.append("discussion_longue")
 
+        # 2 quater. bips d'alarme (detecteur de fumee) : bips purs et aigus, 0,08 a 0,8 s, nombreux et reguliers
+        if niveau - self.fond >= 15.0 and bip_aigu(x):
+            if self.bip_debut is None:
+                self.bip_debut = self.t
+        elif self.bip_debut is not None:
+            if 0.08 <= self.t - self.bip_debut <= 0.8:
+                self.bips = [b for b in self.bips if self.t - b <= 15.0] + [self.bip_debut]
+                if len(self.bips) >= 9 and self._peut("alarme_fumee", 60.0):
+                    out.append("alarme_fumee:son")
+            self.bip_debut = None
+
         # 2 ter. enonces : on garde le son tant que la voix continue (pauses < 0,3 s), on juge l'intonation a la fin
         if actif:
             self.enonce = (self.enonce + [x])[-150:]
@@ -177,7 +214,7 @@ class AnalyseurSon:
                     out.append(f"intonation:{sens}")
 
         # 2. groupe de claquements : on juge quand il n'en vient plus depuis 0,8 s
-        if self.claps and self.t - self.claps[-1] > 0.8:
+        if self.claps and self.t - self.claps[-1][0] > 0.8:
             out += self._juge_claps()
 
         # 3. battement regulier (toutes les 0,5 s, sur 6 s de son)
@@ -198,8 +235,11 @@ class AnalyseurSon:
         return t_pic - env[i][0]
 
     def _juge_claps(self):
-        c, self.claps = self.claps, []
+        groupe, self.claps = self.claps, []
+        c = [t for t, _ in groupe]
         ecarts = np.diff(c)
+        if 2 <= len(c) <= 5 and np.mean([z for _, z in groupe]) < 1500.0 and all(0.1 <= e <= 0.45 for e in ecarts):
+            return ["toc_porte"] if self._peut("toc_porte", 20.0) else []     # chocs graves : on frappe a la porte
         if len(c) >= 5 and c[-1] - c[0] <= 2.5 and float(np.mean(ecarts)) <= 0.35:   # serres : pas un battement
             return ["applaudissements"] if self._peut("applaudissements", self.delai_appel_s) else []
         if 2 <= len(c) <= 3 and all(0.12 <= e <= 0.7 for e in ecarts) and (len(c) == 2 or np.ptp(ecarts) < 0.15):

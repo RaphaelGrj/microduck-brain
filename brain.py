@@ -82,6 +82,7 @@ class Brain:
         "info": ("info", 0.2),
         # messager de la maison (pont_ha.py, sections [[appareil]])
         "sonnette": ("sonnette", 0.6),
+        "toc_porte": ("sonnette", 0.6),         # on frappe a la porte (entendu par audio.py, sans Home Assistant)
         "machine_finie": ("messager", 0.2),
         "machine_echec": ("alerte", 0.7),
     }

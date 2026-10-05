@@ -98,3 +98,14 @@ def test_toilette_apres_une_impression():
     simule(b, 10, evenements=[(0.5, "impression_finie:MK4S")])
     noms = [e[1] for e in b.journal]
     assert noms[noms.index("celebre") + 1] == "lissage", noms
+
+
+def test_alarme_et_porte_entendues_sans_home_assistant():
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.9), seed=210)
+    simule(b, 25, evenements=[(0.5, "alarme_fumee:son")])
+    assert "alarme" in [e[1] for e in b.journal] and sons(c).count("alarm") >= 8
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.9), seed=211)
+    simule(b, 6, evenements=[(0.5, "toc_porte")])
+    assert "sonnette" in [e[1] for e in b.journal]

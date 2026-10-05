@@ -116,6 +116,45 @@ def test_silence_sans_discussion_avant():
     assert "silence_conversation" not in noms(analyse(s))
 
 
+def toc(sig, t, amplitude=0.15):
+    """Coup sur une porte : bruit filtre grave (< 800 Hz), attaque nette, 25 ms."""
+    n = int(0.06 * TAUX)
+    i = int(t * TAUX)
+    brut = RNG.normal(0, 1, n + 64)
+    grave = np.convolve(brut, np.ones(24) / 24, mode="same")[:n]     # passe-bas grossier
+    sig[i:i + n] += amplitude * 6 * grave * np.exp(-np.arange(n) / (0.012 * TAUX))
+
+
+def test_on_frappe_a_la_porte():
+    s = fond(5)
+    for k in range(3):
+        toc(s, 2.0 + 0.25 * k)
+    evts = noms(analyse(s))
+    assert evts == ["toc_porte"], evts
+
+
+def bips(sig, debut, cycles, f=3200.0):
+    """Motif T3 d'un detecteur de fumee : 3 bips de 0,5 s espaces de 0,5 s, puis 1,5 s de pause."""
+    t = debut
+    for _ in range(cycles):
+        for _ in range(3):
+            n = int(0.5 * TAUX)
+            i = int(t * TAUX)
+            sig[i:i + n] += 0.1 * np.sin(2 * np.pi * f * np.arange(n) / TAUX)
+            t += 1.0
+        t += 1.0
+
+
+def test_alarme_incendie_entendue():
+    s = fond(20)
+    bips(s, 1.0, 4)
+    evts = noms(analyse(s))
+    assert evts.count("alarme_fumee:son") == 1, evts
+    s = fond(10)
+    bips(s, 1.0, 1)                                   # 3 bips (micro-ondes) : pas une alarme
+    assert "alarme_fumee:son" not in noms(analyse(s))
+
+
 # --- cerveau -------------------------------------------------------------------------------------------------------
 from brain import Brain, Humeur  # noqa: E402
 from test_brain import FauxClient, simule  # noqa: E402

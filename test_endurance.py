@@ -12,7 +12,9 @@ EVENEMENTS = ["bruit", "chat", "personne", "main", "caresse", "appel", "applaudi
               "intonation:monte", "intonation:descend", "eternuement", "discussion_longue", "silence_conversation",
               "aspirateur_on", "aspirateur_off", "objet_approche", "meteo:rainy", "meteo:lightning", "meteo:sunny",
               "tour_salut", "tour_toupie", "tour_assis", "ecoute_on", "ecoute_off", "calme_on", "calme_off",
-              "alarme_fumee:Salon", "orage", "info"]
+              "alarme_fumee:Salon", "orage", "info", "toc_porte", "alarme_fumee:son", "commande:assis",
+              "commande:debout", "commande:stop", "commande:bravo", "commande:danse", "commande:ecoute",
+              "commande:pas_compris", "commande:reveil", "son_bref", "voix"]
 
 
 class Client:
