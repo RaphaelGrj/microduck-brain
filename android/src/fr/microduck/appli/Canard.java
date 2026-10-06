@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
@@ -59,6 +60,7 @@ public class Canard extends Activity {
                         "text/html", "utf-8", null);
             }
         });
+        vue.setWebChromeClient(new WebChromeClient());  // sans lui, confirm() repond toujours « non »
         setContentView(vue);
         vue.loadUrl(url);
     }

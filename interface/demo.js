@@ -15,6 +15,7 @@
   const TETES = { look: [0, 0, 0.5, 0], curious: [0, 0.1, 0, 0.25], regarde_chat: [0, 0.2, -0.45, 0],
     nap: [0.1, 0.5, 0, 0], jeu_solitaire: [0, 0.3, 0, 0] };
 
+  let carteDepuis = -1e6;                      // « Effacer sa carte » : il repart de zero ici
   let i = 0, finEtat = 0, force = null, tete = null, assis = false, calme = false, garde = false;
   let diag = { ok: true, le: "ce matin, 7 h 42", demande: false, finDemande: 0 };
   const journal = [], duJour = { promenades: 3, siestes: 1, jeux: 2, caresses: 4, accueils: 1 };
@@ -81,6 +82,7 @@
     else if (nom === "stop" || nom === "fin_jeu") { assis = false; changer("chill", 10); }
     else if (nom === "calme_on" || nom === "calme_off") { calme = nom === "calme_on"; finEtat = 0; }
     else if (nom === "garde_on" || nom === "garde_off") garde = nom === "garde_on";
+    else if (nom === "oublier_carte") carteDepuis = Math.floor((Date.now() / 1000 - debut) * 2);
     else if (nom === "diagnostic") {
       diag = { ok: null, le: diag.le, demande: true, finDemande: Date.now() / 1000 + 5 };
       changer("autotest", 5); force = "autotest";
@@ -88,5 +90,31 @@
     return { ok: true, commande: nom };
   }
 
-  window.MicroduckDemo = { instantane, commande };
+  // Sa carte imaginaire : un salon (5 x 4 m) et un couloir, parcourus en boucle ; un canape, une chute, ses coins.
+  const CHEMIN = [];
+  for (let a = 0; a < 2 * Math.PI; a += 0.05) CHEMIN.push([2.2 + 1.6 * Math.cos(a), 1.6 * Math.sin(a) * (1 + 0.3 * Math.cos(2 * a))]);
+  for (let x = 0.6; x > -2.4; x -= 0.15) CHEMIN.push([x, 0.1]);             // le couloir, aller...
+  for (let x = -2.4; x < 0.6; x += 0.15) CHEMIN.push([x, -0.1]);            // ...et retour
+  function carte() {
+    const t = Date.now() / 1000, cases = new Map(), k = 0.25;
+    const n = Math.floor((t - debut) * 2) % CHEMIN.length;
+    const fait = Math.floor((t - debut) * 2) - carteDepuis;               // pas faits depuis le dernier effacement
+    CHEMIN.forEach(([x, y], m) => {
+      const age = (n - m + CHEMIN.length) % CHEMIN.length;
+      if (age > fait) return;
+      cases.set(`${Math.floor(x / k)},${Math.floor(y / k)}`, 1 - age / CHEMIN.length * 0.8);
+    });
+    const [x, y] = CHEMIN[n], [xs, ys] = CHEMIN[(n + 1) % CHEMIN.length];
+    const obstacles = [];
+    for (let i = 7; i <= 10; i++) obstacles.push([i, 1], [i, 2]);              // le canape, au milieu du salon
+    return {
+      case: k, canard: { x, y, cap: Math.atan2(ys - y, xs - x) },
+      cases: [...cases].map(([c, f]) => [...c.split(",").map(Number), +f.toFixed(2)]),
+      ...(fait < CHEMIN.length / 2 ? { obstacles: [], chutes: [], coins: {}, chargeur: null, objets: [] } : {
+        obstacles, chutes: [[14, -5]],
+        coins: { nap: [3.4, 0.6], chill: [1.2, 1.0], repas: [0.6, -1.4] }, chargeur: [0.3, 0.3], objets: [[2.9, -0.8]] }),
+    };
+  }
+
+  window.MicroduckDemo = { instantane, commande, carte };
 })();

@@ -334,6 +334,13 @@ class Brain:
             if base in ("guide", "regard"):
                 self._sur_telecommande(base, detail)
                 continue
+            if base == "oublier_carte":
+                # depuis l'application (meubles bouges, autre piece) : il repart d'une carte vierge, coins et chargeur
+                # compris (ils sont dans le meme repere). Rien d'autre n'est oublie.
+                self.exploration = Exploration()
+                self.chargeur = None
+                print(f"[{self.t_global:6.1f}s] carte effacee", flush=True)
+                continue
             if base == "diagnostic":
                 self.diag_demande = True        # une demande de maintenance, pas une interaction : avant l'ennui
                 print(f"[{self.t_global:6.1f}s] diagnostic demande : au prochain moment de repos", flush=True)

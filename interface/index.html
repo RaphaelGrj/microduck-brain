@@ -65,6 +65,15 @@
           <h2>Aujourd'hui</h2>
           <ul id="du-jour" class="pastilles"></ul>
         </div>
+        <div class="carte">
+          <h2>Sa carte</h2>
+          <canvas id="plan" class="plan" aria-label="Carte des endroits où il est passé depuis son démarrage"></canvas>
+          <p id="plan-vide" class="discret">Il n'a pas encore exploré depuis son démarrage.</p>
+          <ul class="legende" aria-hidden="true">
+            <li><i class="l-passe"></i>passé par là</li><li><i class="l-obstacle"></i>obstacle</li>
+            <li><i class="l-chute"></i>il y est tombé</li><li>💤 sieste</li><li>🛋️ repos</li><li>🍽️ repas</li><li>🔌 chargeur</li><li>• objet remarqué</li>
+          </ul>
+        </div>
       </div>
 
       <!-- Jouer -->
@@ -163,6 +172,8 @@
             <button id="t-garde" class="bascule" role="switch" aria-checked="false"></button></div>
           <div class="reglage"><div><b>Taquineries</b><p class="discret">Les couper 30 minutes.</p></div>
             <button data-cmd="stop_taquinerie">Couper</button></div>
+          <div class="reglage"><div><b>Sa carte</b><p class="discret">L'effacer (meubles déplacés, nouvel endroit). Elle repart aussi de zéro à chaque démarrage.</p></div>
+            <button id="oublier-carte">Effacer</button></div>
         </div>
         <div class="carte">
           <h2>Ce téléphone</h2>

@@ -165,3 +165,50 @@ def test_manifeste_android():
     m = (Path(__file__).parent / "android" / "AndroidManifest.xml").read_text(encoding="utf-8")
     assert m.count("uses-permission") == 1 and "android.permission.INTERNET" in m
     assert 'android:targetSdkVersion="34"' in m and 'android:allowBackup="false"' in m
+
+
+def test_carte_des_zones():
+    """La carte vient de la memoire d'exploration du canard (odometrie + ToF), sur le robot ; l'appli ne fait que l'afficher."""
+    from types import SimpleNamespace
+    from exploration import Exploration
+    ex = Exploration()
+    for k in range(12):
+        ex.noter(0.1 * k, 0.0, 100.0 + k)
+    ex.obstacle(1.6, 0.3, 120.0)
+    ex.chute(0.5, -0.5, 121.0)
+    ex.preference(0.2, 0.0, "nap", 60.0, 122.0)
+    b = SimpleNamespace(exploration=ex, t_global=130.0, chargeur=(0.0, 0.1), objets_au_sol=[(0, 1.2, 0.4)],
+                        _derniere_position=None)
+    c = appli.carte(b, {"odom": {"position": [1.1, 0.0, 0.1], "yaw": 0.5}})
+    assert c["case"] == 0.25 and c["canard"] == {"x": 1.1, "y": 0.0, "cap": 0.5}
+    assert {(i, j) for i, j, _ in c["cases"]} == {(0, 0), (1, 0), (2, 0), (3, 0), (4, 0)}
+    assert all(0.0 < f <= 1.0 for *_, f in c["cases"])
+    assert c["obstacles"] == [[6, 1]] and c["chutes"] == [[2, -2]]
+    assert c["coins"] == {"nap": [0.12, 0.12]} and c["chargeur"] == [0.0, 0.1] and c["objets"] == [[1.2, 0.4]]
+    json.dumps(c)                                            # envoyable tel quel
+    assert appli.carte(SimpleNamespace(), {}) == {}          # pas d'exploration : carte vide, pas d'erreur
+
+
+def test_carte_servie_avec_le_code(serveur):
+    b, _, _ = cerveau()
+    vivre(b, 1)
+    serveur.photographier(b, {"odom": {"position": [0.0, 0.0, 0.1], "yaw": 0.0}})
+    assert requete(serveur.port, "/api/carte", code=None)[0] == 401
+    import time
+    time.sleep(1.1)
+    statut, corps = requete(serveur.port, "/api/carte")
+    assert statut == 200 and json.loads(corps)["case"] == 0.25
+
+
+def test_effacer_la_carte():
+    """« Effacer sa carte » (meubles deplaces, autre endroit) : carte, coins et chargeur oublies, le reste garde."""
+    b, _, _ = cerveau()
+    vivre(b, 2, pos=(0.5, 0.2))
+    b.exploration.preference(0.5, 0.2, "nap", 60.0, b.t_global)
+    b.chargeur = (0.5, 0.2)
+    perso = b.perso
+    assert b.exploration.passages and b.exploration.coin_favori("nap", b.t_global)
+    vivre(b, 0.1, pos=(0.5, 0.2), evenements=[(0.0, appli.COMMANDES["oublier_carte"])])
+    assert b.chargeur is None and b.exploration.coin_favori("nap", b.t_global) is None
+    assert len(b.exploration.passages) <= 1                 # seulement la case ou il se trouve, notee depuis
+    assert b.perso is perso

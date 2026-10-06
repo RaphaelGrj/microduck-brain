@@ -49,7 +49,7 @@ function toast(texte) {
 
 async function api(chemin, corps) {
   const demo = window.MicroduckDemo;                 // mode demo (demo.js) : un canard imaginaire, dans le telephone
-  if (demo) return corps ? demo.commande(corps.commande) : demo.instantane();
+  if (demo) return corps ? demo.commande(corps.commande) : chemin === "/api/carte" ? demo.carte() : demo.instantane();
   const r = await fetch(chemin, {
     method: corps ? "POST" : "GET",
     headers: { "X-Microduck-Code": code, "Content-Type": "application/json" },
@@ -215,6 +215,53 @@ function dessiner(e) {
   boite.setAttribute("aria-label", "Microduck : " + (ETATS[e.etat] || e.etat));
 }
 
+// Sa carte : ce qu'il a parcouru depuis son demarrage (repere de l'odometrie). Vue de dessus, son cap de depart vers le
+// haut, sa gauche a gauche. Rafraichie toutes les 5 s, seulement quand l'accueil est affiche.
+let derniereCarte = null;
+
+function dessinerCarte(c) {
+  derniereCarte = c;
+  const plan = $("#plan"), vide = !c || !c.cases || !c.cases.length;
+  plan.hidden = vide; $("#plan-vide").hidden = !vide;
+  if (vide || plan.offsetParent === null) return;
+  const css = getComputedStyle(document.documentElement), v = (n) => css.getPropertyValue(n).trim();
+  const dpr = window.devicePixelRatio || 1, L = plan.clientWidth, H = plan.clientHeight;
+  plan.width = L * dpr; plan.height = H * dpr;
+  const g = plan.getContext("2d"); g.scale(dpr, dpr); g.clearRect(0, 0, L, H);
+  const k = c.case;                                   // odometrie (x devant, y gauche) -> ecran (u droite, w haut)
+  const pts = [...c.cases, ...(c.obstacles || []), ...(c.chutes || [])].map(([i, j]) => [i * k, j * k]);
+  if (c.canard) pts.push([c.canard.x, c.canard.y]);
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  const x0 = Math.min(...xs) - k, x1 = Math.max(...xs) + 2 * k, y0 = Math.min(...ys) - k, y1 = Math.max(...ys) + 2 * k;
+  const e = Math.min((L - 16) / (y1 - y0), (H - 16) / (x1 - x0), 90);     // pixels par metre (zoom max : 90 px/m)
+  const cu = L / 2 + ((y1 + y0) / 2) * e, cw = H / 2 + ((x1 + x0) / 2) * e;
+  const ecran = (x, y) => [cu - y * e, cw - x * e];
+  const caseEcran = (i, j) => { const [u, w] = ecran((i + 1) * k, (j + 1) * k); return [u, w, k * e, k * e]; };
+  g.fillStyle = v("--orange");
+  for (const [i, j, f] of c.cases) { g.globalAlpha = 0.15 + 0.5 * f; g.fillRect(...caseEcran(i, j)); }
+  g.globalAlpha = 1;
+  g.fillStyle = "#6b6f76"; for (const [i, j] of c.obstacles || []) g.fillRect(...caseEcran(i, j));
+  g.fillStyle = v("--danger"); for (const [i, j] of c.chutes || []) g.fillRect(...caseEcran(i, j));
+  g.font = "16px system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+  const SIGNES = { nap: "💤", chill: "🛋️", social: "💬", repas: "🍽️" };
+  for (const [a, p] of Object.entries(c.coins || {})) g.fillText(SIGNES[a] || "★", ...ecran(p[0], p[1]));
+  if (c.chargeur) g.fillText("🔌", ...ecran(...c.chargeur));
+  g.fillStyle = v("--texte"); for (const p of c.objets || []) { const [u, w] = ecran(...p); g.beginPath(); g.arc(u, w, 3, 0, 7); g.fill(); }
+  if (c.canard) {                                     // lui : un triangle pointe vers son cap
+    const [u, w] = ecran(c.canard.x, c.canard.y), a = -c.canard.cap - Math.PI / 2;
+    g.save(); g.translate(u, w); g.rotate(a);
+    g.beginPath(); g.moveTo(11, 0); g.lineTo(-7, 7); g.lineTo(-3, 0); g.lineTo(-7, -7); g.closePath();
+    g.fillStyle = v("--orange-fonce"); g.strokeStyle = "#fff"; g.lineWidth = 2; g.stroke(); g.fill(); g.restore();
+  }
+}
+
+async function rafraichirCarte() {
+  if ($("#plan").closest(".page").hidden || !code) return;
+  try { dessinerCarte(await api("/api/carte")); } catch (x) { /* la prochaine fois */ }
+}
+setInterval(rafraichirCarte, 5000);
+window.addEventListener("resize", () => dessinerCarte(derniereCarte));
+
 function liaison(ok) { $("#liaison").className = "pastille " + (ok ? "ok" : "ko"); }
 
 function ecouter() {
@@ -236,6 +283,7 @@ async function entrer(c) {
     $("#appairage").hidden = true; $("#appli").hidden = false;
     if (e.etat) afficher(e);
     ecouter();
+    rafraichirCarte();
   } catch (x) {
     $("#appli").hidden = true; $("#appairage").hidden = false;
     texte("#erreur-code", x.message === "code" ? "Code refusé." : "Microduck ne répond pas (même Wi-Fi ?).");
@@ -251,10 +299,16 @@ document.addEventListener("click", (ev) => {
     b.setAttribute("aria-current", "page");
     document.querySelectorAll(".page").forEach((p) => { p.hidden = p.dataset.page !== b.dataset.onglet; });
     window.scrollTo(0, 0);
+    if (b.dataset.onglet === "accueil") rafraichirCarte();
   }
 });
 $("#t-calme").addEventListener("click", () => commande(dernier && dernier.modes.calme ? "calme_off" : "calme_on"));
 $("#t-garde").addEventListener("click", () => commande(dernier && dernier.modes.garde ? "garde_off" : "garde_on"));
+$("#oublier-carte").addEventListener("click", async () => {
+  if (!confirm("Effacer sa carte ? Il oubliera aussi ses coins favoris et son chargeur, jusqu'à les réapprendre.")) return;
+  await commande("oublier_carte", "Carte effacée");
+  rafraichirCarte();
+});
 $("#oublier").addEventListener("click", () => { memoire("microduck-code", null); location.reload(); });
 $("#form-code").addEventListener("submit", (ev) => { ev.preventDefault(); entrer($("#code").value.trim()); });
 
