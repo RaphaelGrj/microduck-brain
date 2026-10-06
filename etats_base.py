@@ -307,7 +307,8 @@ class Nap(Etat):
     def entre(self, brain):
         self.assis = brain.ctx.sitting           # deja assis (sieste prolongee en mode calme) : on ne se rassoit pas
         self.leve = False
-        self.total = 2.0 + 4.0 + brain.rng.uniform(8.0, 14.0) + 4.0
+        f = brain.facteur_sieste() if hasattr(brain, "facteur_sieste") else 1.0
+        self.total = 2.0 + 4.0 + brain.rng.uniform(8.0, 14.0) * f + 4.0
         # "Reves" pendant le sommeil profond (ROADMAP "chantier actif", 2026-10-05) : 0 a 2 petits tressaillements
         # de tete, jamais pendant l'endormissement (< 2s) ni le reveil (derniers 4s) - juste de quoi distinguer une
         # sieste "vivante" d'une simple pause, sans RL ni capteur supplementaire.

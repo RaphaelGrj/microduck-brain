@@ -441,6 +441,12 @@ class Brain:
             if base == "commande":
                 self._sur_commande(detail)
                 continue
+            if base == "temperature_ext":
+                try:
+                    self.temperature_ext = float(detail)     # temperature exterieure (HA) : la saison ressentie
+                except ValueError:
+                    pass
+                continue
             if base in ("meteo", "orage"):
                 self._sur_meteo("orage" if base == "orage" else detail)
                 continue
@@ -848,7 +854,7 @@ class Brain:
             return "mime_vol"
         poids = {"look": 0.4, "turn": 0.2 + 0.3 * h.energie,
                  "wander": ((0.15 + 0.4 * h.energie * (0.5 + h.eveil)) * self.MARCHE_PAR_METEO.get(self.meteo, 1.0)
-                            * self.perso.envie_promenade())}
+                            * self.perso.envie_promenade() * (0.8 if self.saison() == "hiver" else 1.0))}
         # Initiative rare et surprenante (principe Pollen : un duo surprise est un plaisir, un juke-box non) :
         # faible probabilite, et jamais deux fois le meme geste en moins de DELAI_RARE secondes.
         for nom, p in self.RARES.items():
@@ -1187,10 +1193,34 @@ class Brain:
             return 1.0
         h = self.horloge()
         x = h.tm_hour + getattr(h, "tm_min", 0) / 60.0
+        v = 1.0
         for (h0, v0), (h1, v1) in zip(self.CIRCADIEN, self.CIRCADIEN[1:]):
             if h0 <= x <= h1:
-                return v0 + (v1 - v0) * (x - h0) / (h1 - h0)
-        return 1.0
+                v = v0 + (v1 - v0) * (x - h0) / (h1 - h0)
+                break
+        saison = self.saison()
+        if saison == "ete":                     # matinal avant la chaleur, ramolli l'apres-midi
+            v *= 1.15 if 7 <= x < 11 else 0.8 if 13 <= x < 17 else 1.0
+        elif saison == "hiver":
+            v *= 0.9                            # cocooning
+        return v
+
+    # Personnalite un peu saisonniere (ROADMAP "Ambiance du foyer") : d'apres la temperature exterieure de HA si on
+    # l'a (appareil de type "temperature"), sinon d'apres le mois. Opt-in avec le circadien (extras["circadien"]).
+    HIVER_C, ETE_C = 8.0, 24.0
+
+    def saison(self):
+        if not self.ctx.extras.get("circadien"):
+            return "mi_saison"
+        t = getattr(self, "temperature_ext", None)
+        if t is not None:
+            return "hiver" if t < self.HIVER_C else "ete" if t > self.ETE_C else "mi_saison"
+        mois = getattr(self.horloge(), "tm_mon", None)
+        return "hiver" if mois in (12, 1, 2) else "ete" if mois in (6, 7, 8) else "mi_saison"
+
+    def facteur_sieste(self):
+        """L'hiver, les siestes s'allongent (cocooning)."""
+        return 1.3 if self.saison() == "hiver" else 1.0
 
     def lit_sante(self):
         """robot.health (robotd) -> dict, ou None si pas de reponse."""

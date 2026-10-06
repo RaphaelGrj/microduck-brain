@@ -126,6 +126,8 @@ def lire_config(chemin):
             s["puissance"] = {k: float(app.get(k, v)) for k, v in PUISSANCE_DEFAUTS.items()}
         elif app.get("type") == "meteo":
             s["meteo"] = True                   # weather.* : chaque nouvel etat -> "meteo:<etat>"
+        elif app.get("type") == "temperature":
+            s["temperature"] = True             # sensor de temperature exterieure -> "temperature_ext:<C>" (saison)
         else:
             s["reactions"] = app.get("reactions") or REACTIONS_PAR_TYPE.get(app.get("type", ""), {})
         cfg["surveillance"].append(s)
@@ -402,6 +404,16 @@ class PontHA:
             return
         if s.get("puissance"):
             self._sur_puissance(entite, s, nouveau)
+            return
+        if s.get("temperature"):
+            try:
+                c = float(nouveau)
+            except ValueError:
+                return
+            dernier = getattr(self, "_derniere_temperature", None)
+            if dernier is None or abs(c - dernier) >= 1.0:      # au degre pres : pas un evenement par dixieme
+                self._derniere_temperature = c
+                self.evenements.put(f"temperature_ext:{c:.1f}")
             return
         if s.get("meteo"):
             self.log(f"[HA] meteo : {ancien} -> {nouveau}")

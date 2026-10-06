@@ -368,3 +368,36 @@ def test_batterie_faible_va_voir_quelqu_un_avant_la_prise_une_fois():
     b._social_fait = False
     vivre(b, 60, pos=(0.0, 0.0))
     assert [e[1] for e in b.journal].count("va_social") == 1, "personne a la maison : rien"
+
+
+def test_personnalite_saisonniere():
+    b, _, h = cerveau(heure=8, circadien=True)
+    assert b.saison() == "mi_saison"
+    b.evenement("temperature_ext:30.0")
+    vivre(b, 0.1)
+    assert b.saison() == "ete"
+    matin = b.vivacite()
+    h.heure = 15
+    apres_midi = b.vivacite()
+    b.evenement("temperature_ext:2.0")
+    vivre(b, 0.1)
+    assert b.saison() == "hiver" and b.facteur_sieste() == 1.3
+    h.heure = 8
+    assert matin > b.vivacite(), "l'ete, plus vif le matin qu'en hiver"
+    assert apres_midi < 1.0, "l'ete, ramolli l'apres-midi"
+    sans, _, _ = cerveau()
+    sans.evenement("temperature_ext:2.0")
+    vivre(sans, 0.1)
+    assert sans.saison() == "mi_saison" and sans.facteur_sieste() == 1.0, "opt-in, comme le circadien"
+
+
+def test_temperature_exterieure_depuis_home_assistant():
+    import queue
+    import pont_ha
+    pont = pont_ha.PontHA.__new__(pont_ha.PontHA)
+    pont.evenements, pont.log = queue.Queue(), lambda m: None
+    pont.surveillance = {"sensor.dehors": {"temperature": True, "nom": "dehors"}}
+    for v in ("12.0", "12.4", "13.1", "unavailable", "7.9"):
+        pont._sur_changement("sensor.dehors", "11", v)
+    assert [pont.evenements.get_nowait() for _ in range(pont.evenements.qsize())] == [
+        "temperature_ext:12.0", "temperature_ext:13.1", "temperature_ext:7.9"]
