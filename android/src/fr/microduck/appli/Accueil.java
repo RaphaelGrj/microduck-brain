@@ -48,8 +48,8 @@ public class Accueil extends Activity {
     private Button majBouton;
     private LinearLayout mesCanards;
 
-    // derniere version publiee de l'APK (android/version.json, ecrit par construire.sh) et l'APK lui-meme
-    static final String DEPOT = "https://raw.githubusercontent.com/RaphaelGrj/microduck-brain/ccr-4c5851c0-mdd2p8/android/";
+    // derniere version publiee : la release GitHub la plus recente (version.json + microduck.apk, workflow apk.yml)
+    static final String DEPOT = "https://github.com/RaphaelGrj/microduck-brain/releases/latest/download/";
 
     @Override
     protected void onCreate(Bundle b) {

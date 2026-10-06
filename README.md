@@ -55,8 +55,9 @@ Le canard sert lui-même son application, sans Home Assistant et sans serveur ai
 **Appli Android** (`android/`) : un APK de 180 Ko qui trouve le canard tout seul sur le Wi-Fi et ouvre l'interface
 en plein écran, plus un **mode démo** pour l'essayer sans le robot. Il ne contient aucune logique : l'interface reste
 servie par le canard, donc une mise à jour du cerveau met l'appli à jour. Construction sans Android Studio :
-`bash android/construire.sh` (outils des paquets Ubuntu, voir l'en-tête du script). La clé de signature est créée hors
-du dépôt, dans `~/.microduck-android/`.
+`bash android/construire.sh` (outils des paquets Ubuntu, voir l'en-tête du script). Télécharger la dernière version :
+<https://github.com/RaphaelGrj/microduck-brain/releases/latest/download/microduck.apk>. La clé de signature se crée une
+fois par `bash android/creer_cle.sh`, hors du dépôt : voir `android/CLE_DE_SIGNATURE.md`.
 
 **Sections** :
 - **Accueil** : humeur, batterie, qui est là, journal du jour.
@@ -92,7 +93,7 @@ du dépôt, dans `~/.microduck-android/`.
 - **Santé → Mises à jour et rapport** : nouvelle version du cerveau installée sur demande
   (`deploy/robot/mettre_a_jour.sh`, retour possible), rapport de diagnostic sans donnée personnelle.
 - **Aide** intégrée ; **profil enfant** (code enfant : jeux, regard, « Où es-tu ? »).
-- **APK** : plusieurs canards ; publication par GitHub Actions (`.github/workflows/apk.yml`, étiquette `apk-v*`) ;
+- **APK** : plusieurs canards ; publication automatique par GitHub Actions à chaque nouvelle version (`.github/workflows/apk.yml`) ;
   présence par le téléphone (quand il rejoint le Wi-Fi de la maison, le canard t'accueille, sans Home
   Assistant ; le départ, lui, vient de Home Assistant) et mise à jour proposée quand une nouvelle version est publiée.
 

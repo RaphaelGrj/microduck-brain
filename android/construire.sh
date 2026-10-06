@@ -2,7 +2,7 @@
 # Construit l'APK de l'application Microduck sans Android Studio ni Gradle : outils des paquets Ubuntu/Debian.
 #   sudo apt install aapt apksigner dalvik-exchange zipalign android-sdk-platform-23 openjdk-17-jdk-headless
 #   bash android/construire.sh            -> android/sortie/microduck.apk
-# La cle de signature est creee au premier lancement dans ~/.microduck-android/ (HORS du depot : jamais sur GitHub).
+# La cle de signature est creee une fois par android/creer_cle.sh dans ~/.microduck-android/ (HORS du depot).
 # Garder cette cle : une mise a jour de l'appli doit etre signee par la meme, sinon il faut desinstaller d'abord.
 set -euo pipefail
 
@@ -13,7 +13,7 @@ CLES="${MICRODUCK_CLES:-$HOME/.microduck-android}"
 TMP="$ICI/construction"
 SORTIE="$ICI/sortie"
 
-for outil in aapt javac dalvik-exchange zipalign apksigner keytool; do
+for outil in aapt javac dalvik-exchange zipalign apksigner; do
   command -v "$outil" >/dev/null || { echo "outil manquant : $outil (voir l'en-tete du script)"; exit 1; }
 done
 [ -f "$SDK_JAR" ] || { echo "android.jar introuvable : $SDK_JAR"; exit 1; }
@@ -49,9 +49,7 @@ dalvik-exchange --dex --min-sdk-version=23 --output="$TMP/classes.dex" "$TMP/cla
 # 4. Alignement et signature (cle locale, creee une fois).
 mkdir -p "$CLES"; chmod 700 "$CLES"
 if [ ! -f "$CLES/microduck.keystore" ]; then
-  head -c 24 /dev/urandom | base64 | tr -d '/+=' > "$CLES/mot-de-passe"; chmod 600 "$CLES/mot-de-passe"
-  keytool -genkeypair -keystore "$CLES/microduck.keystore" -alias microduck -keyalg RSA -keysize 2048 \
-    -validity 10000 -dname "CN=Microduck" -storepass "$(cat "$CLES/mot-de-passe")" -keypass "$(cat "$CLES/mot-de-passe")"
+  echo "pas de cle de signature dans $CLES : lancer d'abord  bash android/creer_cle.sh  (une seule fois)"; exit 1
 fi
 zipalign -f -p 4 "$TMP/brut.apk" "$TMP/aligne.apk"
 apksigner sign --ks "$CLES/microduck.keystore" --ks-pass "file:$CLES/mot-de-passe" --ks-key-alias microduck \
@@ -62,7 +60,8 @@ python3 - "$ICI/AndroidManifest.xml" > "$ICI/version.json" <<'PY'
 import json, re, sys
 m = open(sys.argv[1], encoding="utf-8").read()
 print(json.dumps({"versionCode": int(re.search(r'versionCode="(\d+)"', m).group(1)),
-                  "versionName": re.search(r'versionName="([^"]+)"', m).group(1)}))
+                  "versionName": re.search(r'versionName="([^"]+)"', m).group(1),
+                  "apk": "https://github.com/RaphaelGrj/microduck-brain/releases/latest/download/microduck.apk"}))
 PY
 rm -rf "$TMP"
 echo "APK : $SORTIE/microduck.apk ($(du -h "$SORTIE/microduck.apk" | cut -f1))"
