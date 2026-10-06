@@ -2,7 +2,7 @@
 
 ## Ce que tu as à faire (une seule fois, 5 minutes)
 
-1. Sous **Linux** (ou WSL), dans le dossier du dépôt `microduck-brain`, sur la branche `ccr-4c5851c0-mdd2p8` :
+1. Sous **Linux** (ou WSL), dans le dossier du dépôt `microduck-brain` (branche `main`, après `git pull`) :
    ```
    bash android/creer_cle.sh /mnt/mmc-SN128_0x5c36c07b-part1/microduck/microduck-app
    ```

@@ -9,7 +9,7 @@
 name: APK
 on:
   push:
-    branches: ["main", "ccr-4c5851c0-mdd2p8"]
+    branches: ["main"]
     paths: ["android/AndroidManifest.xml"]
     tags: ["apk-v*"]
   workflow_dispatch:

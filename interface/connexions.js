@@ -171,7 +171,7 @@
 // ---------- mises a jour du cerveau, rapport, aide ----------
 (function () {
   const $ = (s) => document.querySelector(s);
-  const BRANCHE = "ccr-4c5851c0-mdd2p8";                 // (a passer sur main une fois la branche fusionnee)
+  const BRANCHE = "main";
   const DEPOT = "RaphaelGrj/microduck-brain";
   $("#maj-chercher").addEventListener("click", async () => {
     $("#maj-etat").textContent = "…";
