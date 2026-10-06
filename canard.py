@@ -129,6 +129,15 @@ def assembler(client, args, log=print, cfg=None, cerveau=None, appli_cfg=None):
             crochets.append(appli.photographier)
         except ValueError as e:
             log(f"application Microduck desactivee : {e}")
+    lieux = None
+    if cerveau.get("lieux", True):
+        import lieux as lieux_mod                          # lieux reconnus par le Wi-Fi (maison, chez les parents...)
+        lieux = lieux_mod.Lieux(log=log)
+        extras["lieu"] = lieux.nom_actuel()
+        sources.append(lieux.source)
+        if appli is not None:
+            appli.lieux = lieux
+            lieux.carte_actuelle = lambda: appli.carte
     pont, options = None, pont_ha.options_cerveau({"cerveau": cerveau})
     if cfg is not None:
         pont = pont_ha.PontHA(cfg, pont_ha.lire_jeton(cfg), log=log)
@@ -138,7 +147,7 @@ def assembler(client, args, log=print, cfg=None, cerveau=None, appli_cfg=None):
     if options:
         log(f"routines : {options}")
     return {"extras": extras, "sources": sources, "crochets": crochets, "options": options, "pont": pont, "fils": fils,
-            "appli": appli}
+            "appli": appli, "lieux": lieux}
 
 
 def main():
@@ -167,6 +176,7 @@ def main():
         a["pont"].demarrer()
     if a["appli"] is not None:
         a["appli"].demarrer()
+    arret_lieux = a["lieux"].demarrer() if a["lieux"] is not None else None
 
     def source():
         return [e for s in a["sources"] for e in s()]
@@ -188,6 +198,8 @@ def main():
             a["pont"].stop()
         if a["appli"] is not None:
             a["appli"].arreter()
+        if arret_lieux is not None:
+            arret_lieux.set()
         mem = a["extras"].get("memoire")
         if mem is not None and hasattr(mem, "fermer"):
             mem.fermer()

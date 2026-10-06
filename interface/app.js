@@ -49,7 +49,7 @@ function toast(texte) {
 
 async function api(chemin, corps) {
   const demo = window.MicroduckDemo;                 // mode demo (demo.js) : un canard imaginaire, dans le telephone
-  if (demo) return corps ? demo.commande(corps.commande) : chemin === "/api/carte" ? demo.carte() : demo.instantane();
+  if (demo) return demo.api(chemin, corps);
   const r = await fetch(chemin, {
     method: corps ? "POST" : "GET",
     headers: { "X-Microduck-Code": code, "Content-Type": "application/json" },
@@ -219,10 +219,10 @@ function dessiner(e) {
 // haut, sa gauche a gauche. Rafraichie toutes les 5 s, seulement quand l'accueil est affiche.
 let derniereCarte = null;
 
-function dessinerCarte(c) {
-  derniereCarte = c;
-  const plan = $("#plan"), vide = !c || !c.cases || !c.cases.length;
-  plan.hidden = vide; $("#plan-vide").hidden = !vide;
+function dessinerCarte(c, plan = $("#plan"), messageVide = $("#plan-vide")) {
+  if (plan.id === "plan") derniereCarte = c;
+  const vide = !c || !c.cases || !c.cases.length;
+  plan.hidden = vide; messageVide.hidden = !vide;
   if (vide || plan.offsetParent === null) return;
   const css = getComputedStyle(document.documentElement), v = (n) => css.getPropertyValue(n).trim();
   const dpr = window.devicePixelRatio || 1, L = plan.clientWidth, H = plan.clientHeight;
@@ -262,6 +262,74 @@ async function rafraichirCarte() {
 setInterval(rafraichirCarte, 5000);
 window.addEventListener("resize", () => dessinerCarte(derniereCarte));
 
+// Lieux (reglages) : reconnus par le Wi-Fi sur le canard (lieux.py) ; ici on les montre et on agit dessus.
+async function lieu(action, id, nom) {
+  try {
+    await api("/api/lieu", { action, id, nom });
+    toast({ basculer: "C'est noté", archiver: "Archivé", restaurer: "Restauré", supprimer: "Supprimé", lier: "Wi-Fi lié",
+      nouveau: "Nouveau lieu", renommer: "Renommé" }[action] || "Fait");
+  } catch (e) { toast(e.message === "code" ? "Code refusé" : String(e.message).startsWith("c'est le lieu") ? "C'est le lieu actuel" : e.message); }
+  rafraichirLieux();
+}
+
+function ligneLieu(l, d) {
+  const li = document.createElement("li"), det = document.createElement("details"), sum = document.createElement("summary");
+  const a = document.createElement("span"); a.textContent = l.nom;
+  if (l.id === d.actuel) { const t = document.createElement("span"); t.className = "etiquette ici"; t.textContent = "ici"; a.append(" ", t); }
+  const b = document.createElement("span"); b.className = "discret";
+  b.textContent = l.reseaux.length ? "📶 " + l.reseaux.join(", ") : "aucun Wi-Fi lié";
+  sum.append(a, b);
+  const actions = document.createElement("div"); actions.className = "actions";
+  const bouton = (texte, f, classe) => {
+    const x = document.createElement("button"); x.textContent = texte; if (classe) x.className = classe;
+    x.addEventListener("click", f); actions.append(x);
+  };
+  if (l.id !== d.actuel && !l.archive) bouton("Y aller", () => lieu("basculer", l.id), "principal");
+  bouton("Sa carte", () => voirLieu(l));
+  if (!l.archive) {
+    bouton("Renommer", () => { const n = prompt("Nom du lieu", l.nom); if (n && n.trim()) lieu("renommer", l.id, n.trim()); });
+    if (d.reseau && !l.reseaux.includes(d.reseau)) bouton(`Lier « ${d.reseau} »`, () => lieu("lier", l.id));
+    bouton(l.auto ? "Bascule auto : oui" : "Bascule auto : non", () => lieu(l.auto ? "auto_off" : "auto_on", l.id));
+  }
+  if (l.id !== d.actuel) {
+    if (l.archive) bouton("Restaurer", () => lieu("restaurer", l.id));
+    else bouton("Archiver", () => lieu("archiver", l.id));
+    bouton("Supprimer", () => { if (confirm(`Supprimer « ${l.nom} » et sa carte ? (Archiver la garde.)`)) lieu("supprimer", l.id); }, "danger");
+  }
+  det.append(sum, actions); li.append(det);
+  return li;
+}
+
+async function voirLieu(l) {
+  const d = $("#vue-lieu");
+  texte("#vue-lieu-titre", l.nom);
+  d.showModal();
+  try { dessinerCarte(await api("/api/lieu-carte?id=" + encodeURIComponent(l.id)), $("#plan-lieu"), $("#plan-lieu-vide")); }
+  catch (x) { dessinerCarte(null, $("#plan-lieu"), $("#plan-lieu-vide")); }
+}
+
+async function rafraichirLieux() {
+  let d;
+  try { d = await api("/api/lieux"); } catch (x) { $("#carte-lieux").hidden = true; return; }
+  $("#carte-lieux").hidden = false;
+  const ici = d.lieux.find((l) => l.id === d.actuel);
+  const b = document.createElement("b"); b.textContent = ici ? ici.nom : "—";
+  $("#lieu-ici").replaceChildren("Ici : ", b, d.reseau ? ` · Wi-Fi « ${d.reseau} »` : " · pas de Wi-Fi");
+  const sug = d.lieux.find((l) => l.id === d.suggestion);
+  $("#lieu-suggestion").hidden = !sug;
+  if (sug) {
+    const t = document.createElement("span"); t.textContent = `Il pense être à « ${sug.nom} ».`;
+    const x = document.createElement("button"); x.className = "principal"; x.textContent = "Y aller";
+    x.addEventListener("click", () => lieu("basculer", sug.id));
+    $("#lieu-suggestion").replaceChildren(t, x);
+  }
+  const actifs = d.lieux.filter((l) => !l.archive), archives = d.lieux.filter((l) => l.archive);
+  $("#lieux").replaceChildren(...actifs.map((l) => ligneLieu(l, d)));
+  $("#archives").hidden = !archives.length;
+  $("#archives summary").textContent = `Archives (${archives.length})`;
+  $("#lieux-archives").replaceChildren(...archives.map((l) => ligneLieu(l, d)));
+}
+
 function liaison(ok) { $("#liaison").className = "pastille " + (ok ? "ok" : "ko"); }
 
 function ecouter() {
@@ -300,6 +368,7 @@ document.addEventListener("click", (ev) => {
     document.querySelectorAll(".page").forEach((p) => { p.hidden = p.dataset.page !== b.dataset.onglet; });
     window.scrollTo(0, 0);
     if (b.dataset.onglet === "accueil") rafraichirCarte();
+    if (b.dataset.onglet === "reglages") rafraichirLieux();
   }
 });
 $("#t-calme").addEventListener("click", () => commande(dernier && dernier.modes.calme ? "calme_off" : "calme_on"));
@@ -308,6 +377,10 @@ $("#oublier-carte").addEventListener("click", async () => {
   if (!confirm("Effacer sa carte ? Il oubliera aussi ses coins favoris et son chargeur, jusqu'à les réapprendre.")) return;
   await commande("oublier_carte", "Carte effacée");
   rafraichirCarte();
+});
+$("#lieu-nouveau").addEventListener("click", () => {
+  const n = prompt("Nom du nouveau lieu (il y recommence une carte)", "Nouveau lieu");
+  if (n && n.trim()) lieu("nouveau", null, n.trim());
 });
 $("#oublier").addEventListener("click", () => { memoire("microduck-code", null); location.reload(); });
 $("#form-code").addEventListener("submit", (ev) => { ev.preventDefault(); entrer($("#code").value.trim()); });

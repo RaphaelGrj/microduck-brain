@@ -116,5 +116,62 @@
     };
   }
 
-  window.MicroduckDemo = { instantane, commande, carte };
+  // Ses lieux imaginaires : la maison, chez les parents, et un gite archive.
+  const lieux = {
+    actuel: "l1", reseau: "Freebox-Maison", suggestion: null, suivant: 4,
+    lieux: {
+      l1: { nom: "Maison", reseaux: ["Freebox-Maison", "Freebox-Maison-Etage"], archive: false, auto: true, vu: 3 },
+      l2: { nom: "Chez les parents", reseaux: ["Livebox-Parents"], archive: false, auto: true, vu: 2 },
+      l3: { nom: "Gîte en Bretagne", reseaux: ["Gite-Wifi"], archive: true, auto: true, vu: 1 },
+    },
+  };
+  const cartes = {};
+  function carteDe(lid) {
+    if (lid === lieux.actuel) return carte();
+    if (cartes[lid]) return cartes[lid];
+    if (lid === "l2") {                                 // un grand sejour en L
+      const cases = [];
+      for (let i = 0; i < 18; i++) cases.push([i, 0, 0.4], [i, 1, 0.3]);
+      for (let j = 2; j < 12; j++) cases.push([16, j, 0.35], [17, j, 0.25]);
+      return { case: 0.25, canard: null, cases, obstacles: [[8, 3], [9, 3]], chutes: [], coins: { nap: [4.3, 2.6] },
+        chargeur: null, objets: [] };
+    }
+    return {};
+  }
+  function resumeLieux() {
+    return { actuel: lieux.actuel, reseau: lieux.reseau, suggestion: lieux.suggestion,
+      lieux: Object.entries(lieux.lieux).sort((a, b) => b[1].vu - a[1].vu).map(([id, l]) => ({ id, ...l, carte: true })) };
+  }
+  function actionLieu({ action, id, nom }) {
+    const l = lieux.lieux[id];
+    if (action === "nouveau") { id = "l" + lieux.suivant++; lieux.lieux[id] = { nom, reseaux: [], archive: false, auto: true, vu: 0 }; }
+    else if (!l) throw new Error("lieu inconnu");
+    if (action === "nouveau" || action === "basculer") {
+      cartes[lieux.actuel] = carte();
+      lieux.actuel = id; lieux.lieux[id].archive = false; lieux.lieux[id].vu = Date.now();
+      carteDepuis = Math.floor((Date.now() / 1000 - debut) * 2); changer(action === "nouveau" ? "curious" : "chill", 6);
+    }
+    else if ((action === "archiver" || action === "supprimer") && id === lieux.actuel) throw new Error("c'est le lieu actuel");
+    else if (action === "archiver") l.archive = true;
+    else if (action === "restaurer") l.archive = false;
+    else if (action === "supprimer") delete lieux.lieux[id];
+    else if (action === "renommer") l.nom = nom;
+    else if (action === "lier") {
+      for (const autre of Object.values(lieux.lieux)) autre.reseaux = autre.reseaux.filter((r) => r !== lieux.reseau);
+      l.reseaux.push(lieux.reseau);
+    }
+    else if (action === "auto_on" || action === "auto_off") l.auto = action === "auto_on";
+    return { ok: true };
+  }
+
+  function api(chemin, corps) {
+    if (chemin === "/api/commande") return commande(corps.commande);
+    if (chemin === "/api/lieu") return actionLieu(corps);
+    if (chemin === "/api/carte") return carte();
+    if (chemin === "/api/lieux") return resumeLieux();
+    if (chemin.startsWith("/api/lieu-carte")) return carteDe(new URLSearchParams(chemin.split("?")[1]).get("id"));
+    return instantane();
+  }
+
+  window.MicroduckDemo = { instantane, commande, carte, api };
 })();

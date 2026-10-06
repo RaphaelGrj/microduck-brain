@@ -198,3 +198,22 @@ input {
 .l-passe { background: var(--orange); opacity: 0.55; }
 .l-obstacle { background: #6b6f76; }
 .l-chute { background: var(--danger); }
+
+/* Lieux (reglages) */
+.lieu-ici { margin: 10px 0; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--orange) 12%, transparent); }
+.lieu-ici b { color: var(--orange-fonce); }
+.suggestion { margin: 10px 0; padding: 10px 12px; border-radius: 12px; border: 2px dashed var(--orange); display: flex;
+  align-items: center; justify-content: space-between; gap: 10px; }
+.lieux { list-style: none; padding: 0; margin: 0; }
+.lieux > li { border-bottom: 1px solid var(--bord); }
+.lieux > li:last-child { border-bottom: 0; }
+.lieux summary { display: flex; justify-content: space-between; gap: 8px; padding: 12px 0; cursor: pointer; list-style: none; }
+.lieux summary::-webkit-details-marker { display: none; }
+.lieux summary .discret { font-size: .85rem; }
+.lieux .actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 0 12px; }
+.lieux .actions button { flex: 1 1 auto; }
+.etiquette.ici { background: var(--orange-fonce); color: var(--accent-texte); }
+.archives { margin-top: 14px; }
+.archives > summary { cursor: pointer; color: var(--discret); padding: 6px 0; }
+.vue-lieu { width: min(92vw, 520px); border: 0; border-radius: 18px; padding: 18px; background: var(--carte); color: var(--texte); }
+.vue-lieu::backdrop { background: rgba(0, 0, 0, .45); }

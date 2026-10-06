@@ -16,6 +16,8 @@ API :
   GET  /api/flux?code=...   le meme, en continu (Server-Sent Events, 1 par seconde)
   POST /api/commande        {"commande": "<nom>"} parmi COMMANDES
   GET  /api/carte           carte des zones parcourues depuis le demarrage (repere de l'odometrie)
+  GET  /api/lieux           les lieux (lieux.py) ; GET /api/lieu-carte?id=... la carte gardee d'un lieu
+  POST /api/lieu            {"action": ..., "id": ..., "nom": ...} (basculer, renommer, archiver, restaurer, ...)
   GET  /api/sante           test de vie, sans code (pour savoir si le canard repond)
 Le code se passe dans l'en-tete `X-Microduck-Code` (ou `?code=` pour le flux).
 """
@@ -148,6 +150,7 @@ class Appli:
         self.evenements = queue.Queue()
         self.etat = {}
         self.carte = {}
+        self.lieux = None                       # lieux.Lieux, branche par canard.py (sinon : pas de section Lieux)
         self._t_photo = self._t_carte = -1e9
         self._echecs = {}                       # ip -> instant du dernier code faux (freine les essais)
         self.serveur = None
@@ -229,6 +232,14 @@ class Appli:
                     if self._autorise():
                         self._json(200, appli.carte)
                     return
+                if url.path in ("/api/lieux", "/api/lieu-carte"):
+                    if not self._autorise():
+                        return
+                    if appli.lieux is None:
+                        return self._json(404, {"erreur": "lieux non geres"})
+                    if url.path == "/api/lieux":
+                        return self._json(200, appli.lieux.resume())
+                    return self._json(200, appli.lieux.carte(parse_qs(url.query).get("id", [""])[0]))
                 if url.path == "/api/flux":
                     if not self._autorise(parse_qs(url.query).get("code", [None])[0]):
                         return
@@ -247,15 +258,27 @@ class Appli:
                 self._fichier(url.path)
 
             def do_POST(self):
-                if urlparse(self.path).path != "/api/commande" or not self._autorise():
-                    if urlparse(self.path).path != "/api/commande":
-                        self._json(404, {"erreur": "inconnu"})
+                chemin = urlparse(self.path).path
+                if not adresse_locale(self.client_address[0]):
+                    return self._json(403, {"erreur": "reseau local seulement"})
+                if chemin not in ("/api/commande", "/api/lieu"):
+                    return self._json(404, {"erreur": "inconnu"})
+                if not self._autorise():
                     return
                 try:
                     n = min(int(self.headers.get("Content-Length", "0")), 4096)
-                    nom = json.loads(self.rfile.read(n) or b"{}").get("commande")
+                    corps = json.loads(self.rfile.read(n) or b"{}")
+                    if not isinstance(corps, dict):
+                        raise ValueError
                 except (ValueError, AttributeError):
                     return self._json(400, {"erreur": "JSON attendu"})
+                if chemin == "/api/lieu":
+                    if appli.lieux is None:
+                        return self._json(404, {"erreur": "lieux non geres"})
+                    texte = lambda v: v if isinstance(v, str) else None
+                    ok, raison = appli.lieux.action(str(corps.get("action")), texte(corps.get("id")), texte(corps.get("nom")))
+                    return self._json(200 if ok else 400, {"ok": True} if ok else {"erreur": raison})
+                nom = corps.get("commande")
                 if not appli.commande(nom):
                     return self._json(400, {"erreur": f"commande inconnue : {nom}"})
                 self._json(200, {"ok": True, "commande": nom})

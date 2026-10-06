@@ -57,7 +57,11 @@ du dépôt, dans `~/.microduck-android/`.
 - **Commander** : petits pas guidés, avec les garde-fous du cerveau (pas d'obstacle, pas de vide, pas de recul), et le regard.
 - **Santé** : bouton **lancer le diagnostic**, batterie, servos, températures, chutes, version.
 - **Caractère** : personnalité, voix, êtres connus.
-- **Réglages** : mode calme, mode garde, couper les taquineries.
+- **Réglages** : mode calme, mode garde, couper les taquineries, effacer sa carte, **lieux**.
+  - Le canard reconnaît où il est par son Wi-Fi (`lieux.py`) : sur un réseau inconnu, il crée un lieu ; de retour
+    sur un réseau connu, il y rebascule.
+  - Chaque lieu peut être renommé, lié à un autre réseau (répéteur), archivé, restauré ou supprimé.
+  - Chaque lieu garde sa dernière carte, qu'on peut regarder dans l'appli.
 - **Journal** : ce qu'il a fait.
 
 L'accès est limité au réseau local, avec le code. Les commandes viennent d'une liste fermée et passent par le cerveau
@@ -94,7 +98,7 @@ uv run python canard.py ha.toml  # le canard complet (robotd local ; options : -
 |---|---|
 | Point d'entrée | `canard.py` : cerveau, Home Assistant, ToF, caméra, micro |
 | Cerveau | `brain.py` (boucle à 50 Hz, choix des états, événements) ; états : `etats_base.py`, `etats_vie.py`, `etats_jeux.py`, `etats_maison.py`, `etats_taquineries.py` ; `gestures.py` (gestes de tête) |
-| Mémoire et caractère | `memoire.py` (sauvegarde locale), `personnalite.py`, `habitudes.py`, `taquineries.py`, `exploration.py` (carte des zones visitées, coins favoris), `navigation.py` |
+| Mémoire et caractère | `memoire.py` (sauvegarde locale), `lieux.py` (lieux reconnus par le Wi-Fi), `personnalite.py`, `habitudes.py`, `taquineries.py`, `exploration.py` (carte des zones visitées, coins favoris), `navigation.py` |
 | Perception | `vision.py`, `geometry.py`, `track.py`, `balle.py` (la balle), `chat.py` + `animaux.py` (YOLO), `mouvement.py`, `tof.py` (distance, vides), `main_tendue.py`, `caresse.py` |
 | Son | `audio.py` (réflexes sans réseau de neurones : chocs, claquements, musique, voix, alarme…), `commandes.py` (commandes vocales Vosk hors ligne) |
 | Jeu de balle | `approach.py` (approche + tir), `jeu.py` (passe au joueur) |

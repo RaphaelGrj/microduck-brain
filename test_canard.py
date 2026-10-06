@@ -44,12 +44,13 @@ def _assemble(args, sock_tof_existe, cfg=None):
 
 def test_assemblage_selon_disponibilite():
     a = _assemble([], sock_tof_existe=True)
-    assert set(a["extras"]) == {"memoire", "autotest", "circadien", "garde", "tof", "mouvement", "balle", "camera_test", "luminosite"}, a["extras"]
+    assert set(a["extras"]) == {"memoire", "autotest", "circadien", "garde", "tof", "mouvement", "balle", "camera_test", "luminosite", "lieu"}, a["extras"]
     assert len(a["extras"]["tof"].beams) == 64 and a["pont"] is None and a["options"] == {}
     a = _assemble(["--sans-camera"], sock_tof_existe=False)
-    assert set(a["extras"]) == {"memoire", "autotest", "circadien", "garde"}, "sans tofd ni camera : seulement la memoire"
+    assert set(a["extras"]) == {"memoire", "autotest", "circadien", "garde", "lieu"}, "sans tofd ni camera : seulement la memoire"
     a = _assemble(["--sans-camera", "--micro"], sock_tof_existe=False)
-    assert len(a["sources"]) == 1 and len(a["fils"]) == 1, "le micro est une source d'evenements"
+    assert len(a["sources"]) == 2 and len(a["fils"]) == 1, "le micro est une source d'evenements (avec les lieux)"
+    assert a["lieux"].source in a["sources"]
 
 
 def test_assemblage_avec_home_assistant():

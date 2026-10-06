@@ -175,6 +175,25 @@
           <div class="reglage"><div><b>Sa carte</b><p class="discret">L'effacer (meubles déplacés, nouvel endroit). Elle repart aussi de zéro à chaque démarrage.</p></div>
             <button id="oublier-carte">Effacer</button></div>
         </div>
+        <div class="carte" id="carte-lieux" hidden>
+          <h2>Lieux</h2>
+          <p class="discret">Il reconnaît où il est par le Wi-Fi : sur un réseau inconnu, il crée un nouveau lieu ;
+            de retour sur un réseau connu, il y rebascule tout seul.</p>
+          <div id="lieu-ici" class="lieu-ici"></div>
+          <div id="lieu-suggestion" class="suggestion" hidden></div>
+          <ul id="lieux" class="lieux"></ul>
+          <button id="lieu-nouveau" class="large">Nouveau lieu</button>
+          <details id="archives" class="archives" hidden>
+            <summary>Archives</summary>
+            <ul id="lieux-archives" class="lieux"></ul>
+          </details>
+        </div>
+        <dialog id="vue-lieu" class="vue-lieu">
+          <h2 id="vue-lieu-titre"></h2>
+          <canvas id="plan-lieu" class="plan"></canvas>
+          <p id="plan-lieu-vide" class="discret">Pas de carte gardée pour ce lieu.</p>
+          <form method="dialog"><button class="large">Fermer</button></form>
+        </dialog>
         <div class="carte">
           <h2>Ce téléphone</h2>
           <button id="oublier" class="large">Oublier le code</button>

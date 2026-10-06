@@ -212,3 +212,20 @@ def test_effacer_la_carte():
     assert b.chargeur is None and b.exploration.coin_favori("nap", b.t_global) is None
     assert len(b.exploration.passages) <= 1                 # seulement la case ou il se trouve, notee depuis
     assert b.perso is perso
+
+
+def test_lieux_depuis_l_appli(serveur, tmp_path):
+    import time
+    import lieux
+    assert requete(serveur.port, "/api/lieux")[0] == 404                 # pas de lieux branches : la section se cache
+    serveur.lieux = lieux.Lieux(tmp_path / "lieux.json", log=lambda m: None)
+    statut, corps = requete(serveur.port, "/api/lieux")
+    d = json.loads(corps)
+    assert statut == 200 and [l["nom"] for l in d["lieux"]] == ["Maison"]
+    assert requete(serveur.port, "/api/lieu", corps={"action": "nouveau", "nom": "Chez les parents"})[0] == 200
+    assert serveur.lieux.nom_actuel() == "Chez les parents"
+    assert requete(serveur.port, "/api/lieu", corps={"action": "archiver", "id": serveur.lieux.d["actuel"]})[0] == 400
+    assert requete(serveur.port, "/api/lieu", corps={"action": "renommer", "id": ["l1"], "nom": 3})[0] == 400
+    assert requete(serveur.port, "/api/lieu-carte?id=l1")[0] == 200
+    assert requete(serveur.port, "/api/lieu", corps={"action": "nouveau"}, code="mauvais-code")[0] == 401
+    time.sleep(1.1)

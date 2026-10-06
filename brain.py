@@ -341,6 +341,21 @@ class Brain:
                 self.chargeur = None
                 print(f"[{self.t_global:6.1f}s] carte effacee", flush=True)
                 continue
+            if base == "lieu":
+                # lieux.py : il a change d'endroit (autre reseau Wi-Fi, ou choix dans l'application). La carte de la
+                # session ne vaut plus rien ici : il en recommence une. Un lieu inconnu le rend curieux ; un retour,
+                # il s'etire (le trajet).
+                genre, _, lieu = (detail or "").partition("|")
+                self.exploration = Exploration()
+                self.chargeur = None
+                self.ctx.extras["lieu"] = lieu or None
+                print(f"[{self.t_global:6.1f}s] lieu : {lieu} ({genre})", flush=True)
+                if not self.mode_calme and not self.tombe and self.courant.nom not in ("alarme", "porte", "nap"):
+                    if genre == "nouveau":
+                        self._bascule("curious")
+                    elif genre == "retour":
+                        self._bascule("etirement")
+                continue
             if base == "diagnostic":
                 self.diag_demande = True        # une demande de maintenance, pas une interaction : avant l'ennui
                 print(f"[{self.t_global:6.1f}s] diagnostic demande : au prochain moment de repos", flush=True)

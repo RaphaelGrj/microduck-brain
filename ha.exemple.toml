@@ -187,6 +187,7 @@ entite = "A_REMPLIR"                # ex. "light.salon"
 
 # ---- 7. Le cerveau (facultatif ; lu meme sans Home Assistant) ---------------------------------------
 [cerveau]
+# lieux = false                     # lieux reconnus par le Wi-Fi (maison, chez les parents...) : actif par defaut
 # heures_calmes = [23, 7]           # de 23h a 7h : assis, silencieux, comme l'interrupteur calme
 # bonjour = "7:30"                  # une fois par jour, a partir de 7h30 : etirement + bonjour (si quelqu'un est la)
 # bonjour_weekend = "9:30"          # le samedi et le dimanche, a une autre heure
