@@ -36,7 +36,8 @@ from etats_taquineries import (Aspirateur, Baillement, CompteEternuements, Derni
                                FausseNotif, FauxEndormi, FeinteBec, Fier, MimeTon, MimeVol, PousseBalle, RegardMystere,
                                SourdeOreille)
 from etats_vie import (Picore, Remarque, Zoomies, Accueil, Bonjour, Caresse, Danse, JeuSolitaire, MainTendue, Porte, RechercheAttention,
-                       RegardeChat, VaAuCoin, Timide, CoupOeil, Compagnie, BaillementContagieux)
+                       RegardeChat, VaAuCoin, Timide, CoupOeil, Compagnie, BaillementContagieux, PasGuide,
+                       RegardGuide)
 
 class Brain:
     SEUIL_SIESTE = 0.25
@@ -198,6 +199,7 @@ class Brain:
             "apprivoise": Sequence("apprivoise", [("curieux", "inquire")]),        # la timidite s'est dissipee
             "coup_oeil": CoupOeil(),
             "compris": Sequence("compris", [("oui", "chirp")]),                 # commande domotique transmise
+            "pas_guide": PasGuide(), "regard_guide": RegardGuide(),             # telecommande (application)
             "penaud": Sequence("penaud", [("gene", None), ("fatigue", None)]),   # gronde : tete basse, sans un son
             "cajole": Sequence("cajole", [("content", "coo")]),                   # appele tendrement
             "mefiant": Sequence("mefiant", [("surpris", "inquire"), ("gene", None)]),   # l'aspirateur, les 1res fois
@@ -326,6 +328,12 @@ class Brain:
                     self._bascule("nap" if actif else ("etirement" if self.courant.nom == "nap" else "chill"))
                 continue
             self._veille_garde(base)
+            if base in ("garde_on", "garde_off"):
+                self.ctx.extras["garde"] = base == "garde_on"      # depuis l'application
+                continue
+            if base in ("guide", "regard"):
+                self._sur_telecommande(base, detail)
+                continue
             if base == "diagnostic":
                 self.diag_demande = True        # une demande de maintenance, pas une interaction : avant l'ennui
                 print(f"[{self.t_global:6.1f}s] diagnostic demande : au prochain moment de repos", flush=True)
@@ -1089,6 +1097,31 @@ class Brain:
             (self.presents.add if ou == "home" else self.presents.discard)(qui)
             (self.presence_inconnue.add if ou == "inconnu" else self.presence_inconnue.discard)(qui)
             self.presence_suivie = True
+
+    def _sur_telecommande(self, base, detail):
+        """Application Microduck : petit pas ou regard guides. Jamais en mode calme, a terre, dans les bras ou pendant
+        l'alarme ; un pas en avant exige le capteur de distance (PasGuide verifie ensuite chaque trame)."""
+        if self.mode_calme or self.tombe or self.porte or self.courant.nom == "alarme":
+            return
+        if base == "regard":
+            rg = self.etats["regard_guide"]
+            if self.courant.nom != "regard_guide":
+                rg.lacet = rg.tangage = 0.0
+            rg.oriente(detail)
+            if self.courant.nom == "regard_guide":
+                self.fin_etat = self.t_etat + rg.duree(self)      # chaque cran prolonge la pose
+            else:
+                self._bascule("regard_guide")
+            return
+        if detail not in ("avance", "gauche", "droite"):
+            return
+        if detail == "avance" and self.ctx.extras.get("tof") is None:
+            return
+        if self.ctx.sitting:
+            self.ctx.toggle_sit()               # on le releve d'abord
+        self.suivant_force = None
+        self.etats["pas_guide"].mouvement = detail
+        self._bascule("pas_guide")
 
     def _sur_vacarme(self, fort):
         """Ambiance tres bruyante et prolongee (fete, dispute, travaux ; audio.py) : il se retire dans son coin de sieste

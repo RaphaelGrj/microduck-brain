@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1f2a37">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Microduck">
+  <title>Microduck</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icone.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icone.svg">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <!-- Appairage : le code de [appli] dans ha.toml, garde sur ce telephone -->
+  <section id="appairage" class="ecran" hidden>
+    <div class="carte appairage">
+      <img src="/icone.svg" alt="" width="88" height="88">
+      <h1>Microduck</h1>
+      <p>Entre le code d'appairage de ton canard (section <code>[appli]</code> de <code>ha.toml</code>).</p>
+      <form id="form-code">
+        <input id="code" type="password" autocomplete="current-password" inputmode="text" placeholder="Code"
+               aria-label="Code d'appairage" required minlength="6">
+        <button type="submit" class="principal">Se connecter</button>
+      </form>
+      <p id="erreur-code" class="erreur" role="alert"></p>
+    </div>
+  </section>
+
+  <section id="appli" class="ecran" hidden>
+    <header class="entete">
+      <div>
+        <h1 id="titre">Microduck</h1>
+        <p id="sous-titre" class="discret">Connexion…</p>
+      </div>
+      <span id="liaison" class="pastille" title="Liaison avec le canard">●</span>
+    </header>
+
+    <main>
+      <!-- Accueil -->
+      <div class="page" data-page="accueil">
+        <div class="carte heros">
+          <div class="etat-courant">
+            <span class="libelle">En ce moment</span>
+            <strong id="etat">—</strong>
+          </div>
+          <div id="alertes"></div>
+        </div>
+        <div class="grille">
+          <div class="carte jauge"><span class="libelle">Énergie</span><div class="barre"><i id="b-energie"></i></div><b id="v-energie">—</b></div>
+          <div class="carte jauge"><span class="libelle">Éveil</span><div class="barre"><i id="b-eveil"></i></div><b id="v-eveil">—</b></div>
+          <div class="carte jauge"><span class="libelle">Batterie</span><div class="barre"><i id="b-batterie"></i></div><b id="v-batterie">—</b></div>
+          <div class="carte"><span class="libelle">À la maison</span><b id="presents">—</b></div>
+        </div>
+        <div class="carte">
+          <h2>Aujourd'hui</h2>
+          <ul id="du-jour" class="pastilles"></ul>
+        </div>
+      </div>
+
+      <!-- Jouer -->
+      <div class="page" data-page="jouer" hidden>
+        <div class="carte">
+          <h2>Jeux</h2>
+          <div class="boutons">
+            <button data-cmd="jouer_balle">⚽ Balle</button>
+            <button data-cmd="jouer_cache">🙈 Cache-cache</button>
+            <button data-cmd="jouer_soleil">☀️ 1-2-3 soleil</button>
+            <button data-cmd="danse">🎵 Danse</button>
+          </div>
+          <button data-cmd="fin_jeu" class="large">Fin du jeu</button>
+        </div>
+        <div class="carte">
+          <h2>Tours</h2>
+          <div class="boutons">
+            <button data-cmd="salut">👋 Salut</button>
+            <button data-cmd="toupie">🌀 Toupie</button>
+            <button data-cmd="assis">🪑 Assis / debout</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Télécommande -->
+      <div class="page" data-page="commande" hidden>
+        <div class="carte">
+          <h2>Marcher</h2>
+          <p class="discret">Petits pas guidés : il refuse d'avancer s'il y a un obstacle ou un vide. Pas de marche arrière (il ne voit pas derrière).</p>
+          <div class="croix">
+            <span></span><button data-cmd="avance" aria-label="Avancer">▲</button><span></span>
+            <button data-cmd="gauche" aria-label="Tourner à gauche">⟲</button>
+            <button data-cmd="stop" class="danger" aria-label="Stop">■</button>
+            <button data-cmd="droite" aria-label="Tourner à droite">⟳</button>
+          </div>
+        </div>
+        <div class="carte">
+          <h2>Regarder</h2>
+          <div class="croix">
+            <span></span><button data-cmd="regard_haut" aria-label="Regarder en haut">↑</button><span></span>
+            <button data-cmd="regard_gauche" aria-label="Regarder à gauche">←</button>
+            <button data-cmd="regard_centre" aria-label="Regarder devant">●</button>
+            <button data-cmd="regard_droite" aria-label="Regarder à droite">→</button>
+            <span></span><button data-cmd="regard_bas" aria-label="Regarder en bas">↓</button><span></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Maintenance -->
+      <div class="page" data-page="sante" hidden>
+        <div class="carte">
+          <h2>Diagnostic</h2>
+          <p id="diag-resume" class="discret">—</p>
+          <ul id="diag-detail" class="liste"></ul>
+          <button data-cmd="diagnostic" class="principal large">Lancer le diagnostic</button>
+        </div>
+        <div class="carte">
+          <h2>Batterie</h2>
+          <dl class="valeurs" id="batt"></dl>
+        </div>
+        <div class="carte">
+          <h2>Servos et températures</h2>
+          <dl class="valeurs" id="servos"></dl>
+        </div>
+        <div class="carte">
+          <h2>Chutes</h2>
+          <dl class="valeurs" id="chutes"></dl>
+        </div>
+        <p class="discret centre" id="version"></p>
+      </div>
+
+      <!-- Caractère et mémoire -->
+      <div class="page" data-page="caractere" hidden>
+        <div class="carte">
+          <h2>Personnalité</h2>
+          <div id="traits"></div>
+        </div>
+        <div class="carte">
+          <h2>Sa voix</h2>
+          <p class="discret">Ses petits sons préférés : ceux qui font réagir la maison reviennent plus souvent.</p>
+          <div id="sons"></div>
+        </div>
+        <div class="carte">
+          <h2>Ceux qu'il connaît</h2>
+          <ul id="etres" class="liste"></ul>
+        </div>
+      </div>
+
+      <!-- Réglages -->
+      <div class="page" data-page="reglages" hidden>
+        <div class="carte">
+          <h2>Modes</h2>
+          <div class="reglage"><div><b>Mode calme</b><p class="discret">Assis, silencieux, il ne bouge plus.</p></div>
+            <button id="t-calme" class="bascule" role="switch" aria-checked="false"></button></div>
+          <div class="reglage"><div><b>Mode garde</b><p class="discret">Maison vide : il signale une voix, un choc, des coups à la porte.</p></div>
+            <button id="t-garde" class="bascule" role="switch" aria-checked="false"></button></div>
+          <div class="reglage"><div><b>Taquineries</b><p class="discret">Les couper 30 minutes.</p></div>
+            <button data-cmd="stop_taquinerie">Couper</button></div>
+        </div>
+        <div class="carte">
+          <h2>Ce téléphone</h2>
+          <button id="oublier" class="large">Oublier le code</button>
+        </div>
+      </div>
+
+      <!-- Journal -->
+      <div class="page" data-page="journal" hidden>
+        <div class="carte">
+          <h2>Ce qu'il a fait</h2>
+          <ol id="journal" class="liste chrono"></ol>
+        </div>
+      </div>
+    </main>
+
+    <nav class="onglets" aria-label="Sections">
+      <button data-onglet="accueil" aria-current="page"><span>🏠</span>Accueil</button>
+      <button data-onglet="jouer"><span>⚽</span>Jouer</button>
+      <button data-onglet="commande"><span>🕹️</span>Commander</button>
+      <button data-onglet="sante"><span>🩺</span>Santé</button>
+      <button data-onglet="caractere"><span>🦆</span>Caractère</button>
+      <button data-onglet="reglages"><span>⚙️</span>Réglages</button>
+      <button data-onglet="journal"><span>📜</span>Journal</button>
+    </nav>
+    <div id="toast" role="status" aria-live="polite"></div>
+  </section>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -29,5 +29,11 @@ def fermeture(depart="canard"):
     return sorted(f"{m}.py" for m in vus)
 
 
+def a_copier(depart="canard"):
+    """Les modules, plus les dossiers de donnees qu'ils servent (l'interface de l'application Microduck)."""
+    fichiers = fermeture(depart)
+    return fichiers + (["interface/"] if "appli.py" in fichiers else [])
+
+
 if __name__ == "__main__":
-    print("\n".join(fermeture(*sys.argv[1:])))
+    print("\n".join(a_copier(*sys.argv[1:])))

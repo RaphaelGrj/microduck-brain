@@ -97,6 +97,7 @@ def lire_config(chemin):
         "interrupteur_calme": ha.get("interrupteur_calme"),
         "satellite_vocal": ha.get("satellite_vocal"),
         "cerveau": brut.get("cerveau", {}),
+        "appli": brut.get("appli", {}),
         "ignorees": [],
     }
     for hab in brut.get("habitant", []):        # presence HA (person.*) -> accueil au retour

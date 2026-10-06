@@ -48,7 +48,17 @@ def lire_heure(v):
     return None
 
 
-def assembler(client, args, log=print, cfg=None, cerveau=None):
+def version_du_cerveau():
+    """Le commit du cerveau (affiche dans l'application, section Maintenance)."""
+    import subprocess
+    try:
+        return subprocess.run(["git", "-C", str(Path(__file__).parent), "log", "-1", "--format=%h %cs"],
+                              capture_output=True, text=True, timeout=3).stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def assembler(client, args, log=print, cfg=None, cerveau=None, appli_cfg=None):
     """-> dict(extras, sources, crochets, options, pont, fils) ; `cfg` = config HA deja lue (ou None), `cerveau` =
     section [cerveau] du fichier de config (lue meme sans Home Assistant : le canard vit sans lui)."""
     cerveau = cerveau if cerveau is not None else ((cfg or {}).get("cerveau") or {})
@@ -108,6 +118,17 @@ def assembler(client, args, log=print, cfg=None, cerveau=None):
         fils.append(micro)
         sources.append(micro.source)
         log(f"micro : {os.environ.get('MICRODUCK_MICRO') or 'peripherique ALSA par defaut'} (reflexes sonores)")
+    appli = None
+    appli_cfg = appli_cfg if appli_cfg is not None else ((cfg or {}).get("appli") or {})
+    if appli_cfg.get("code") and not pont_ha.est_vide(appli_cfg.get("code")):
+        import appli as appli_mod
+        try:
+            appli = appli_mod.Appli(appli_cfg["code"], port=int(appli_cfg.get("port", appli_mod.PORT_DEFAUT)), log=log,
+                                    version=version_du_cerveau())
+            sources.append(appli.source)
+            crochets.append(appli.photographier)
+        except ValueError as e:
+            log(f"application Microduck desactivee : {e}")
     pont, options = None, pont_ha.options_cerveau({"cerveau": cerveau})
     if cfg is not None:
         pont = pont_ha.PontHA(cfg, pont_ha.lire_jeton(cfg), log=log)
@@ -116,7 +137,8 @@ def assembler(client, args, log=print, cfg=None, cerveau=None):
         log("Home Assistant : " + cfg["url"])
     if options:
         log(f"routines : {options}")
-    return {"extras": extras, "sources": sources, "crochets": crochets, "options": options, "pont": pont, "fils": fils}
+    return {"extras": extras, "sources": sources, "crochets": crochets, "options": options, "pont": pont, "fils": fils,
+            "appli": appli}
 
 
 def main():
@@ -124,11 +146,12 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     chemin = Path(args[0]) if args else Path(__file__).parent / "ha.toml"
     duree = float(args[1]) if len(args) > 1 else 10 * 365 * 86400.0
-    cfg, cerveau = None, {}
+    cfg, cerveau, appli_cfg = None, {}, {}
     if chemin.exists():
         pont_ha.avertir_si_non_ignore(chemin)
         cfg = pont_ha.lire_config(chemin)
         cerveau = cfg.get("cerveau") or {}
+        appli_cfg = cfg.get("appli") or {}
         if "--sans-ha" in sys.argv:
             cfg = None
         elif cfg["url"] is None:
@@ -137,11 +160,13 @@ def main():
     c = RobotdClient(SOCK_PATH)
     hz = ((cfg or {}).get("reseau") or {}).get("etat_hz")
     c.request("robot.subscribe", {"hz": int(hz)} if isinstance(hz, int) and 10 <= hz <= 50 else {})
-    a = assembler(c, sys.argv[1:], log=lambda m: print(m, flush=True), cfg=cfg, cerveau=cerveau)
+    a = assembler(c, sys.argv[1:], log=lambda m: print(m, flush=True), cfg=cfg, cerveau=cerveau, appli_cfg=appli_cfg)
     for f in a["fils"]:
         f.start()
     if a["pont"] is not None:
         a["pont"].demarrer()
+    if a["appli"] is not None:
+        a["appli"].demarrer()
 
     def source():
         return [e for s in a["sources"] for e in s()]
@@ -161,6 +186,8 @@ def main():
             f.actif = False
         if a["pont"] is not None:
             a["pont"].stop()
+        if a["appli"] is not None:
+            a["appli"].arreter()
         mem = a["extras"].get("memoire")
         if mem is not None and hasattr(mem, "fermer"):
             mem.fermer()

@@ -6,7 +6,7 @@ import math
 import zlib
 
 import gestures
-from etats_base import Etat, Sequence, TETE_PROMENADE, _regarder
+from etats_base import Etat, Sequence, TETE_PROMENADE, V_PROMENADE, V_ROTATION, _regarder
 from navigation import AllerVers
 
 
@@ -607,3 +607,64 @@ class BaillementContagieux(Sequence):
     def sort(self, brain):
         brain.ctx.bouche(0.0)
         super().sort(brain)
+
+
+class PasGuide(Etat):
+    """Petit pas guide depuis l'application (telecommande) : avancer ~1 s, ou tourner sur place. Memes garde-fous que la
+    promenade : capteur de distance obligatoire, 60 cm libres devant et AUCUN vide, verifie a chaque trame (sinon arret
+    net et un "inquire") ; jamais de recul (le capteur ne voit pas derriere). Vitesses au-dessus de la zone morte."""
+    nom = "pas_guide"
+    LIBRE_AVANT_M = 0.6
+
+    def __init__(self):
+        self.mouvement = "avance"
+
+    def entre(self, brain):
+        self.bloque = False
+
+    def duree(self, brain):
+        return 1.2 if self.mouvement == "avance" else 0.9
+
+    def pas(self, brain, t):
+        if self.bloque or t < 0.15:
+            brain.ctx.head((0.0, TETE_PROMENADE if self.mouvement == "avance" else 0.0, 0.0, 0.0))
+            brain.ctx.move()
+            return
+        if self.mouvement in ("gauche", "droite"):
+            brain.ctx.head((0.0, 0.0, 0.0, 0.0))
+            brain.ctx.move(vyaw=V_ROTATION if self.mouvement == "gauche" else -V_ROTATION)
+            return
+        brain.ctx.head((0.0, TETE_PROMENADE, 0.0, 0.0))
+        tof = brain.ctx.extras.get("tof")
+        lib = tof.libre(brain.ctx.state) if tof is not None and brain.ctx.state is not None else None
+        if lib is None or lib.get("devant", 0.0) < self.LIBRE_AVANT_M or lib.get("vide", math.inf) < self.LIBRE_AVANT_M:
+            self.bloque = True                  # obstacle, vide ou capteur muet : on ne fait pas ce pas
+            brain.ctx.move()
+            brain.son_une_fois("bloque", "inquire")
+            return
+        brain.ctx.move(vx=V_PROMENADE)
+
+
+class RegardGuide(Etat):
+    """Regard guide depuis l'application : la tete se tourne par petits crans (gauche, droite, haut, bas, centre) et
+    garde la pose quelques secondes, puis il reprend sa vie."""
+    nom = "regard_guide"
+    CRAN_LACET, CRAN_TANGAGE = 0.3, 0.2
+
+    def __init__(self):
+        self.lacet, self.tangage = 0.0, 0.0
+
+    def oriente(self, sens):
+        if sens == "centre":
+            self.lacet = self.tangage = 0.0
+        elif sens in ("gauche", "droite"):
+            self.lacet = max(-0.8, min(0.8, self.lacet + (self.CRAN_LACET if sens == "gauche" else -self.CRAN_LACET)))
+        elif sens in ("haut", "bas"):
+            self.tangage = max(-0.4, min(0.5, self.tangage + (-self.CRAN_TANGAGE if sens == "haut" else self.CRAN_TANGAGE)))
+
+    def duree(self, brain):
+        return 6.0
+
+    def pas(self, brain, t):
+        brain.ctx.head((0.0, self.tangage, self.lacet, 0.0))
+        brain.ctx.move()

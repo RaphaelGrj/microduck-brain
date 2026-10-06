@@ -201,6 +201,13 @@ entite = "A_REMPLIR"                # ex. "light.salon"
                                     # HA "microduck_garde" {type: voix|choc|bruit|porte} pour tes automatisations
                                     # (notification...). Seul le TYPE de son est envoyé, jamais le son.
 
+# ---- 7 bis. Application Microduck (téléphone, sans Home Assistant) ---------------------------------
+# Le canard sert lui-même son application : sur le téléphone (même Wi-Fi), ouvre http://<ip-du-canard>:8090, entre le
+# code ci-dessous, puis « Ajouter à l'écran d'accueil ». Réseau local seulement ; aucune image ni aucun son n'y passe.
+[appli]
+code = "A_REMPLIR"                  # au moins 6 caractères : la clé de ton canard sur le réseau (pas ton mot de passe)
+port = 8090
+
 # ---- 8. Tes notes (ignorées par le programme) ------------------------------------------------------
 [notes]
 libre = """
