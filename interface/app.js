@@ -63,7 +63,7 @@ async function commande(nom, quoi) {
     await api("/api/commande", { commande: nom });
     toast(quoi || "Envoyé");
   } catch (e) {
-    toast(e.message === "code" ? "Code refusé" : "Le canard ne répond pas");
+    toast(e.message === "code" ? "Code refusé" : "Microduck ne répond pas");
   }
 }
 
@@ -232,7 +232,7 @@ async function entrer(c) {
     ecouter();
   } catch (x) {
     $("#appli").hidden = true; $("#appairage").hidden = false;
-    texte("#erreur-code", x.message === "code" ? "Code refusé." : "Le canard ne répond pas (même Wi-Fi ?).");
+    texte("#erreur-code", x.message === "code" ? "Code refusé." : "Microduck ne répond pas (même Wi-Fi ?).");
   }
 }
 

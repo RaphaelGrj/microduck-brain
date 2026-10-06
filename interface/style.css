@@ -1,31 +1,34 @@
+/* Couleurs du Microduck : coque orange, blanc, gris clair de la tete, anthracite des servos. */
 :root {
-  --fond: #f4f1ea;
+  --orange: #f26a1b;            /* la coque : jauges, onglet actif, liseres */
+  --orange-fonce: #c24a08;      /* boutons a texte blanc (contraste AA) */
+  --fond: #f5f4f2;
   --carte: #ffffff;
-  --texte: #1f2a37;
-  --discret: #6b7280;
-  --accent: #e0a91f;
-  --accent-texte: #1f2a37;
+  --texte: #23252b;
+  --discret: #6b6e75;
+  --accent: var(--orange);
+  --accent-texte: #ffffff;
   --ok: #2f855a;
   --alerte: #c2410c;
   --danger: #b91c1c;
-  --bord: #e5e1d8;
-  --barre: #ece7dc;
-  --ombre: 0 1px 2px rgba(0, 0, 0, .06), 0 4px 14px rgba(0, 0, 0, .05);
+  --bord: #e7e4df;
+  --barre: #efede9;
+  --ombre: 0 1px 2px rgba(35, 37, 43, .06), 0 6px 18px rgba(35, 37, 43, .06);
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --fond: #11161d;
-    --carte: #1a222c;
-    --texte: #eef1f4;
-    --discret: #9aa4b1;
-    --accent: #f6c84c;
-    --accent-texte: #11161d;
+    --fond: #16171a;
+    --carte: #212226;
+    --texte: #f3f2f0;
+    --discret: #a3a6ad;
+    --orange-fonce: #f26a1b;
+    --accent-texte: #16171a;
     --ok: #4ade80;
     --alerte: #fb923c;
     --danger: #f87171;
-    --bord: #2a3441;
-    --barre: #263140;
+    --bord: #33353b;
+    --barre: #2c2e33;
     --ombre: none;
     color-scheme: dark;
   }
@@ -55,9 +58,12 @@ main { max-width: 640px; margin: 0 auto; padding: 0 16px 16px; }
   position: sticky; top: 0; z-index: 2;
   display: flex; align-items: center; justify-content: space-between;
   padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
-  background: var(--fond);
-  max-width: 640px; margin: 0 auto;
+  background: var(--carte);
+  border-bottom: 3px solid var(--orange);
+  margin: 0 0 14px;
 }
+.entete > div { max-width: 640px; }
+.entete h1 span { color: var(--orange); }
 .pastille { font-size: 1.1rem; color: var(--discret); }
 .pastille.ok { color: var(--ok); }
 .pastille.ko { color: var(--danger); }
@@ -77,6 +83,8 @@ main { max-width: 640px; margin: 0 auto; padding: 0 16px 16px; }
 #alertes:not(:empty) { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
 .etiquette { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: .8rem; background: var(--barre); }
 .etiquette.alerte { background: color-mix(in srgb, var(--alerte) 18%, transparent); color: var(--alerte); }
+h2 { display: flex; align-items: center; gap: 8px; }
+h2::before { content: ""; width: 4px; height: 1em; border-radius: 2px; background: var(--orange); }
 
 .jauge b { font-size: 1.05rem; }
 .barre { height: 8px; border-radius: 99px; background: var(--barre); overflow: hidden; margin: 8px 0 6px; }
@@ -84,6 +92,7 @@ main { max-width: 640px; margin: 0 auto; padding: 0 16px 16px; }
 
 .pastilles { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
 .pastilles li { background: var(--barre); padding: 6px 12px; border-radius: 999px; font-size: .9rem; }
+.pastilles li b { color: var(--orange-fonce); }
 .pastilles li b { margin-right: 4px; }
 .liste { list-style: none; margin: 0; padding: 0; }
 .liste li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--bord); }
@@ -104,7 +113,7 @@ button {
 }
 button:active { transform: scale(.97); }
 button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-button.principal { background: var(--accent); color: var(--accent-texte); border-color: transparent; font-weight: 600; }
+button.principal { background: var(--orange-fonce); color: var(--accent-texte); border-color: transparent; font-weight: 600; }
 button.danger { background: var(--danger); color: #fff; border-color: transparent; }
 button.large { width: 100%; margin-top: 10px; }
 .boutons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -116,7 +125,7 @@ button.large { width: 100%; margin-top: 10px; }
 .reglage:last-child { border-bottom: 0; }
 .bascule { width: 56px; min-height: 32px; height: 32px; padding: 0; border-radius: 99px; position: relative; flex: none; }
 .bascule::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: var(--carte); box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: left .2s; }
-.bascule[aria-checked="true"] { background: var(--accent); }
+.bascule[aria-checked="true"] { background: var(--orange); }
 .bascule[aria-checked="true"]::after { left: 27px; }
 
 .trait { margin-bottom: 10px; }
@@ -133,7 +142,8 @@ button.large { width: 100%; margin-top: 10px; }
   font-size: .62rem; color: var(--discret); display: flex; flex-direction: column; align-items: center; gap: 2px;
 }
 .onglets button span { font-size: 1.2rem; }
-.onglets button[aria-current="page"] { color: var(--texte); font-weight: 600; background: var(--barre); }
+.onglets button[aria-current="page"] { color: var(--orange-fonce); font-weight: 700; background: color-mix(in srgb, var(--orange) 12%, transparent); }
+.onglets { border-top: 1px solid var(--bord); box-shadow: 0 -4px 16px rgba(35, 37, 43, .05); }
 
 .appairage { max-width: 380px; margin: 12vh auto 0; text-align: center; }
 .appairage form { display: grid; gap: 10px; margin-top: 16px; }
@@ -152,7 +162,7 @@ input {
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
 /* --- le Microduck (images rendues depuis le modele 3D officiel) ----------------------------------------------- */
-.heros { display: flex; align-items: center; gap: 12px; }
+.heros { display: flex; align-items: center; gap: 12px; border-left: 4px solid var(--orange); }
 .heros .etat-courant { flex: 1; min-width: 0; }
 .microduck { position: relative; width: 120px; height: 138px; flex: none; }
 .microduck img { width: 100%; height: 100%; object-fit: contain; transform-origin: 50% 100%;
@@ -177,3 +187,5 @@ input {
 @media (prefers-reduced-motion: reduce) { .microduck * { animation: none !important; } }
 
 .appairage .icone { border-radius: 22px; }
+.appairage h1 span { color: var(--orange); }
+.appairage { border-top: 4px solid var(--orange); }

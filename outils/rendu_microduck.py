@@ -78,7 +78,7 @@ def rendre(m, d, r):
 
 
 def icone(m, d, r):
-    """L'icone de l'appli : la tete du Microduck en gros plan, sur le fond sombre de l'appli, 512 x 512 (PNG : iPhone)."""
+    """L'icone de l'appli : la tete du Microduck en gros plan, sur l'orange Microduck, 512 x 512 (PNG : iPhone)."""
     poser(m, d, "STAND", (0, -0.05, 0.25, 0), {})
     cam = mujoco.MjvCamera()
     tete = d.xpos[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, m.body(m.jnt_bodyid[TETE_ROULIS - 6]).name)]
@@ -90,7 +90,7 @@ def icone(m, d, r):
     r.update_scene(d, camera=cam)
     prof = r.render().copy()
     r.disable_depth_rendering()
-    fond = np.array([31, 42, 55], dtype=np.uint8)
+    fond = np.array([242, 106, 27], dtype=np.uint8)          # orange Microduck
     objet = (prof < prof.max() * 0.999)[:, :, None]
     Image.fromarray(np.where(objet, rgb, fond)).save(SORTIE.parent / "icone.png", optimize=True)
 

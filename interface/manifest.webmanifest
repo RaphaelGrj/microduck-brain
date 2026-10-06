@@ -4,8 +4,8 @@
   "description": "Gérer ton canard : son humeur, ses jeux, sa santé, ses réglages.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#1f2a37",
-  "theme_color": "#1f2a37",
+  "background_color": "#ffffff",
+  "theme_color": "#f26a1b",
   "lang": "fr",
   "icons": [{"src": "/icone.png", "sizes": "512x512", "type": "image/png", "purpose": "any"}]
 }
