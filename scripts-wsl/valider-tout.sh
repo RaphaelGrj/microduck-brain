@@ -20,7 +20,7 @@ for s in run-scene.sh start-duck.sh restart-duck.sh wait-duck.sh; do
 done
 
 echo; echo "=== 1. Tests (sans simulateur)"
-if ! uv run --with pytest pytest -q $(ls test_*.py | grep -v test_chat_affiche) 2>&1 | tail -3; then
+if ! uv run --with pytest pytest -q -rf $(ls test_*.py | grep -v test_chat_affiche) 2>&1 | tail -40; then
   echo "ECHEC des tests : on s'arrete la"; exit 1
 fi
 

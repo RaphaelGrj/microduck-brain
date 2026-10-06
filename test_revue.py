@@ -434,3 +434,72 @@ def test_w_autotest_tete_mesuree_meme_a_10_hz():
         b.tick({"t": 0.05 + k * 0.1, "safety": {"fallen": False}, "policy": "stand", "joints": joints,
                 "targets": [0.0] * 15}, 0.1)
     assert b.diagnostic.autotest.resultats["tete_lacet"][0], b.diagnostic.autotest.resultats
+
+
+# --- relecture des actions HA et du mode garde ---------------------------------------------------------------------
+def test_x_actions_dangereuses_ou_mal_ecrites_ignorees():
+    import pont_ha
+    la = pont_ha.lire_action
+    assert la({"quand": "accueil", "service": "light.turn_on"}) is None, "sans cible : toute la maison"
+    assert la({"quand": "accueil", "service": "light.turn_on", "donnees": {"entity_id": "A_REMPLIR"}}) is None
+    assert la({"quand": "accueil", "service": "notify.notify", "donnees": {"message": "coucou"}}) is not None
+    assert la({"quand": "accueil", "service": "light.turn_on", "donnees": {"area_id": "salon"}}) is not None
+    for h in (["22", "6"], "22-6"):
+        assert la({"quand": "nap", "service": "scene.turn_on", "entite": "scene.nuit", "heures": h})["heures"] == (22, 6)
+    for h in ([22], [7, 7], [25, 6], "nuit"):
+        assert la({"quand": "nap", "service": "scene.turn_on", "entite": "scene.nuit", "heures": h}) is None, h
+    assert la({"quand": "nap", "service": "scene.turn_on", "entite": "scene.nuit", "delai_min_s": "vite"}) is None
+    assert la({"voix": "danse", "service": "light.toggle", "entite": "light.x"}, interdites={"danse"}) is None
+
+
+def test_x_voix_et_quand_ne_se_melangent_pas_et_pas_de_double_sonnette():
+    import pont_ha
+    a = pont_ha.lire_action({"voix": "ouvre", "quand": "sonnette", "service": "lock.unlock", "entite": "lock.x"})
+    assert a["voix_evt"] == "maison:ouvre"
+    etats = {"sonnette", "chill"}
+    assert pont_ha.action_concernee(a, "maison:ouvre", etats)
+    assert pont_ha.action_concernee(a, "etat:sonnette", etats) and not pont_ha.action_concernee(a, "sonnette:Entree", etats)
+    e = pont_ha.lire_action({"quand": "evenement:sonnette", "service": "notify.notify"})
+    assert pont_ha.action_concernee(e, "sonnette:Entree", etats) and not pont_ha.action_concernee(e, "etat:sonnette", etats)
+
+
+def test_x_garde_ne_s_entend_pas_lui_meme_et_presence_incomplete():
+    import time as _t
+    from test_vie_maison import cerveau as cerveau_vie, vivre
+    b, _, _ = cerveau_vie(garde=True)
+    alertes = []
+    b.ecouteurs.append(lambda e: alertes.append(e) if e.startswith("garde:") else None)
+    vivre(b, 1, evenements=[(0.1, "presence:Raphael|absent"), (0.2, "presence:Julie|inconnu")])
+    vivre(b, 1, evenements=[(0.1, "voix")])
+    assert alertes == [], "Julie : etat inconnu, la maison n'est pas vide"
+    vivre(b, 1, evenements=[(0.1, "depart:Julie")])
+    b.ctx.t_dernier_son = _t.monotonic()        # il vient de faire "coo"
+    vivre(b, 1, evenements=[(0.1, "voix")])
+    assert alertes == [], "c'etait lui"
+    b.ctx.t_dernier_son = -1e9
+    b._bascule("chill")
+    vivre(b, 1, evenements=[(0.1, "voix")])
+    assert alertes == ["garde:voix"]
+
+
+def test_x_journal_du_jour_a_minuit_et_apres_redemarrage():
+    from test_vie_maison import cerveau as cerveau_vie, vivre
+
+    class Mem:
+        donnees = {}
+
+        def sauver(self):
+            pass
+    m = Mem()
+    b, _, h = cerveau_vie(memoire=m)
+    b._bascule("wander")
+    b._bascule("nap")
+    b.etats["nap"].total = 1e9
+    b.fin_etat = 1e9
+    b2, _, _ = cerveau_vie(memoire=m)           # redemarrage dans la journee
+    vivre(b2, 61)
+    assert b2.du_jour.get("siestes", 0) >= 1, "la matinee est reprise"
+    h.jour += 1                                 # (meme horloge partagee ? non : on avance celle de b)
+    b.horloge.jour = h.jour
+    vivre(b, 61)
+    assert b.du_jour == {}, "minuit : remis a zero sans changer d'etat"

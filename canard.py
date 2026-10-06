@@ -96,7 +96,7 @@ def assembler(client, args, log=print, cfg=None, cerveau=None):
         modele = cerveau.get("modele_vosk")
         if modele and Path(modele).expanduser().exists():
             import commandes as cmd
-            maison = {a["voix"]: a["quand"] for a in (cfg or {}).get("actions", []) if a.get("voix")}
+            maison = {a["voix"]: a["voix_evt"] for a in (cfg or {}).get("actions", []) if a.get("voix")}
             commandes = cmd.Commandes(cmd.fabrique_vosk(Path(modele).expanduser()), nom=cerveau.get("nom", "canard"),
                                       maison=maison)
             log(f"commandes vocales locales : '{cerveau.get('nom', 'canard')} ...' (modele {modele}, hors ligne)")

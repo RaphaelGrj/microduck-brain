@@ -230,6 +230,7 @@ class Brain:
         self.objet_nouveau = None               # distance (m) devant de l'objet nouvellement remarque
         self.objets_au_sol = []                 # (heure murale, x, y odom) des objets nouveaux remarques : vers HA
         self.presence_suivie = False            # presence initiale lue dans HA : "personne a la maison" a un sens
+        self.presence_inconnue = set()          # habitants dont HA ne sait pas l'etat : la maison n'est pas "vide"
         self.lumiere = None                     # derniere luminosite mesuree la nuit, maison vide (0..1)
         self.lumiere_oubliee = False
         self._t_lumiere = -1e9
@@ -292,9 +293,18 @@ class Brain:
 
     # -- evenements externes (plus tard : micro, camera, HA...) --
     def evenement(self, nom):
+        if not isinstance(nom, str) or not nom:
+            return
         self.evenements.append(nom)
+        self._previent(nom)
+
+    def _previent(self, quoi):
+        """Ecouteurs (pont_ha...) : une erreur chez eux ne doit jamais arreter le canard."""
         for f in self.ecouteurs:
-            f(nom)
+            try:
+                f(quoi)
+            except Exception as e:
+                print(f"  (ecouteur {getattr(f, '__name__', f)} : {type(e).__name__}: {e})", flush=True)
 
     def _traite_evenements(self):
         while self.evenements:
@@ -355,11 +365,12 @@ class Brain:
             if base in ("vacarme", "vacarme_fin"):
                 self._sur_vacarme(base == "vacarme")   # meme pendant la sieste : la fin du vacarme doit etre vue
                 continue
-            if base == "maison":
-                # commande domotique dite a la voix (commandes.py) : pont_ha appelle le service HA configure ; le
-                # canard, lui, accuse reception d'un petit signe - en son de canard, jamais en mots
-                if not self.mode_calme and self.courant.nom in ("chill", "look", "wander", "jeu_solitaire"):
-                    self._bascule("compris")
+            if base in ("maison", "maison_ok", "maison_refus"):
+                # commande domotique dite a la voix (commandes.py) : pont_ha appelle le service HA et repond
+                # maison_ok / maison_refus ; le canard accuse reception en son de canard, jamais en mots
+                if base != "maison" and not self.mode_calme and self.courant.nom in ("chill", "look", "wander",
+                                                                                      "jeu_solitaire"):
+                    self._bascule("compris" if base == "maison_ok" else "hesite")
                 continue
             if base == "ton":
                 # Le ton sur lequel on dit son nom (commandes.py), sans comprendre les mots : grondé -> penaud, tete
@@ -396,6 +407,7 @@ class Brain:
                 self.differes.append(nom)       # ni son ni geste pendant que quelqu'un parle au canard
                 continue
             if base in ("retour", "depart"):
+                self.presence_inconnue.discard(detail.partition("|")[0])
                 # presence d'un habitant (person.* dans HA) : "retour:Nom|absence_s", "depart:Nom"
                 qui, _, absence = detail.partition("|")
                 mem = self.ctx.extras.get("memoire")
@@ -911,8 +923,7 @@ class Brain:
         if experience:
             self.perso.vit(experience)
         self.courant = self.etats[nom]
-        for f in self.ecouteurs:
-            f(f"etat:{nom}")
+        self._previent(f"etat:{nom}")
         self._sons_etat = set()
         self.courant.entre(self)
         self.t_etat = 0.0
@@ -1010,21 +1021,36 @@ class Brain:
     SONS_GARDE = {"voix": "voix", "intonation": "voix", "discussion_longue": "voix", "silence_conversation": "voix",
                   "bruit": "choc", "petarades": "choc", "son_bref": "bruit", "toc_porte": "porte"}
     GARDE_DELAI_S = 600.0
+    REPOS_GARDE = ("chill", "look", "nap")
 
     def _veille_garde(self, base):
         type_son = self.SONS_GARDE.get(base)
         if (type_son is None or not self.ctx.extras.get("garde") or not self.presence_suivie or self.presents
+                or self.presence_inconnue
                 or self.t_global - self.derniere_fois.get(f"garde:{type_son}", -1e9) < self.GARDE_DELAI_S):
             return
+        if (self.tombe or self.courant.nom not in self.REPOS_GARDE
+                or time.monotonic() - getattr(self.ctx, "t_dernier_son", -1e9) < 5.0):
+            return                              # ses propres sons, ses pas, une chute : ce n'est pas un intrus
         self.derniere_fois[f"garde:{type_son}"] = self.t_global
         print(f"[{self.t_global:6.1f}s] garde : {type_son} entendu, personne a la maison", flush=True)
-        for f in self.ecouteurs:
-            f(f"garde:{type_son}")
+        self._previent(f"garde:{type_son}")
+
+    def _change_de_jour(self):
+        """Le journal du jour repart de zero a minuit (meme s'il dort) ; il est garde dans la memoire du canard."""
+        jour = getattr(self.horloge(), "tm_yday", None)
+        mem = self.ctx.extras.get("memoire")
+        d = mem.donnees.setdefault("journal_jour", {}) if mem is not None and hasattr(mem, "donnees") else None
+        if getattr(self, "_jour_compte", None) is None and d and d.get("jour") == jour:
+            self.du_jour = dict(d.get("compte", {}))      # redemarrage dans la journee : on reprend la matinee
+        elif getattr(self, "_jour_compte", None) != jour:
+            self.du_jour = {}
+        self._jour_compte = jour
+        if d is not None:
+            d["jour"], d["compte"] = jour, self.du_jour
 
     def _compte_du_jour(self, nom):
-        jour = getattr(self.horloge(), "tm_yday", None)
-        if getattr(self, "_jour_compte", None) != jour:
-            self._jour_compte, self.du_jour = jour, {}
+        self._change_de_jour()
         cat = self.CATEGORIES_JOUR.get(nom) or ("blagues" if getattr(self.etats[nom], "taquinerie", False) else None)
         if cat:
             self.du_jour[cat] = self.du_jour.get(cat, 0) + 1
@@ -1061,6 +1087,7 @@ class Brain:
             # etat initial lu dans HA au demarrage (pont_ha.lire_presence_initiale) : ni accueil ni rituel
             qui, _, ou = detail.partition("|")
             (self.presents.add if ou == "home" else self.presents.discard)(qui)
+            (self.presence_inconnue.add if ou == "inconnu" else self.presence_inconnue.discard)(qui)
             self.presence_suivie = True
 
     def _sur_vacarme(self, fort):
@@ -1524,6 +1551,7 @@ class Brain:
             self._t_ecoute = self.t_global
         if int(self.t_global / 60.0) != int((self.t_global - dt) / 60.0):
             self.habitudes.avance()             # une fois par minute : changement d'heure
+            self._change_de_jour()
             self.perso.avance(self.t_global)    # retour lent vers son temperament de base
             jour = getattr(self.horloge(), "tm_yday", None)
             if jour != self.perso.d.get("jour_sons"):     # persistant : un redemarrage ne fait pas deriver

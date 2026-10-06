@@ -705,7 +705,8 @@ def test_actions_lues_et_concernees():
     a = cfg["actions"]
     assert len(a) == 4 and cfg["ignorees"] == ["action"], "une action sans quand ni voix est ignoree"
     assert a[0]["donnees"] == {"brightness_pct": 60, "entity_id": "light.entree"}
-    assert a[1]["quand"] == "maison:lumiere_du_salon" and a[1]["voix"] == "lumiere du salon"
+    assert a[1]["voix_evt"] == "maison:lumiere_du_salon" and a[1]["voix"] == "lumiere du salon"
+    assert a[1]["delai_min_s"] == 2.0 and a[0]["delai_min_s"] == 60.0
     assert pont_ha.action_concernee(a[0], "etat:accueil") and not pont_ha.action_concernee(a[0], "etat:chill")
     assert pont_ha.action_concernee(a[3], "sonnette:Entree")     # l'evenement de HA (puis l'etat : delai_min_s)
     assert not pont_ha.action_concernee(a[1], "maison:autre")
@@ -727,7 +728,7 @@ def test_le_canard_declenche_des_scenes_dans_ha():
     pont = pont_ha.PontHA(cfg, JETON, log=lambda m: None)
     pont.demarrer()
     try:
-        maison = {a["voix"]: a["quand"] for a in cfg["actions"] if a["voix"]}
+        maison = {a["voix"]: a["voix_evt"] for a in cfg["actions"] if a["voix"]}
         cmd = Commandes(lambda g: FauxVosk(g), nom="daffy", maison=maison)
         assert "daffy lumiere du salon" in cmd.reco.grammaire
         b = brain.Brain(FauxClient(), brain.Humeur(energie=0.9), seed=4)
@@ -783,7 +784,11 @@ def test_mode_garde_maison_vide():
                 tick[0] += 1
         vivre(["voix"])                                           # presence inconnue : rien
         vivre(["presence:Raphael|home", "voix"])                  # quelqu'un est la : rien
-        vivre(["depart:Raphael", "voix", "intonation", "toc_porte"])   # maison vide
+        vivre(["depart:Raphael"])                                 # maison vide (petit rituel de depart d'abord)
+        for _ in range(150):
+            vivre([])
+        b.ctx.t_dernier_son = -1e9                                # (son du rituel : il ne s'entend pas lui-meme)
+        vivre(["voix", "intonation", "toc_porte"])
         assert attendre(lambda: len(ha.appels) >= 2, 3.0)
         time.sleep(0.3)
         assert sorted(ha.appels, key=str) == sorted([("evenement", "microduck_garde", {"type": "voix"}),

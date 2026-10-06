@@ -141,8 +141,11 @@ def lire_config(chemin):
             s["reactions"] = app.get("reactions") or REACTIONS_PAR_TYPE.get(app.get("type", ""), {})
         cfg["surveillance"].append(s)
     cfg["actions"] = []
+    from commandes import VOCABULAIRE
+    nom_canard = str((brut.get("cerveau") or {}).get("nom", "canard")).lower()
+    interdites = set(VOCABULAIRE) | {nom_canard}
     for act in brut.get("action", []):          # canard -> maison : scenes et services HA declenches par le canard
-        a = lire_action(act)
+        a = lire_action(act, interdites)
         if a is None:
             cfg["ignorees"].append(act.get("nom") or act.get("quand") or act.get("voix") or "action")
         else:
@@ -159,36 +162,77 @@ def slug(texte):
     return "_".join("".join(c if c.isalnum() else " " for c in t).split())
 
 
-def lire_action(act):
-    """[[action]] de ha.toml -> dict, ou None si incomplete. `quand` : un etat du canard ("accueil", "nap", "bonjour",
-    "alarme"...) ou un evenement ("sonnette", "petarades", "maison:<id>"...) ; `voix` : phrase dite apres son nom
-    ("canard, lumiere") qui declenche l'action (reconnue SUR le canard, commandes.py) ; `service` : "domaine.service"
-    de HA ; `entite`, `donnees` : facultatifs ; `heures` : [debut, fin] (plage horaire, peut franchir minuit) ;
-    `delai_min_s` : pas plus d'une fois par (60 s par defaut)."""
+SANS_CIBLE = {"notify", "script", "persistent_notification", "shell_command", "rest_command"}
+CLES_CIBLE = ("entity_id", "area_id", "device_id", "label_id")
+
+
+def lire_heures(h):
+    """[22, 6] ou "22-6" -> (22, 6) ; None si absent ; False si mal ecrit (l'action est alors ignoree, jamais "toute
+    la journee" par erreur)."""
+    if h is None:
+        return None
+    if isinstance(h, str) and "-" in h:
+        h = h.split("-", 1)
+    if (isinstance(h, (list, tuple)) and len(h) == 2
+            and all(str(x).strip().isdigit() and 0 <= int(x) < 24 for x in h) and int(h[0]) != int(h[1])):
+        return int(h[0]), int(h[1])
+    return False
+
+
+def lire_action(act, interdites=()):
+    """[[action]] de ha.toml -> dict, ou None si incomplete ou dangereuse.
+    `quand` : un etat du canard ("accueil", "nap", "bonjour"...), ou "evenement:<nom>" pour un evenement ("sonnette",
+    "petarades"...) ; `voix` : phrase dite apres son nom ("canard, lumiere du salon"), reconnue SUR le canard
+    (commandes.py) -> evenement "maison:<id>" ; `service` : "domaine.service" de HA ; `entite` ou une cible dans
+    `donnees` : OBLIGATOIRE (sauf notify, script...) - light.turn_on sans cible allumerait toute la maison ;
+    `heures` : [debut, fin] ; `delai_min_s` : 60 s par defaut, 2 s pour une phrase vocale (on peut la redire).
+    `interdites` : phrases deja prises par les commandes du canard (et son nom)."""
     service = act.get("service")
     voix = None if est_vide(act.get("voix")) else " ".join(str(act["voix"]).lower().replace("'", " ").split())
     quand = None if est_vide(act.get("quand")) else str(act["quand"])
     if est_vide(service) or "." not in str(service) or (quand is None and voix is None):
         return None
+    if voix is not None and voix in interdites:
+        return None     # "danse", "silence", son nom... : la commande du canard gagnerait, l'action ne partirait jamais
+    domaine, _, nom_service = str(service).partition(".")
     if "entite" in act and est_vide(act["entite"]):
-        return None     # entite pas encore remplie : SURTOUT pas d'appel sans cible (light.turn_on allumerait TOUT)
-    if quand is None:
-        quand = f"maison:{slug(voix)}"
+        return None
     donnees = dict(act.get("donnees") or {})
     if not est_vide(act.get("entite")):
         donnees.setdefault("entity_id", act["entite"])
-    heures = act.get("heures")
-    heures = tuple(heures) if isinstance(heures, (list, tuple)) and len(heures) == 2 else None
-    domaine, _, nom_service = str(service).partition(".")
-    return {"quand": quand, "voix": voix, "domaine": domaine, "service": nom_service, "donnees": donnees,
-            "heures": heures, "delai_min_s": float(act.get("delai_min_s", 60.0))}
+    if any(k in donnees and est_vide(donnees[k]) for k in CLES_CIBLE):
+        return None
+    if domaine not in SANS_CIBLE and not any(k in donnees for k in CLES_CIBLE):
+        return None     # pas de cible : jamais d'appel "a toute la maison"
+    heures = lire_heures(act.get("heures"))
+    try:
+        delai = float(act.get("delai_min_s", 2.0 if voix else 60.0))
+    except (TypeError, ValueError):
+        return None
+    if heures is False or delai < 0:
+        return None
+    return {"quand": quand, "voix": voix, "voix_evt": f"maison:{slug(voix)}" if voix else None, "domaine": domaine,
+            "service": nom_service, "donnees": donnees, "heures": heures, "delai_min_s": delai}
 
 
-def action_concernee(action, evenement):
-    """L'evenement du canard ("etat:accueil", "sonnette:Entree", "maison:lumiere") declenche-t-il cette action ?"""
+def action_concernee(action, evenement, etats=None):
+    """L'evenement du canard ("etat:accueil", "sonnette:Entree", "maison:lumiere") declenche-t-il cette action ?
+    `quand` simple = un ETAT du canard s'il en existe un de ce nom (`etats`), sinon un evenement ; "evenement:x" =
+    l'evenement x seulement ; "etat:x" = l'etat x seulement. Une phrase vocale a son propre evenement."""
+    if action.get("voix_evt") and evenement == action["voix_evt"]:
+        return True
     q = action["quand"]
+    if q is None:
+        return False
+    if q.startswith("evenement:"):
+        q = q[len("evenement:"):]
+        return not evenement.startswith("etat:") and (evenement == q or evenement.partition(":")[0] == q)
+    if q.startswith("etat:"):
+        return evenement == q
+    if etats is not None and q in etats:
+        return evenement == f"etat:{q}"
     if evenement.startswith("etat:"):
-        return q in (evenement, evenement[5:])
+        return evenement[5:] == q
     return q == evenement or (":" not in q and evenement.partition(":")[0] == q)
 
 
@@ -537,8 +581,10 @@ class PontHA:
             return
         now = self.horloge()
         heure = time.localtime().tm_hour
+        etats = getattr(self, "_etats_canard", None)
+        partie = False
         for i, a in enumerate(self.cfg.get("actions") or ()):
-            if not action_concernee(a, evenement):
+            if not action_concernee(a, evenement, etats):
                 continue
             if a["heures"] is not None:
                 debut, fin = a["heures"]
@@ -548,6 +594,10 @@ class PontHA:
                 continue
             self._derniere_action[i] = now
             self._actions.put((a["domaine"], a["service"], a["donnees"], evenement))
+            partie = True
+        if evenement.startswith("maison:") and getattr(self, "_cerveau", None) is not None:
+            # accuse de reception HONNETE : "oui" seulement si la commande part vraiment (plage horaire, delai...)
+            self._cerveau.evenement("maison_ok" if partie else "maison_refus")
 
     def _ecoute_le_canard(self):
         cfg = getattr(self, "cfg", None) or {}
@@ -579,9 +629,11 @@ class PontHA:
                 etat = (self.client._get(f"/api/states/{entite}").get("state") or "").lower()
             except Exception as e:
                 self.log(f"[HA] presence de {s['nom']} illisible : {type(e).__name__}")
+                self.evenements.put(f"presence:{s['nom']}|inconnu")
                 continue
-            if etat and etat not in ETATS_IGNORES:
-                self.evenements.put(f"presence:{s['nom']}|{'home' if etat == 'home' else 'absent'}")
+            # inconnu (HA ne sait pas, ou ne repond pas pour lui) : la maison ne sera pas tenue pour "vide"
+            self.evenements.put(f"presence:{s['nom']}|"
+                                f"{'inconnu' if not etat or etat in ETATS_IGNORES else 'home' if etat == 'home' else 'absent'}")
 
     def lire_calme_initial(self):
         """Au demarrage, applique l'etat ACTUEL de l'interrupteur calme (sinon un canard relance la nuit ferait du bruit)."""
@@ -611,6 +663,7 @@ class PontHA:
     def photographier(self, brain, state):
         """A passer a brain.run(a_chaque_tick=...) : memorise l'etat courant (rapide, sans reseau)."""
         if self._ecoute_le_canard() and self._sur_canard not in getattr(brain, "ecouteurs", [self._sur_canard]):
+            self._cerveau, self._etats_canard = brain, set(getattr(brain, "etats", {}))
             brain.ecouteurs.append(self._sur_canard)        # a la premiere trame : actions domotiques du canard
         # veille camera du chat (chat.py, extras du cerveau) : optionnelle, absente dans les tests qui n'en ont pas besoin.
         chat = (getattr(brain, "ctx", None) and (brain.ctx.extras or {}).get("chat"))
