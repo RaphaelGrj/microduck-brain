@@ -23,10 +23,13 @@ import math
 import statistics
 import time
 
-# ordre des 14 servos (robot.state.joints, AGENTS.md : 0-4 jambe gauche, 5-8 cou/tete, 9-13 jambe droite)
+# robot.state.joints / targets / currents_ma : 15 entrees dans l'ordre de duck-ipc-proto JOINT_NAMES - le BEC est a
+# l'index 9, entre la tete et la jambe droite (il bouge avec la voix et les baillements : exclu des derives).
 SERVOS = ("left_hip_yaw", "left_hip_roll", "left_hip_pitch", "left_knee", "left_ankle",
-          "neck_pitch", "head_pitch", "head_yaw", "head_roll",
+          "neck_pitch", "head_pitch", "head_yaw", "head_roll", "mouth",
           "right_hip_yaw", "right_hip_roll", "right_hip_pitch", "right_knee", "right_ankle")
+N = len(SERVOS)
+SUIVIS = [i for i, nom in enumerate(SERVOS) if nom != "mouth"]
 
 
 # -- batterie ---------------------------------------------------------------------------------------------------------
@@ -42,15 +45,33 @@ class JournalBatterie:
         self.d = donnees if donnees is not None else {}
         self.d.setdefault("cycles", [])
         self.sauver = sauver
-        self.haut = None        # (t_mur, pct) : sommet depuis la derniere charge = debut du cycle en cours
-        self.bas = None         # (t_mur, pct) : point le plus bas vu depuis le sommet
-        self.en_charge = False
+        # cycle en cours, PERSISTANT : canard eteint batterie vide puis rallume avec une batterie chargee (les 2 de
+        # rechange du pack) -> le cycle d'avant est clos au redemarrage au lieu d'etre perdu
+        en_cours = self.d.get("en_cours") or {}
+        self.haut = tuple(en_cours["haut"]) if en_cours.get("haut") else None   # (t_mur, pct) : debut du cycle
+        self.bas = tuple(en_cours["bas"]) if en_cours.get("bas") else None      # (t_mur, pct) : plus bas depuis
+        self.en_charge = bool(en_cours.get("en_charge", False))
+        self._t_garde = None
+
+    def _garde(self, t):
+        """Sauve le cycle en cours (au plus une fois par minute : la memoire est sauvee sur le disque du canard)."""
+        self.d["en_cours"] = {"haut": list(self.haut), "bas": list(self.bas), "en_charge": self.en_charge}
+        if self.sauver is not None and (self._t_garde is None or t - self._t_garde >= 60.0):
+            self._t_garde = t
+            self.sauver()
 
     def note(self, t, pct):
         """`t` : heure murale (s) ; `pct` : robot.state.battery.percent."""
         if self.haut is None:
             self.haut = self.bas = (t, pct)
+            self._garde(t)
             return
+        try:
+            self._note(t, pct)
+        finally:
+            self._garde(t)
+
+    def _note(self, t, pct):
         if pct >= self.bas[1] + self.CHARGE_PCT:           # elle remonte : en charge
             if not self.en_charge:
                 self._clos_cycle()
@@ -119,20 +140,22 @@ class SanteServos:
 
     def note_repos(self, jour, joints, targets, courants=None):
         """Une trame de repos debout (chill, politique stand) : moyenne par jour du |courant| et de |consigne - position|."""
-        if not joints or not targets or len(joints) < 14 or len(targets) < 14:
+        if not joints or not targets or len(joints) < N or len(targets) < N:
             return
         if jour != self._jour:
             if self._jour is not None and self.sauver is not None:
                 self.sauver()
             self._jour = jour
             self._range_vieux()
-        j = self.d["jours"].setdefault(jour, {"n": 0, "courant": [0.0] * 14, "ecart": [0.0] * 14})
+        j = self.d["jours"].setdefault(jour, {"n": 0, "courant": [0.0] * N, "ecart": [0.0] * N})
         j["n"] += 1
         k = 1.0 / j["n"]
-        for i in range(14):
+        for i in SUIVIS:
             j["ecart"][i] += k * (abs(targets[i] - joints[i]) - j["ecart"][i])
-            if courants is not None and len(courants) >= 14:
+            if courants is not None and len(courants) >= N:
                 j["courant"][i] += k * (abs(courants[i]) - j["courant"][i])
+        if j["n"] % 15000 == 0 and self.sauver is not None:
+            self.sauver()                       # ~5 min de repos : une journee de mesures ne se perd pas au plantage
 
     def note_plus_chaud(self, nom):
         if nom:
@@ -153,7 +176,8 @@ class SanteServos:
             return []
         temoin, recent = jours[:self.JOURS_TEMOIN], jours[-1][1]
         out = []
-        for i, nom in enumerate(SERVOS):
+        for i in SUIVIS:
+            nom = SERVOS[i]
             c0 = statistics.mean(v["courant"][i] for _, v in temoin)
             e0 = statistics.mean(v["ecart"][i] for _, v in temoin)
             if c0 > 1.0 and recent["courant"][i] >= self.DERIVE_COURANT * c0:

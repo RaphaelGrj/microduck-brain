@@ -249,7 +249,7 @@ def test_pas_de_compagnie_sans_lieu_appris():
 def test_lumiere_oubliee_la_nuit_quand_la_maison_est_vide():
     lum = [0.6]
     b, _, h = cerveau(heure=23, luminosite=lambda: lum[0], luminosite_synchrone=True)
-    vivre(b, 5, evenements=[(0.5, "retour:Raphael|3600")])
+    vivre(b, 5, evenements=[(0.2, "presence:Raphael|home"), (0.3, "presence:Julie|absent")])
     vivre(b, 700)
     assert not b.lumiere_oubliee, "quelqu'un est a la maison"
     vivre(b, 700, evenements=[(0.5, "depart:Raphael")])

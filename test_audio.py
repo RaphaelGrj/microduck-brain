@@ -250,3 +250,33 @@ def test_telephone_une_seule_voix_avec_des_blancs():
 
 def test_pas_telephone_quand_deux_personnes_parlent():
     assert "telephone" not in noms(analyse(appel([120, 230])))           # deux voix bien differentes en alternance
+
+
+def bip(sig, t, duree=0.2, f=3200.0, amplitude=0.1):
+    n = int(duree * TAUX)
+    i = int(t * TAUX)
+    sig[i:i + n] += amplitude * np.sin(2 * np.pi * f * np.arange(n) / TAUX)
+
+
+def test_bips_d_appareil_mais_pas_l_alarme_incendie():
+    s = fond(8)
+    for k in range(3):
+        bip(s, 1.0 + 0.5 * k)                              # micro-ondes : 3 bips puis plus rien
+    evts = noms(analyse(s))
+    assert evts == ["bips_appareil"], evts
+    s = fond(20)
+    t = 1.0
+    while t < 17:
+        for k in range(3):
+            bip(s, t + 0.8 * k, duree=0.5)                 # T3 : 3 bips, pause, 3 bips...
+        t += 3.9
+    evts = noms(analyse(s))
+    assert "alarme_fumee:son" in evts and "bips_appareil" not in evts, evts
+
+
+def test_vacarme_prolonge_puis_retombe():
+    s = np.concatenate([RNG.normal(0, 0.08, int(70 * TAUX)), fond(40)])     # une minute tres bruyante, puis le calme
+    evts = noms(analyse(s))
+    assert "vacarme" in evts and evts.index("vacarme_fin") > evts.index("vacarme"), evts
+    assert "vacarme" not in noms(analyse(np.concatenate([RNG.normal(0, 0.08, int(20 * TAUX)), fond(60)]))), \
+        "un bruit de 20 s n'est pas un vacarme"

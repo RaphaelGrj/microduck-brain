@@ -228,6 +228,7 @@ class Danse(Etat):
 
     def sort(self, brain):
         self._desarme()
+        brain.ctx.calme()                       # tete neutre, pose du corps relachee (sinon le roulis reste)
 
     def _desarme(self):
         if self.arme:

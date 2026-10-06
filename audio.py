@@ -21,6 +21,10 @@ le pipeline micro qui manquait (journal du 2026-10-05 : "aucun pipeline micro/FF
     fait discret. Deux personnes de voix proches donnent le meme motif : consequence benigne (il se tait un moment) ;
   - "baillement_entendu" : un son voise et CONTINU de 1,6 a 3,5 s (une phrase qui descend dure rarement autant), qui descend d'au moins 5 demi-tons, apres un
     silence (pas au milieu d'une phrase) -> baillement contagieux ;
+  - "bips_appareil"    : 1 a 6 bips aigus groupes puis le silence (four, micro-ondes, lave-linge en fin de cycle) -
+    pas l'alarme incendie, dont les bips continuent (motif T3) ;
+  - "vacarme" / "vacarme_fin" : niveau sonore moyen tres eleve pendant une minute (fete, dispute, travaux) -> il se
+    retire dans son coin ; fin quand c'est retombe depuis 30 s. Seuil absolu (dBFS) a etalonner sur le vrai micro ;
   - "eternuement"      : bruit large bande (platitude spectrale), attaque nette, 0,12 a 0,6 s, tres au-dessus du fond.
     Heuristique a etalonner : une chute d'objet peut y ressembler (consequence benigne : il "compte" au lieu de sursauter).
 Methode : niveau par bloc (dB), bruit de fond suivi par le bas (monte lentement, descend tout de suite), transitoires =
@@ -130,7 +134,13 @@ def une_seule_voix(f0s):
 
 
 class AnalyseurSon:
-    def __init__(self, seuil_fort_dbfs=-12.0, saut_transitoire_db=15.0, delai_bruit_s=5.0, delai_appel_s=20.0):
+    def __init__(self, seuil_fort_dbfs=-12.0, saut_transitoire_db=15.0, delai_bruit_s=5.0, delai_appel_s=20.0,
+                 seuil_vacarme_dbfs=-28.0):
+        self.seuil_vacarme = seuil_vacarme_dbfs
+        self.secondes = []                       # niveau moyen (dB) de chaque seconde, sur 60 s (vacarme)
+        self._seconde = []
+        self.vacarme = False
+        self.groupe_bips = []                    # debuts des bips du groupe en cours (bips d'appareil)
         self.seuil_fort, self.saut = seuil_fort_dbfs, saut_transitoire_db
         self.delai_bruit_s, self.delai_appel_s = delai_bruit_s, delai_appel_s
         self.t = 0.0
@@ -233,13 +243,35 @@ class AnalyseurSon:
         elif self.bip_debut is not None:
             if 0.08 <= self.t - self.bip_debut <= 0.8:
                 self.bips = [b for b in self.bips if self.t - b <= 15.0] + [self.bip_debut]
+                self.groupe_bips.append(self.bip_debut)
                 if len(self.bips) >= 9 and self._peut("alarme_fumee", 60.0):
                     out.append("alarme_fumee:son")
             self.bip_debut = None
 
+        # bips d'appareil : le groupe est juge apres 3 s sans bip ; une alarme incendie, elle, ne s'arrete pas
+        if self.groupe_bips and self.bip_debut is None and self.t - self.groupe_bips[-1] > 3.0:
+            groupe, self.groupe_bips = self.groupe_bips, []
+            if (len(groupe) <= 6 and self.t - self.dernier.get("alarme_fumee", -1e9) > 60.0
+                    and self._peut("bips_appareil", 60.0)):
+                out.append("bips_appareil")
+
+        # vacarme : niveau moyen de chaque seconde, juge sur la derniere minute
+        self._seconde.append(niveau)
+        if len(self._seconde) >= 50:
+            self.secondes = (self.secondes + [10.0 * np.log10(np.mean(10.0 ** (np.array(self._seconde) / 10.0)))])[-60:]
+            self._seconde = []
+            fort = [db >= self.seuil_vacarme for db in self.secondes]
+            if not self.vacarme and len(fort) == 60 and sum(fort) >= 45 and self._peut("vacarme", 600.0):
+                self.vacarme = True
+                out.append("vacarme")
+            elif self.vacarme and not any(fort[-30:]):
+                self.vacarme = False
+                out.append("vacarme_fin")
+
         # 2 ter. enonces : on garde le son tant que la voix continue (pauses < 0,3 s), on juge l'intonation a la fin
         if actif:
             if not self.enonce:                  # debut d'enonce : combien de silence juste avant (1,5 s au plus) ?
+                self.blocs_enonce = 0
                 n = 0
                 for v in reversed(self.voix[-76:-1]):
                     if v:
@@ -247,24 +279,30 @@ class AnalyseurSon:
                     n += 1
                 self.silence_avant_enonce = n * BLOC / TAUX
             self.enonce = (self.enonce + [x])[-175:]
+            self.blocs_enonce += 1               # duree REELLE (le son garde est tronque a 3,5 s)
             self.calme_enonce = 0
         elif self.enonce:
             self.calme_enonce += 1
             if self.calme_enonce < 15:
                 self.enonce.append(x)
+                self.blocs_enonce += 1
             else:
                 son, self.enonce = np.concatenate(self.enonce[:-14]), []      # sans le silence de fin
-                h = hauteurs(son) if len(son) <= 3.5 * TAUX else []
+                duree = (self.blocs_enonce - 14) * BLOC / TAUX
+                tronque = duree > 3.5 + 1e-6     # une longue tirade : ni baillement ni intonation (debut jete)
+                h = hauteurs(son) if not tronque else []
                 sens = intonation(son, h)
                 if (self.silence_avant_enonce >= 1.0 and baillement(son, h)
                         and self._peut("baillement_entendu", 60.0)):
                     out.append("baillement_entendu")
                 elif sens and self._peut("intonation", 8.0):
                     out.append(f"intonation:{sens}")
-                if len(h) >= 4:
-                    self.enonces = [e for e in self.enonces if self.t - e[0] <= TEL_FENETRE_S] + [
-                        (self.t, len(son) / TAUX, float(np.median([f for _, f in h])))]
-                    out += self._juge_telephone()
+                if tronque:
+                    self.enonces.append((self.t, duree, None))   # compte dans la parole, sans hauteur
+                elif len(h) >= 4:
+                    self.enonces.append((self.t, duree, float(np.median([f for _, f in h]))))
+                self.enonces = [e for e in self.enonces if self.t - e[0] <= TEL_FENETRE_S]
+                out += self._juge_telephone()
         if self.telephone and self.silence_depuis is not None and self.t - self.silence_depuis >= TEL_FIN_S:
             self.telephone = False
             out.append("telephone_fin")
@@ -285,7 +323,9 @@ class AnalyseurSon:
         if self.telephone or len(e) < TEL_ENONCES_MIN:
             return []
         parole = sum(d for _, d, _ in e)
-        if not 0.15 * TEL_FENETRE_S <= parole <= 0.7 * TEL_FENETRE_S or not une_seule_voix([f for _, _, f in e]):
+        f0s = [f for _, _, f in e if f is not None]
+        if (not 0.15 * TEL_FENETRE_S <= parole <= 0.7 * TEL_FENETRE_S or len(f0s) < TEL_ENONCES_MIN
+                or not une_seule_voix(f0s)):
             return []
         if self.t - e[0][0] < 0.6 * TEL_FENETRE_S:
             return []                             # pas encore une minute d'observation

@@ -38,6 +38,8 @@ def verifier_local(url_camera):
 
 def lire_heure(v):
     """12 ou "12:30" -> (12, 0) / (12, 30) ; None si illisible."""
+    if isinstance(v, bool):
+        return None
     if isinstance(v, int) and 0 <= v < 24:
         return (v, 0)
     h, _, m = str(v).partition(":")

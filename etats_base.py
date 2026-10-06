@@ -253,7 +253,8 @@ class Wander(Etat):
                                           o["position"][1] + lib["devant"] * math.sin(o["yaw"]), brain.t_global) \
                     and lib["devant"] <= 1.5:
                 brain.objet_nouveau = lib["devant"]                   # tiens, ce n'etait pas la avant
-                brain.objets_au_sol = (brain.objets_au_sol + [(time.time(),
+                mur = brain.diagnostic.mur if hasattr(brain, "diagnostic") else time.time
+                brain.objets_au_sol = (brain.objets_au_sol + [(mur(),
                                        round(o["position"][0] + lib["devant"] * math.cos(o["yaw"]), 2),
                                        round(o["position"][1] + lib["devant"] * math.sin(o["yaw"]), 2))])[-20:]
                 brain.evenement("objet_nouveau")

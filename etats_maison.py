@@ -29,7 +29,7 @@ class AlarmeFumee(Etat):
         brain.ctx.move()
 
     def sort(self, brain):
-        brain.ctx.silence = brain.mode_calme
+        brain.ctx.silence = brain.mode_calme or getattr(brain, "discret", False)
         brain.ctx.calme()
 
 class Toupie(Etat):
@@ -138,7 +138,7 @@ class AutoTestReveil(Etat):
             tof = brain.ctx.extras.get("tof")
             if tof is not None and brain.ctx.state is not None and t >= 0.3:
                 lib = tof.libre(brain.ctx.state)
-                self.res["tof"] = (bool(lib) and lib.get("n", 0) > 0, f"{lib.get('n', 0) if lib else 0} point(s)")
+                self.res["tof"] = (lib is not None, f"{lib.get('n', 0)} obstacle(s)" if lib else "pas de trame")
         elif t < 1.6:
             brain.ctx.head((0.0, 0.0, a, 0.0))
         elif t < 1.7:

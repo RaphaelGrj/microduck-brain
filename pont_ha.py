@@ -451,6 +451,20 @@ class PontHA:
                     self.log(f"[HA] {nom} : cycle termine ({duree / 60:.0f} min)")
                     self.evenements.put(f"machine_finie:{nom}")
 
+    def lire_presence_initiale(self):
+        """Au demarrage, qui est DEJA a la maison (person.*) : "presence:Nom|home" ou "presence:Nom|absent", sans
+        accueil ni rituel. Sans cela, "personne a la maison" (lumiere oubliee...) n'aurait pas de sens."""
+        for entite, s in self.surveillance.items():
+            if not s.get("habitant"):
+                continue
+            try:
+                etat = (self.client._get(f"/api/states/{entite}").get("state") or "").lower()
+            except Exception as e:
+                self.log(f"[HA] presence de {s['nom']} illisible : {type(e).__name__}")
+                continue
+            if etat and etat not in ETATS_IGNORES:
+                self.evenements.put(f"presence:{s['nom']}|{'home' if etat == 'home' else 'absent'}")
+
     def lire_calme_initial(self):
         """Au demarrage, applique l'etat ACTUEL de l'interrupteur calme (sinon un canard relance la nuit ferait du bruit)."""
         if not self.calme:
@@ -493,12 +507,23 @@ class PontHA:
             "temperatures": dict(getattr(brain, "temperatures", None) or {}),
             "traits": dict(brain.perso.d["traits"]) if hasattr(brain, "perso") else None,
             "blagues": brain.malice.compte() if hasattr(brain, "malice") else None,
-            "diagnostic": brain.diagnostic.resume() if hasattr(brain, "diagnostic") else None,
+            "diagnostic": self._resume_diagnostic(brain),
             "objets_au_sol": list(getattr(brain, "objets_au_sol", None) or []),
             "lumiere_oubliee": getattr(brain, "lumiere_oubliee", False), "lumiere": getattr(brain, "lumiere", None),
             "derniere_blague": (brain.malice.historique[-1][1] if getattr(getattr(brain, "malice", None), "historique", None)
                                 else None),
         }
+
+    def _resume_diagnostic(self, brain):
+        """diagnostic.resume() au plus une fois toutes les 10 s : photographier() tourne a chaque trame (50 Hz) et le
+        resume parcourt l'historique (chutes, jours de mesures des servos) - jamais dans le budget d'une trame."""
+        if not hasattr(brain, "diagnostic"):
+            return None
+        now = time.monotonic()
+        cache = getattr(self, "_cache_diag", None)
+        if cache is None or now - cache[0] >= 10.0:
+            self._cache_diag = cache = (now, brain.diagnostic.resume())
+        return cache[1]
 
     def entites_du_canard(self):
         i = self.instantane
@@ -606,6 +631,7 @@ class PontHA:
         if mq.get("actif") and not est_vide(mq.get("hote")):
             self.mqtt = PublieurMQTT(mq, self.log, sur_evenement=self.evenements.put)
         self.lire_calme_initial()
+        self.lire_presence_initiale()
         entites = set(self.surveillance)
         for cible in (lambda: self.client.ecouter(entites, self._sur_changement, self.arret), self._publier):
             t = threading.Thread(target=cible, daemon=True)

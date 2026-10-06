@@ -220,7 +220,7 @@ class Brain:
         self._jour_autotest = None
         self.objet_nouveau = None               # distance (m) devant de l'objet nouvellement remarque
         self.objets_au_sol = []                 # (heure murale, x, y odom) des objets nouveaux remarques : vers HA
-        self.presence_suivie = False            # au moins un retour/depart HA vu : "personne a la maison" a un sens
+        self.presence_suivie = False            # presence initiale lue dans HA : "personne a la maison" a un sens
         self.lumiere = None                     # derniere luminosite mesuree la nuit, maison vide (0..1)
         self.lumiere_oubliee = False
         self._t_lumiere = -1e9
@@ -317,7 +317,11 @@ class Brain:
             if base == "jour_special":
                 self._sur_jour_special(detail)
                 continue
-            if base in ("compagnie", "compagnie_fin") and self.courant.nom not in ("compagnie", "va_compagnie"):
+            if base == "compagnie_fin" and self.courant.nom == "va_compagnie":
+                self.suivant_force = None       # l'activite est deja finie : il ne va pas s'asseoir pour rien
+                self.fin_etat = self.t_etat
+                continue
+            if base in ("compagnie", "compagnie_fin") and self.courant.nom != "compagnie":
                 if base == "compagnie":
                     self._sur_compagnie()
                 continue
@@ -340,8 +344,13 @@ class Brain:
             if self.courant.nom == "ecoute" and base != "depart":
                 self.differes.append(nom)       # ni son ni geste pendant que quelqu'un parle au canard
                 continue
-            if base in ("retour", "depart"):
+            if base == "presence":
+                # etat initial lu dans HA au demarrage (pont_ha.lire_presence_initiale) : ni accueil ni rituel
+                qui, _, ou = detail.partition("|")
+                (self.presents.add if ou == "home" else self.presents.discard)(qui)
                 self.presence_suivie = True
+                continue
+            if base in ("retour", "depart"):
                 # presence d'un habitant (person.* dans HA) : "retour:Nom|absence_s", "depart:Nom"
                 qui, _, absence = detail.partition("|")
                 mem = self.ctx.extras.get("memoire")
@@ -357,6 +366,8 @@ class Brain:
                     continue
                 self.presents.add(qui)
                 self._t_sonnette = None             # c'etait un habitant qui rentrait, pas un visiteur
+                if self.visite is not None and self.t_global - self.visite <= 300.0:
+                    self._sur_visiteur(False)       # (presence HA en retard sur la sonnette et les voix)
                 absence = float(absence) if absence else (mem.absence_s(qui) if mem is not None else None)
                 longue = absence is not None and absence >= Accueil.ABSENCE_LONGUE_S
                 if self.mode_calme or (self.courant.nom == "nap" and not longue):
@@ -675,8 +686,6 @@ class Brain:
             return "nap"                        # servos trop chauds : repos assis, jamais de marche, jusqu'a refroidir
         if self.mode_calme or self.t_global < self.veille_jusqua:
             return "nap"                        # sieste prolongee, assis : interrupteur calme, ou veille apres des chutes
-        if self.discret:
-            return self.rng.choice(("chill", "chill", "look"))   # quelqu'un telephone : il reste tranquille, sans bruit
         h = self.humeur
         batterie_basse = self._batterie_pct is not None and self._batterie_pct < self.BATTERIE_BASSE_PCT
         if h.energie < self.SEUIL_SIESTE or batterie_basse:
@@ -694,6 +703,8 @@ class Brain:
                         self.etats["va_au_coin"].cible = coin
                         return "va_au_coin"
             return "nap"
+        if self.discret:
+            return self.rng.choice(("chill", "chill", "look"))   # quelqu'un telephone : il reste tranquille, sans bruit
         if self.courant.nom == "nap":
             self.derniere_fois["etirement"] = self.t_global
             return "etirement"                  # on s'etire en se reveillant
@@ -739,8 +750,10 @@ class Brain:
             self.suivant_force = "wander"       # que se passe-t-il ? un petit tour pour aller voir
             return "silence_curieux"
         timide = self.timidite()
-        if timide > 0.0 and self.rng.random() < 0.7 * timide:
-            return "timide"                     # visiteur inconnu : de moins en moins souvent au fil de la visite
+        if timide > 0.0:
+            # visiteur inconnu : timide de moins en moins souvent au fil de la visite ; sinon il reste en retrait (ni
+            # promenade, ni jeu, ni coin d'observation devant quelqu'un qu'il ne connait pas)
+            return "timide" if self.rng.random() < 0.7 * timide else self.rng.choice(("chill", "look"))
         if self.visite is not None and timide == 0.0 and not self._apprivoise:
             self._apprivoise = True
             return "apprivoise"                 # la timidite s'est dissipee : un "inquire" curieux
@@ -908,7 +921,8 @@ class Brain:
         if on == self.discret:
             return
         self.discret, self._t_discret = on, self.t_global
-        self.ctx.silence = on or self.mode_calme
+        if self.courant.nom != "alarme":        # l'alarme incendie parle quoi qu'il arrive (AlarmeFumee.sort recale)
+            self.ctx.silence = on or self.mode_calme
         print(f"[{self.t_global:6.1f}s] {'quelqu un telephone : discret' if on else 'fin de l appel'}", flush=True)
         if on and self.courant.nom not in ("chill", "look", "nap", "alarme", "porte", "compagnie"):
             self._bascule("chill")
@@ -935,16 +949,27 @@ class Brain:
         jour = getattr(self.horloge(), "tm_yday", None)
         if self.jour_special is not None and self.jour_special[0] == jour:
             return
-        self.jour_special, self._jour_special_vu = (jour, nom), set(self.presents)
+        self.jour_special, self._jour_special_vu = (jour, nom), set()
         print(f"[{self.t_global:6.1f}s] jour special : {nom}", flush=True)
-        if not self.mode_calme and self.courant.nom not in ("nap", "alarme", "porte", "ecoute"):
-            self._bascule("jour_special")
+        self._jour_special_a_dire = True        # dit au premier moment de repos, pas avant 8 h (evenement a 00:00)
+
+    def _verifie_jour_special(self):
+        if (not getattr(self, "_jour_special_a_dire", False) or not self._jour_special_aujourdhui()
+                or self.horloge().tm_hour < 8 or self.mode_calme or self.discret
+                or self.courant.nom not in ("chill", "look")):
+            return
+        self._jour_special_a_dire = False
+        self._jour_special_vu |= set(self.presents)
+        self._bascule("jour_special")
 
     def _sur_compagnie(self):
         """Quelqu'un est pris par une longue activite immobile (declencheur HA, ex. "bureau occupe depuis 1 h") : il
         va se poser la ou l'on s'occupe le plus de lui, s'il le connait et peut y aller."""
-        if self.mode_calme or self.discret or self.courant.nom in ("nap", "alarme", "porte", "ecoute", "balle"):
-            return
+        batterie_basse = self._batterie_pct is not None and self._batterie_pct < self.BATTERIE_BASSE_PCT
+        if (self.mode_calme or self.discret or self.reste_assis() or batterie_basse
+                or self.humeur.energie < self.SEUIL_SIESTE
+                or self.courant.nom not in ("chill", "look", "wander", "jeu_solitaire", "cherche_attention")):
+            return                              # seulement depuis le repos ou une occupation libre : jamais un detour
         coin = self.exploration.coin_favori("social", self.t_global)
         if coin is None or self.ctx.extras.get("tof") is None:
             return
@@ -977,7 +1002,7 @@ class Brain:
         if (r is None or cle in self._repas_faits or not self.presents or self.humeur.energie < 0.3
                 or self.ctx.extras.get("tof") is None):
             return None
-        self._repas_faits.add(cle)
+        self._repas_faits = {c for c in self._repas_faits if c[0] == cle[0]} | {cle}   # aujourd'hui seulement
         coin = self.exploration.coin_favori("repas", self.t_global)
         if coin is None or not self._atteignable(coin, (0.5, 4.0)):
             return None
@@ -999,7 +1024,7 @@ class Brain:
         veille = self.ctx.extras.get("mouvement")
         if veille is None or not hasattr(veille, "dernier_centre"):
             return
-        if (self.courant.nom != "chill" or self.t_etat < 1.5 or self.mode_calme or self.discret
+        if (self.courant.nom != "chill" or self.t_etat < 1.5 or self.mode_calme or self.discret or self.cpu_chaud
                 or self.t_global - self.derniere_fois.get("coup_oeil", -1e9) < self.PERI_DELAI_S):
             self._desarme_peripherie()
             return
@@ -1095,7 +1120,7 @@ class Brain:
         """Une fois par jour, au premier moment de repos apres le demarrage (opt-in : extras["autotest"], canard.py)."""
         jour = getattr(self.horloge(), "tm_yday", None)
         if (jour == self._jour_autotest or self.t_global < 20.0 or self.mode_calme
-                or self.courant.nom not in ("chill", "look")):
+                or self.horloge().tm_hour < 6 or self.courant.nom not in ("chill", "look")):
             return
         self._jour_autotest = jour
         self._bascule("autotest")
@@ -1283,6 +1308,7 @@ class Brain:
             self._verifie_bonjour()                 # apres les evenements : un "calme_on" en attente passe d'abord
         if self.ctx.extras.get("autotest"):
             self._verifie_autotest()
+        self._verifie_jour_special()
         self.humeur.avance(dt, self.courant.nom, self.vivacite())
         if self.discret and self.t_global - self._t_discret > self.DISCRET_MAX_S:
             self._discretion(False)
