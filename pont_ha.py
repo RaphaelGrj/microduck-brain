@@ -492,6 +492,7 @@ class PontHA:
             "temperatures": dict(getattr(brain, "temperatures", None) or {}),
             "traits": dict(brain.perso.d["traits"]) if hasattr(brain, "perso") else None,
             "blagues": brain.malice.compte() if hasattr(brain, "malice") else None,
+            "diagnostic": brain.diagnostic.resume() if hasattr(brain, "diagnostic") else None,
             "derniere_blague": (brain.malice.historique[-1][1] if getattr(getattr(brain, "malice", None), "historique", None)
                                 else None),
         }
@@ -543,6 +544,27 @@ class PontHA:
             ent["sensor.microduck_blagues"] = (i["blagues"], {
                 "friendly_name": "Microduck - taquineries (total)", "icon": "mdi:emoticon-wink-outline",
                 "derniere": i.get("derniere_blague")})
+        dg = i.get("diagnostic")
+        if dg:
+            # auto-surveillance (diagnostic.py) : ce qui derive chez le canard lui-meme, avant la panne
+            if dg["autonomie_h"] is not None:
+                ent["sensor.microduck_autonomie"] = (dg["autonomie_h"], {
+                    "friendly_name": "Microduck - autonomie estimee", "unit_of_measurement": "h", "icon": "mdi:timer",
+                    "cycles": dg["cycles"]})
+            if dg["sante_batterie"] is not None:
+                ent["sensor.microduck_sante_batterie"] = (dg["sante_batterie"], {
+                    "friendly_name": "Microduck - sante de la batterie", "unit_of_measurement": "%",
+                    "icon": "mdi:battery-heart-variant", "a_remplacer": dg["batterie_a_remplacer"]})
+            ent["binary_sensor.microduck_servos_derive"] = ("on" if dg["servos_derive"] else "off", {
+                "friendly_name": "Microduck - servo a surveiller", "device_class": "problem",
+                "servos": ", ".join(dg["servos_derive"]) or None, "plus_chaud_habituel": dg["servo_chaud_habituel"]})
+            ent["sensor.microduck_chutes_7j"] = (dg["chutes_7j"], {
+                "friendly_name": "Microduck - chutes (7 jours)", "icon": "mdi:human-fall",
+                "activite_risquee": dg["activite_risquee"], "lieux_a_risque": dg["lieux_a_risque"]})
+            if dg["autotest_ok"] is not None:
+                ent["binary_sensor.microduck_autotest"] = ("off" if dg["autotest_ok"] else "on", {
+                    "friendly_name": "Microduck - auto-test du matin", "device_class": "problem",
+                    "echecs": ", ".join(dg["autotest_echecs"]) or None})
         attrs_chat = {"friendly_name": "Microduck - chat vu", "icon": "mdi:cat"}
         if self._derniere_vue_chat is not None:
             attrs_chat["derniere_vue_il_y_a_s"] = round(time.time() - self._derniere_vue_chat, 1)

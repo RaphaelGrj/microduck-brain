@@ -41,6 +41,7 @@ def assembler(client, args, log=print, cfg=None, cerveau=None):
     section [cerveau] du fichier de config (lue meme sans Home Assistant : le canard vit sans lui)."""
     cerveau = cerveau if cerveau is not None else ((cfg or {}).get("cerveau") or {})
     extras, sources, crochets, fils = {"memoire": memoire.Memoire()}, [], [], []
+    extras["autotest"] = cerveau.get("autotest", True)     # auto-test au premier reveil de la journee (diagnostic.py)
     if tof_mod.SOCK_TOF.exists():
         capteur = tof_mod.Tof(tof_mod.beams_du_robot(client))
         extras["tof"], fils = capteur, fils + [capteur]
@@ -55,6 +56,7 @@ def assembler(client, args, log=print, cfg=None, cerveau=None):
         veille_mvt = mouvement.VeilleMouvement(vision.grab_frame)
         veille_balle = balle.VeilleBalle(vision.grab_frame)
         extras["mouvement"], extras["balle"] = veille_mvt, veille_balle
+        extras["camera_test"] = lambda: vision.grab_frame(timeout=2.0) is not None    # auto-test : une image arrive
         fils += [veille_mvt, veille_balle]
         crochets.append(veille_balle.etat_robot_hook)
         log(f"camera : {vision.FRAME_URL} (mouvement pendant les jeux ; balle 2 fois par seconde)")

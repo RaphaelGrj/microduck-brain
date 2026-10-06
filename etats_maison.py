@@ -83,3 +83,81 @@ class AssisDemande(Etat):
         if brain.ctx.sitting and not brain.reste_assis():
             brain.ctx.toggle_sit()
         brain.ctx.calme()
+
+
+class AutoTestReveil(Etat):
+    """Auto-test au premier reveil de la journee (ROADMAP "Diagnostic / auto-surveillance") : sans bouger les jambes,
+    il verifie ce que robotd dit de lui (boucle, bus, IMU), une trame ToF, une image camera (dans un fil : la requete
+    HTTP ne doit pas bloquer la boucle), et que la tete SUIT ses consignes (lacet puis tangage : le joint doit avoir
+    bouge d'au moins 60 % de la consigne). Verdict dans diagnostic.AutoTest -> Home Assistant ; un "chirp" si tout va
+    bien, un "inquire" sinon (jamais d'alarme : ce n'est pas une urgence)."""
+    nom = "autotest"
+    AMPLITUDE = 0.3
+    SUIVI_MIN = 0.6
+
+    def entre(self, brain):
+        import threading
+        import diagnostic
+        self.res = dict(diagnostic.verdict_sante(brain.lit_sante()))
+        tof = brain.ctx.extras.get("tof")
+        if tof is None:
+            self.res["tof"] = (False, "absent")
+        self.camera = None
+        test = brain.ctx.extras.get("camera_test")
+        if test is not None:
+            def essai():
+                try:
+                    self.camera = (bool(test()), "image recue")
+                except Exception as e:
+                    self.camera = (False, type(e).__name__)
+            threading.Thread(target=essai, daemon=True).start()
+        self.ref = {}
+        self.fini = False
+
+    def duree(self, brain):
+        return 4.0
+
+    def _joint(self, brain, i):
+        j = (brain.ctx.state or {}).get("joints")
+        return j[i] if j and len(j) > i else None
+
+    def _suivi(self, brain, cle, i):
+        avant, apres = self.ref.get(cle), self._joint(brain, i)
+        if avant is None or apres is None:
+            self.res[cle] = (False, "joint non lu")
+        else:
+            d = abs(apres - avant)
+            self.res[cle] = (d >= self.SUIVI_MIN * self.AMPLITUDE, f"{d:.2f}/{self.AMPLITUDE} rad")
+
+    def pas(self, brain, t):
+        brain.ctx.move()
+        a = self.AMPLITUDE
+        if t < 0.6:
+            brain.ctx.head((0.0, 0.0, 0.0, 0.0))
+            self.ref["tete_lacet"], self.ref["tete_tangage"] = self._joint(brain, 7), self._joint(brain, 6)
+            tof = brain.ctx.extras.get("tof")
+            if tof is not None and brain.ctx.state is not None and t >= 0.3:
+                lib = tof.libre(brain.ctx.state)
+                self.res["tof"] = (bool(lib) and lib.get("n", 0) > 0, f"{lib.get('n', 0) if lib else 0} point(s)")
+        elif t < 1.6:
+            brain.ctx.head((0.0, 0.0, a, 0.0))
+        elif t < 1.7:
+            if "tete_lacet" not in self.res:
+                self._suivi(brain, "tete_lacet", 7)
+            brain.ctx.head((0.0, 0.0, 0.0, 0.0))
+        elif t < 2.4:
+            brain.ctx.head((0.0, 0.0, 0.0, 0.0))
+            self.ref["tete_tangage"] = self._joint(brain, 6)
+        elif t < 3.4:
+            brain.ctx.head((0.0, a, 0.0, 0.0))
+        else:
+            if not self.fini:
+                self.fini = True
+                self._suivi(brain, "tete_tangage", 6)
+                if brain.ctx.extras.get("camera_test") is not None:
+                    self.res["camera"] = self.camera or (False, "pas de reponse")
+                brain.diagnostic.autotest.termine(brain.diagnostic.mur(), self.res)
+                ko = [k for k, v in self.res.items() if not v[0]]
+                print(f"[{brain.t_global:6.1f}s] auto-test : {'OK' if not ko else 'ECHEC ' + ', '.join(ko)}", flush=True)
+                brain.ctx.sound("inquire" if ko else "chirp")
+            brain.ctx.head((0.0, 0.0, 0.0, 0.0))

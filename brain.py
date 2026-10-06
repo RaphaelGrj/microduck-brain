@@ -29,7 +29,8 @@ from etats_base import (DT_DEFAUT, SONS_CANARD, FATIGUE_BAS, FATIGUE_MIN, FATIGU
                         V_PROMENADE, V_ROTATION, Chill, Ctx, Ecoute, Etat, Geste, Humeur, LookAround, Nap, Sequence,
                         TurnInPlace, Wander, _regarder, fatigue)
 from etats_jeux import CacheCache, JeuBalle, Soleil
-from etats_maison import AlarmeFumee, AssisDemande, Toupie
+from diagnostic import Diagnostic
+from etats_maison import AlarmeFumee, AssisDemande, AutoTestReveil, Toupie
 from etats_taquineries import (Aspirateur, Baillement, CompteEternuements, DernierMot, Esquive, FausseChute,
                                FausseNotif, FauxEndormi, FeinteBec, Fier, MimeTon, MimeVol, PousseBalle, RegardMystere,
                                SourdeOreille)
@@ -167,6 +168,7 @@ class Brain:
             "fausse_chute": FausseChute(), "fausse_notif": FausseNotif(),
             # la maison
             "alarme": AlarmeFumee(), "toupie": Toupie(), "assis_demande": AssisDemande(),
+            "autotest": AutoTestReveil(),                                         # diagnostic : premier reveil du jour
             "porte": Porte(),                                                     # dans les bras (M9 "Held")
             "son_bref": Sequence("son_bref", [("curieux", None)]),               # robotd a entendu un son bref
             "salut": Sequence("salut", [("oui", "greet"), ("content", "wheee")]),
@@ -202,6 +204,10 @@ class Brain:
         perso = mem.donnees.setdefault("personnalite", {}) if donnees is not None else None
         self.perso = Personnalite(perso, rng=random.Random(seed), sauver=mem.sauver if perso is not None else None)
         self._t_ecoute = None                   # premiere trame : debut de l'ecoute des habitudes sonores
+        # auto-surveillance (diagnostic.py) : batterie dans la duree, derive des servos, journal des chutes, auto-test
+        self.diagnostic = Diagnostic(mem, mur=self.ctx.extras.get("mur", time.time))
+        self.derniere_sante = None              # derniere reponse de robot.health
+        self._jour_autotest = None
         self.objet_nouveau = None               # distance (m) devant de l'objet nouvellement remarque
         self.surchauffe = False                 # servos trop chauds (robot.health.motors.max_c)
         self.cpu_chaud = False                  # carte trop chaude (robot.health.cpu_temp_c) : camera en pause
@@ -788,13 +794,10 @@ class Brain:
         if self.t_global - self._t_sante < self.SANTE_S:
             return
         self._t_sante = self.t_global
-        try:
-            r = self.ctx.client.request("robot.health", {})
-        except Exception:
+        sante = self.lit_sante()
+        if sante is None:
             return
-        sante = (r or {}).get("result") if isinstance(r, dict) else None
-        if not isinstance(sante, dict):
-            return
+        self.diagnostic.servos.note_plus_chaud((sante.get("motors") or {}).get("hottest"))
         moteurs = (sante.get("motors") or {}).get("max_c")
         cpu = sante.get("cpu_temp_c")
         self.temperatures = {"moteurs": moteurs, "cpu": cpu}
@@ -817,6 +820,34 @@ class Brain:
             veille = self.ctx.extras.get("balle")
             if veille is not None:
                 veille.pause = self.cpu_chaud
+
+    def lit_sante(self):
+        """robot.health (robotd) -> dict, ou None si pas de reponse."""
+        try:
+            r = self.ctx.client.request("robot.health", {})
+        except Exception:
+            return None
+        sante = (r or {}).get("result") if isinstance(r, dict) else None
+        self.derniere_sante = sante if isinstance(sante, dict) else None
+        return self.derniere_sante
+
+    def _note_diagnostic(self, state, pct):
+        if pct is not None:
+            self.diagnostic.batterie.note(self.diagnostic.mur(), pct)
+        # servos au repos debout : chill (ni marche ni geste de tete), politique stand, apres 2 s de stabilisation
+        if self.courant.nom == "chill" and self.t_etat >= 2.0 and state.get("policy") == "stand" and not self.ctx.sitting:
+            h = self.horloge()
+            jour = f"{getattr(h, 'tm_year', 0)}-{getattr(h, 'tm_yday', 0):03d}"
+            self.diagnostic.servos.note_repos(jour, state.get("joints"), state.get("targets"), state.get("currents_ma"))
+
+    def _verifie_autotest(self):
+        """Une fois par jour, au premier moment de repos apres le demarrage (opt-in : extras["autotest"], canard.py)."""
+        jour = getattr(self.horloge(), "tm_yday", None)
+        if (jour == self._jour_autotest or self.t_global < 20.0 or self.mode_calme
+                or self.courant.nom not in ("chill", "look")):
+            return
+        self._jour_autotest = jour
+        self._bascule("autotest")
 
     def _surveille_robotd(self, state):
         """Ce que robotd sait deja : la tete entendue par son micro (robot.state.audio : compteurs, voir
@@ -926,6 +957,8 @@ class Brain:
                 print(f"[{self.t_global:6.1f}s] CHUTE : cerveau en pause (robotd se charge du relevement)", flush=True)
                 if self._derniere_position is not None:
                     self.exploration.chute(*self._derniere_position, self.t_global)   # "zone noire" apprise
+                self.diagnostic.chutes.note(self.diagnostic.mur(), self.courant.nom, self._derniere_position,
+                                            self.diagnostic.session, getattr(self.horloge(), "tm_hour", None))
                 self.chutes = [t for t in self.chutes if self.t_global - t <= self.FENETRE_CHUTES_S] + [self.t_global]
                 self.perso.vit("chute")
                 if len(self.chutes) >= self.CHUTES_AGACE:
@@ -981,6 +1014,7 @@ class Brain:
 
         self._surveille_robotd(state)
         self._verifie_sante()
+        self._note_diagnostic(state, pct)
         if self._t_ecoute is None:
             self._t_ecoute = self.t_global
         if int(self.t_global / 60.0) != int((self.t_global - dt) / 60.0):
@@ -996,6 +1030,8 @@ class Brain:
         self._traite_evenements()
         if self.bonjour is not None:
             self._verifie_bonjour()                 # apres les evenements : un "calme_on" en attente passe d'abord
+        if self.ctx.extras.get("autotest"):
+            self._verifie_autotest()
         self.humeur.avance(dt, self.courant.nom)
         self.t_etat += dt
         self.courant.pas(self, self.t_etat)
