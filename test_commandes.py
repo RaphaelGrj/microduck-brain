@@ -136,3 +136,20 @@ def test_penaud_quand_on_le_gronde_cajole_quand_on_le_cajole():
     assert b.perso.trait("espieglerie") < 0.5
     simule(b, 5, evenements=[(1.0, "ton:calin")])
     assert "cajole" in [e[1] for e in b.journal] and ("robot.sound", {"tag": "coo"}) in cl.appels
+
+
+def test_pas_de_ton_avec_une_commande_et_reference_qui_s_adapte():
+    c = Commandes(lambda g: FauxVoskInstants(g), nom="daffy")
+    for k in range(4):
+        appelle(c, voix_nom(200, 190, 0.05), k)
+    # "daffy assis" dit fort : la commande seule, sans "ton:gronde" qui l'ecraserait
+    son = voix_nom(210, 180, 0.2)
+    silence = np.zeros(1600, dtype=np.int16)
+    debut = c.lus / 16000 + 0.1
+    c.reco.file.append(("daffy assis", 0.95))
+    c.reco.mots = [{"word": "daffy", "conf": 0.95, "start": debut, "end": debut + len(son) / 16000},
+                   {"word": "assis", "conf": 0.95, "start": debut + 0.5, "end": debut + 0.8}]
+    assert c.bloc_brut(np.concatenate([silence, son, silence]).tobytes()) == ["commande:assis"]
+    # le canard est maintenant plus pres : on l'appelle pareil, mais 6 dB plus fort au micro, durablement
+    tons = [appelle(c, voix_nom(200, 190, 0.1), k) for k in range(12)]
+    assert tons[-1] == ["commande:ecoute"], "la reference s'est adaptee : plus grondé a chaque appel"

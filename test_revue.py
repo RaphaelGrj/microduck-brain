@@ -341,3 +341,68 @@ def test_u3_regarder_le_chat_sans_odometrie_ne_plante_pas():
     assert regarde_chat(b, Veille(), None) is None
     regarde_chat(b, Veille(), {"odom": {"position": [0, 0, 0.11]}})
     assert ("robot.look", {"x": 1.0, "y": 0.0, "z": 0.1}) in c.appels
+
+
+# --- relecture du dernier lot (2026-10-07) -----------------------------------------------------------------------
+def test_v4_visiteur_sans_prenom_reste_un_inconnu():
+    import tempfile
+    from pathlib import Path
+    import pont_ha
+    toml = """
+[home_assistant]
+url = "http://ha.local:8123"
+[[declencheur]]
+evenement = "visiteur"
+entite = "binary_sensor.porte_entree"
+etat = "on"
+"""
+    with tempfile.TemporaryDirectory() as d:
+        (Path(d) / "ha.toml").write_text(toml)
+        cfg = pont_ha.lire_config(Path(d) / "ha.toml")
+    pont = pont_ha.PontHA(cfg, "jeton", log=lambda m: None)
+    pont._sur_changement("binary_sensor.porte_entree", "off", "on")
+    assert pont.source() == ["visiteur"], "pas 'visiteur:binary_sensor.porte_entree' (memorise comme un etre)"
+
+
+def test_v_infos_maison_ne_comptent_pas_comme_une_interaction():
+    from test_vie_maison import cerveau as cerveau_vie, vivre
+    b, _, _ = cerveau_vie()
+    vivre(b, 5)
+    avant = b.derniere_interaction
+    vivre(b, 2, evenements=[(0.5, "temperature_ext:12.0"), (0.6, "presence:Raphael|home")])
+    assert b.derniere_interaction == avant and b.temperature_ext == 12.0 and "Raphael" in b.presents
+
+
+def test_v_ton_recu_dans_les_bras_n_est_pas_rejoue():
+    from test_vie_maison import cerveau as cerveau_vie
+    b, _, _ = cerveau_vie()
+    for k in range(50):
+        b.tick({"t": k * 0.02, "safety": {"fallen": False, "picked_up": True}, "policy": "stand"}, 0.02)
+    b.evenement("ton:gronde")
+    for k in range(50, 100):
+        b.tick({"t": k * 0.02, "safety": {"fallen": False, "picked_up": True}, "policy": "stand"}, 0.02)
+    for k in range(100, 300):
+        b.tick({"t": k * 0.02, "safety": {"fallen": False, "picked_up": False}, "policy": "stand"}, 0.02)
+    assert "penaud" not in [e[1] for e in b.journal]
+
+
+def test_v_temperatures_par_capteur():
+    import queue
+    import pont_ha
+    pont = pont_ha.PontHA.__new__(pont_ha.PontHA)
+    pont.evenements, pont.log = queue.Queue(), lambda m: None
+    pont.surveillance = {"sensor.nord": {"temperature": True}, "sensor.sud": {"temperature": True}}
+    for e, v in (("sensor.nord", "10.0"), ("sensor.sud", "18.0"), ("sensor.nord", "10.2"), ("sensor.sud", "18.3")):
+        pont._sur_changement(e, "0", v)
+    assert pont.evenements.qsize() == 2, "deux capteurs differents ne se reveillent pas l'un l'autre"
+
+
+def test_v_memoire_fermer_sauve_l_etat_actuel():
+    import tempfile
+    from pathlib import Path
+    from memoire import Memoire
+    with tempfile.TemporaryDirectory() as d:
+        m = Memoire(Path(d) / "m.json", ecriture_differee=True)
+        m.donnees["personnalite"] = {"traits": {"curiosite": 0.7}}     # change sans sauvegarde (comme les traits)
+        m.fermer()
+        assert Memoire(Path(d) / "m.json").donnees["personnalite"]["traits"]["curiosite"] == 0.7

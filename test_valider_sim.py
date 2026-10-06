@@ -40,3 +40,12 @@ def test_les_etats_joues_par_le_banc_existent():
     for bloc in re.findall(r"for etat, duree in \((.*?)\):\n", source, re.S):
         joues |= set(re.findall(r'\("(\w+)", \d+\)', bloc))
     assert joues and joues <= etats, joues - etats
+
+
+def test_odom_vers_monde():
+    import math
+    # canard a (1, 2) dans le monde, tourne de 90 deg ; son odometrie dit (5, 5) cap 0 : reperes decales et tournes
+    gt = {"ducks": [{"pos": [1.0, 2.0, 0.1], "quat": [math.cos(math.pi / 4), 0, 0, math.sin(math.pi / 4)]}]}
+    s = {"odom": {"position": [5.0, 5.0, 0.11], "yaw": 0.0}}
+    x, y = valider_sim.odom_vers_monde(s, gt, (5.5, 5.0))   # 0,5 m devant lui (odom) = 0,5 m en +y monde
+    assert abs(x - 1.0) < 1e-9 and abs(y - 2.5) < 1e-9

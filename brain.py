@@ -308,12 +308,16 @@ class Brain:
                     print(f"[{self.t_global:6.1f}s] mode calme {'ACTIVE' if actif else 'desactive'}", flush=True)
                     self._bascule("nap" if actif else ("etirement" if self.courant.nom == "nap" else "chill"))
                 continue
+            if base in ("temperature_ext", "presence"):
+                # informations de la maison, pas une manifestation humaine : traitees AVANT la remise a zero de l'ennui
+                self._sur_info_maison(base, detail)
+                continue
             # Occupation autonome : tout evenement reel (hors bascule "calme") remet le compteur d'ennui a zero,
             # qu'il soit ou non traite immediatement (differe pendant une conversation, ignore pendant la sieste...).
             self.derniere_interaction = self.t_global
             self.ignores = 0                    # quelqu'un s'est manifeste : le decouragement s'efface
-            if base in ("caresse", "main", "appel", "voix", "commande", "intonation", "applaudissements"):
-                self._reponse_au_babil()
+            if base in ("caresse", "main", "appel", "commande", "applaudissements"):
+                self._reponse_au_babil()        # (pas "voix" : la tele ou une conversation ne lui repondent pas)
             if base in ("telephone", "telephone_fin"):
                 self._discretion(base == "telephone")
                 continue
@@ -347,7 +351,8 @@ class Brain:
                 if detail == "gronde":
                     self.perso.vit("gronde")
                     self.malice.stop(self)
-                    self.suivant_force = None
+                    if getattr(self.courant, "taquinerie", False):
+                        self.suivant_force = None   # la blague qui devait suivre ; pas un abri ou une sieste decides
                     self._bascule("penaud")
                 elif detail == "calin":
                     self.perso.vit("calin")
@@ -371,12 +376,6 @@ class Brain:
                 continue
             if self.courant.nom == "ecoute" and base != "depart":
                 self.differes.append(nom)       # ni son ni geste pendant que quelqu'un parle au canard
-                continue
-            if base == "presence":
-                # etat initial lu dans HA au demarrage (pont_ha.lire_presence_initiale) : ni accueil ni rituel
-                qui, _, ou = detail.partition("|")
-                (self.presents.add if ou == "home" else self.presents.discard)(qui)
-                self.presence_suivie = True
                 continue
             if base in ("retour", "depart"):
                 # presence d'un habitant (person.* dans HA) : "retour:Nom|absence_s", "depart:Nom"
@@ -443,12 +442,6 @@ class Brain:
             if base == "commande":
                 self._sur_commande(detail)
                 continue
-            if base == "temperature_ext":
-                try:
-                    self.temperature_ext = float(detail)     # temperature exterieure (HA) : la saison ressentie
-                except ValueError:
-                    pass
-                continue
             if base in ("meteo", "orage"):
                 self._sur_meteo("orage" if base == "orage" else detail)
                 continue
@@ -494,8 +487,10 @@ class Brain:
                 # Petards, feux d'artifice (audio.py) : plus que le sursaut du tonnerre - il va se mettre a l'abri dans son
                 # coin et y reste 10 min, assis ; un peu plus prudent ensuite (personnalite).
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.6)
-                for _ in range(3):
-                    self.perso.vit("sursaut")
+                if self.t_global - self.derniere_fois.get("petarades", -1e9) > 3600.0:
+                    for _ in range(3):
+                        self.perso.vit("sursaut")   # une fois par soiree de feux d'artifice, pas a chaque salve
+                self.derniere_fois["petarades"] = self.t_global
                 self.veille_jusqua = max(self.veille_jusqua, self.t_global + self.ABRI_PETARDS_S)
                 coin = self._coin_atteignable()
                 if coin is not None:
@@ -984,7 +979,8 @@ class Brain:
         ne vient qu'en dessous de BATTERIE_BASSE_PCT."""
         pct = self._batterie_pct
         if pct is None or pct >= self.BATTERIE_FAIBLE_PCT:
-            self._social_fait = False           # rechargee : la prochaine decharge y aura droit
+            if pct is None or pct >= self.BATTERIE_FAIBLE_PCT + 10.0:
+                self._social_fait = False       # vraiment rechargee (hysteresis : la tension oscille sous charge)
             return None
         if (getattr(self, "_social_fait", False) or pct < self.BATTERIE_BASSE_PCT or not self.presents
                 or self.ctx.extras.get("tof") is None or self.surchauffe):
@@ -994,7 +990,20 @@ class Brain:
         if coin is None or not self._atteignable(coin, (0.5, 3.0)):
             return None
         self.etats["va_social"].cible = coin
+        self.etats["cherche_attention"].cible = "humain"    # a l'arrivee : chercher l'attention de quelqu'un
         return "va_social"
+
+    def _sur_info_maison(self, base, detail):
+        if base == "temperature_ext":
+            try:
+                self.temperature_ext = float(detail)     # temperature exterieure (HA) : la saison ressentie
+            except ValueError:
+                pass
+        elif base == "presence":
+            # etat initial lu dans HA au demarrage (pont_ha.lire_presence_initiale) : ni accueil ni rituel
+            qui, _, ou = detail.partition("|")
+            (self.presents.add if ou == "home" else self.presents.discard)(qui)
+            self.presence_suivie = True
 
     def _sur_vacarme(self, fort):
         """Ambiance tres bruyante et prolongee (fete, dispute, travaux ; audio.py) : il se retire dans son coin de sieste
@@ -1309,6 +1318,8 @@ class Brain:
             elif nom == "caresse":
                 self.ctx.sound("coo")
                 self.derniere_interaction = self.t_global
+            elif nom.startswith("ton:"):
+                pass                            # le ton d'un instant : rejoue plus tard, il serait hors contexte
             else:
                 garde.append(nom)
         self.evenements = garde
@@ -1447,8 +1458,8 @@ class Brain:
             self.habitudes.avance()             # une fois par minute : changement d'heure
             self.perso.avance(self.t_global)    # retour lent vers son temperament de base
             jour = getattr(self.horloge(), "tm_yday", None)
-            if jour != getattr(self, "_jour_derive_sons", None):
-                self._jour_derive_sons = jour
+            if jour != self.perso.d.get("jour_sons"):     # persistant : un redemarrage ne fait pas deriver
+                self.perso.d["jour_sons"] = jour
                 self.perso.derive_sons(self._rng_babil)   # sa voix change doucement, jour apres jour
         if self.courant.nom == "porte":
             self._traite_evenements_porte()

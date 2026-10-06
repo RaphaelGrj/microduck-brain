@@ -115,6 +115,15 @@ def devant(gt, dx, dy=0.0, duck=0):
             c["pos"][1] + math.sin(yaw) * dx + math.cos(yaw) * dy)
 
 
+def odom_vers_monde(s, gt, p):
+    """Point de l'odometrie (session) -> monde, d'apres la pose odom `s` et la pose verite terrain `gt` au meme instant."""
+    import truth
+    o = s["odom"]
+    dx, dy = p[0] - o["position"][0], p[1] - o["position"][1]
+    c, si = math.cos(-o["yaw"]), math.sin(-o["yaw"])
+    return devant(gt, c * dx - si * dy, si * dx + c * dy)
+
+
 def balle(gt):
     """Nom de la balle de la scene (arene : testball)."""
     for nom in ("testball", "ball_0"):
@@ -166,9 +175,9 @@ def sc_coin_sieste(banc):
     o = s["odom"]
     coin_odom = (o["position"][0] + math.cos(o["yaw"]) * rel[0] - math.sin(o["yaw"]) * rel[1],
                  o["position"][1] + math.sin(o["yaw"]) * rel[0] + math.cos(o["yaw"]) * rel[1])
-    attendu = devant(gt, *rel)
     b = banc.cerveau(energie=0.2, seed=9, exploration=False)
     b.exploration.preference(coin_odom[0], coin_odom[1], "nap", 3600.0, 0.0)
+    attendu = odom_vers_monde(s, gt, b.exploration.coin_favori("nap", 0.0))   # le centre de case que vise le cerveau
     m = banc.vivre(b, 45)
     fin = m["traj"][-1] if m["traj"] else (0, 0, 0, 0)
     ecart = math.dist(fin[1:3], attendu)
@@ -313,7 +322,7 @@ def sc_autotest(banc):
 def sc_bec_index(banc):
     import truth
     truth.teleport_duck(0.0, 0.0, 0.0)
-    avant = banc.tenir(1.0)
+    avant = banc.tenir(3.0)                        # les jambes de la politique "stand" se posent
     j0 = avant.get("joints") or []
     t0 = time.monotonic()
     s = avant
@@ -327,7 +336,7 @@ def sc_bec_index(banc):
         return False, {"nombre_de_joints": [len(j0), len(j1)]}
     ecarts = [round(abs(a - b), 3) for a, b in zip(j0, j1)]
     bouge = max(range(15), key=lambda i: ecarts[i])
-    ok = bouge == 9 and all(e < 0.05 for i, e in enumerate(ecarts) if i != 9)
+    ok = bouge == 9 and all(ecarts[i] < 0.05 for i in (5, 6, 7, 8))     # tete immobile ; les jambes ne comptent pas
     return ok, {"joint_qui_bouge": bouge, "ecarts_rad": ecarts,
                 "courants": "presents" if s.get("currents_ma") else "absents", "targets": len(s.get("targets") or [])}
 
@@ -342,9 +351,9 @@ def sc_compagnie(banc):
     o = s["odom"]
     coin_odom = (o["position"][0] + math.cos(o["yaw"]) * rel[0] - math.sin(o["yaw"]) * rel[1],
                  o["position"][1] + math.sin(o["yaw"]) * rel[0] + math.cos(o["yaw"]) * rel[1])
-    attendu = devant(gt, *rel)
     b = banc.cerveau(seed=23, exploration=False)
     b.exploration.preference(coin_odom[0], coin_odom[1], "social", 600.0, 0.0)
+    attendu = odom_vers_monde(s, gt, b.exploration.coin_favori("social", 0.0))
     b.evenement("compagnie")
     assis = []
     m = banc.vivre(b, 50, chaque_tick=lambda b, s: assis.append(s.get("policy") == "sit") if b.courant.nom == "compagnie"
@@ -362,12 +371,12 @@ def sc_coup_oeil(banc):
     import truth
     import vision
     resultats = {}
-    for cote, dy in (("gauche", 0.32), ("centre", 0.0)):
+    for cote, dy in (("gauche", 0.16), ("centre", 0.0)):     # a 0,6 m : la balle fait ~12 px dans l'image reduite
         truth.teleport_duck(0.0, 0.0, 0.0)
         banc.tenir(1.0)
         gt = truth.read()
         nom = balle(gt)
-        deplacer(nom, *devant(gt, 1.2, dy))
+        deplacer(nom, *devant(gt, 0.6, dy))
         veille = mouvement.VeilleMouvement(vision.grab_frame)
         veille.start()
         b = banc.cerveau(seed=25, exploration=False, mouvement=veille)
@@ -378,11 +387,16 @@ def sc_coup_oeil(banc):
         def agite(b, s):
             k[0] += 1
             if b.t_global > 3.0 and k[0] % 10 == 0:          # la balle va et vient toutes les 0,2 s
-                deplacer(nom, *devant(truth.read(), 1.2, dy + (0.05 if (k[0] // 10) % 2 else -0.05)))
+                deplacer(nom, *devant(truth.read(), 0.6, dy + (0.04 if (k[0] // 10) % 2 else -0.04)))
         m = banc.vivre(b, 12, chaque_tick=agite)
         veille.actif = False
-        resultats[cote] = {"coup_oeil": m["etats"].get("coup_oeil", 0) > 0, "lacet": b.etats["coup_oeil"].lacet}
-    ok = resultats["gauche"]["coup_oeil"] and resultats["gauche"]["lacet"] > 0 and not resultats["centre"]["coup_oeil"]
+        fractions = [f for _, f in veille.historique]
+        resultats[cote] = {"coup_oeil": m["etats"].get("coup_oeil", 0) > 0, "lacet": b.etats["coup_oeil"].lacet,
+                           "fraction_max": round(max(fractions, default=0.0), 4),   # 0 = rien vu du tout
+                           "centre_vu": veille.dernier_centre[1] if veille.dernier_centre else None}
+    # le controle "centre" n'a de sens que si le mouvement y a ete VU (sinon il passe pour une mauvaise raison)
+    ok = (resultats["gauche"]["coup_oeil"] and resultats["gauche"]["lacet"] > 0 and not resultats["centre"]["coup_oeil"]
+          and resultats["centre"]["fraction_max"] >= 0.004)
     return ok, resultats
 
 

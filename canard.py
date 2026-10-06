@@ -143,6 +143,11 @@ def main():
     def source():
         return [e for s in a["sources"] for e in s()]
 
+    # systemctl stop / redemarrage : SIGTERM -> sortie normale (le canard se releve, la memoire est sauvee) au lieu
+    # d'une mort brutale qui perdrait ce qui a change depuis la derniere sauvegarde
+    import signal
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+
     def crochet(b, state):
         for f in a["crochets"]:
             f(b, state)
@@ -153,6 +158,9 @@ def main():
             f.actif = False
         if a["pont"] is not None:
             a["pont"].stop()
+        mem = a["extras"].get("memoire")
+        if mem is not None and hasattr(mem, "fermer"):
+            mem.fermer()
 
 
 if __name__ == "__main__":

@@ -284,10 +284,14 @@ def test_vacarme_prolonge_puis_retombe():
 
 def test_petarades_distinctes_du_tonnerre():
     s = fond(10)
-    for k in range(8):
-        clap(s, 1.0 + 0.4 * k, amplitude=0.9, decroissance=0.03)      # chocs tres forts, rapproches
+    for t in (1.0, 1.25, 1.9, 2.1, 2.8, 3.0, 3.65, 4.3):
+        clap(s, t, amplitude=0.9, decroissance=0.03)                 # chocs tres forts, rapproches, irreguliers
     evts = noms(analyse(s))
     assert "petarades" in evts, evts
+    s = fond(10)
+    for k in range(10):
+        clap(s, 1.0 + 0.35 * k, amplitude=0.9, decroissance=0.03)    # applaudissements tres forts, reguliers
+    assert "petarades" not in noms(analyse(s))
     s = fond(10)
     clap(s, 2.0, amplitude=0.9, decroissance=0.03)                   # un coup de tonnerre isole
     evts = noms(analyse(s))

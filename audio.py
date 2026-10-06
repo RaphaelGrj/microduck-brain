@@ -21,8 +21,8 @@ le pipeline micro qui manquait (journal du 2026-10-05 : "aucun pipeline micro/FF
     fait discret. Deux personnes de voix proches donnent le meme motif : consequence benigne (il se tait un moment) ;
   - "baillement_entendu" : un son voise et CONTINU de 1,6 a 3,5 s (une phrase qui descend dure rarement autant), qui descend d'au moins 5 demi-tons, apres un
     silence (pas au milieu d'une phrase) -> baillement contagieux ;
-  - "petarades"        : au moins 6 chocs forts en 4 s (petards, feux d'artifice) - distinct du tonnerre, un choc isole
-    ou deux -> prudence plus marquee et plus longue qu'un sursaut ;
+  - "petarades"        : au moins 6 chocs forts en 4 s, a intervalles IRREGULIERS (petards, feux d'artifice) - ni le
+    tonnerre (un choc isole ou deux), ni des applaudissements forts (reguliers) -> prudence marquee et plus longue ;
   - "bips_appareil"    : 1 a 6 bips aigus groupes puis le silence (four, micro-ondes, lave-linge en fin de cycle) -
     pas l'alarme incendie, dont les bips continuent (motif T3) ;
   - "vacarme" / "vacarme_fin" : niveau sonore moyen tres eleve pendant une minute (fete, dispute, travaux) -> il se
@@ -216,7 +216,10 @@ class AnalyseurSon:
                         out.append("eternuement")
                 elif pic >= self.seuil_fort:
                     self.chocs = [c for c in self.chocs if self.t - c <= 4.0] + [self.t]
-                    if len(self.chocs) >= 6 and self._peut("petarades", 120.0):
+                    ecarts = np.diff(self.chocs)
+                    # des applaudissements forts sont quasi PERIODIQUES ; des petards, irreguliers
+                    irregulier = len(ecarts) >= 5 and float(np.std(ecarts)) >= 0.35 * float(np.mean(ecarts))
+                    if len(self.chocs) >= 6 and irregulier and self._peut("petarades", 120.0):
                         self.chocs = []
                         out.append("petarades")
                     elif self._peut("bruit", self.delai_bruit_s):

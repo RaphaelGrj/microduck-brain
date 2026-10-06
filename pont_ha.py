@@ -121,8 +121,11 @@ def lire_config(chemin):
             # sinon le dernier ecraserait les autres (la surveillance est indexee par entite)
             meme["reactions"][str(dec.get("etat", "*"))] = dec["evenement"]
             continue
-        cfg["surveillance"].append({"entite": dec["entite"], "nom": dec.get("nom", dec["entite"]),
-                                    "reactions": {str(dec.get("etat", "*")): dec["evenement"]}})
+        entree = {"entite": dec["entite"], "nom": dec.get("nom", dec["entite"]),
+                  "reactions": {str(dec.get("etat", "*")): dec["evenement"]}}
+        if est_vide(dec.get("nom")) and str(dec["evenement"]).startswith("visiteur"):
+            entree["sans_detail"] = True        # visiteur sans prenom : un INCONNU, pas "visiteur:binary_sensor.x"
+        cfg["surveillance"].append(entree)
     for app in brut.get("appareil", []):        # messager : sonnette, lave-linge, lave-vaisselle...
         if est_vide(app.get("entite")):
             cfg["ignorees"].append(app.get("nom", "?"))
@@ -419,9 +422,10 @@ class PontHA:
                 c = float(nouveau)
             except ValueError:
                 return
-            dernier = getattr(self, "_derniere_temperature", None)
+            derniers = self.__dict__.setdefault("_dernieres_temperatures", {})     # par capteur
+            dernier = derniers.get(entite)
             if dernier is None or abs(c - dernier) >= 1.0:      # au degre pres : pas un evenement par dixieme
-                self._derniere_temperature = c
+                derniers[entite] = c
                 self.evenements.put(f"temperature_ext:{c:.1f}")
             return
         if s.get("meteo"):
@@ -436,7 +440,8 @@ class PontHA:
             reaction = reactions["*"]
         self.log(f"[HA] {entite}: {ancien} -> {nouveau}" + (f"  => {reaction}" if reaction else ""))
         if reaction:
-            self.evenements.put(reaction if entite == self.calme else f"{reaction}:{s.get('nom', entite)}")
+            self.evenements.put(reaction if entite == self.calme or s.get("sans_detail")
+                                else f"{reaction}:{s.get('nom', entite)}")
 
     def _sur_puissance(self, entite, s, valeur):
         try:

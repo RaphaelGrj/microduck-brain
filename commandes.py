@@ -101,8 +101,10 @@ class Commandes:
             return None
         habituel = float(np.median(self.niveaux_nom)) if len(self.niveaux_nom) >= 3 else None
         ton, niveau = ton_du_nom(self.tampon[debut:fin] / 32768.0, habituel)
-        if niveau is not None and ton is None:
-            self.niveaux_nom = (self.niveaux_nom + [niveau])[-20:]    # la reference : la facon habituelle de l'appeler
+        if niveau is not None:
+            # la reference suit TOUTES les mesures (mediane des 20 derniers noms) : le niveau au micro depend de la
+            # distance et de la piece ; une reference figee sur les seuls noms "neutres" le croirait grondé pour toujours
+            self.niveaux_nom = (self.niveaux_nom + [niveau])[-20:]
         return ton
 
     def comprendre(self, resultat):
@@ -123,10 +125,10 @@ class Commandes:
         else:
             return []                       # sans son nom : ce n'est pas a lui qu'on parle
         self.attente_nom = None
-        tons = [f"ton:{ton}"] if ton else []
+        # pas de "ton:" avec une commande : le geste du ton (penaud, cajole) ecraserait la commande qu'il accompagne
         if confiance < CONFIANCE_MIN or reste not in VOCABULAIRE:
-            return ["commande:pas_compris"] + tons
-        return [VOCABULAIRE[reste]] + tons
+            return ["commande:pas_compris"]
+        return [VOCABULAIRE[reste]]
 
 
 def fabrique_vosk(chemin_modele):

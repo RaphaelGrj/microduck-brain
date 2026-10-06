@@ -35,7 +35,7 @@ class Memoire:
         self._differee = ecriture_differee
         if ecriture_differee:
             threading.Thread(target=self._ecrivain, daemon=True).start()
-            atexit.register(self.vider)
+            atexit.register(self.fermer)
         try:
             self.donnees = json.loads(self.chemin.read_text())
         except (FileNotFoundError, ValueError):
@@ -146,6 +146,13 @@ class Memoire:
                     self._ecrire_fichier(texte)
                 except OSError:
                     pass                        # disque plein, carte retiree... la prochaine sauvegarde reessaiera
+
+    def fermer(self):
+        """Arret du cerveau : sauvegarde de l'etat ACTUEL (pas seulement ce qui attendait), ecrite tout de suite."""
+        try:
+            self.sauver()
+        finally:
+            self.vider()
 
     def vider(self):
         """Ecrit tout de suite ce qui attend, apres une ecriture deja en cours (arret du cerveau)."""
