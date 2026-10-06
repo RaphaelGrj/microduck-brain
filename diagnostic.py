@@ -71,11 +71,23 @@ class JournalBatterie:
         finally:
             self._garde(t)
 
+    CONFIRME_S = 120.0          # une vraie charge CONTINUE de monter ; un rebond de tension apres l'effort plafonne
+    ECHANGE_PCT = 30.0          # +30 % d'un coup : batterie echangee (canard eteint puis rallume) - confirme tout de suite
+
     def _note(self, t, pct):
-        if pct >= self.bas[1] + self.CHARGE_PCT:           # elle remonte : en charge
-            if not self.en_charge:
+        if not self.en_charge and pct >= self.bas[1] + self.CHARGE_PCT:
+            cand = getattr(self, "_candidat", None)
+            if pct >= self.bas[1] + self.ECHANGE_PCT or (
+                    cand is not None and t - cand[0] >= self.CONFIRME_S and pct > cand[1] + 1.0):
+                self._candidat = None
                 self._clos_cycle()
                 self.en_charge = True
+                self.haut = self.bas = (t, pct)
+            elif cand is None:
+                self._candidat = (t, pct)        # a confirmer : charge, ou simple rebond de tension ?
+            return
+        self._candidat = None
+        if self.en_charge and pct >= self.bas[1] + self.CHARGE_PCT:
             self.haut = self.bas = (t, pct)
             return
         if self.en_charge:

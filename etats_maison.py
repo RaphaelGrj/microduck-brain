@@ -141,9 +141,8 @@ class AutoTestReveil(Etat):
                 self.res["tof"] = (lib is not None, f"{lib.get('n', 0)} obstacle(s)" if lib else "pas de trame")
         elif t < 1.6:
             brain.ctx.head((0.0, 0.0, a, 0.0))
-        elif t < 1.7:
-            if "tete_lacet" not in self.res:
-                self._suivi(brain, "tete_lacet", 7)
+        elif "tete_lacet" not in self.res:
+            self._suivi(brain, "tete_lacet", 7)  # premiere trame apres 1,6 s, quelle que soit la cadence (10-50 Hz)
             brain.ctx.head((0.0, 0.0, 0.0, 0.0))
         elif t < 2.4:
             brain.ctx.head((0.0, 0.0, 0.0, 0.0))

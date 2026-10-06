@@ -246,3 +246,14 @@ def test_entites_home_assistant():
     assert ent["sensor.microduck_chutes_7j"][0] == 1
     assert ent["binary_sensor.microduck_servos_derive"][0] == "off"
     assert "sensor.microduck_sante_batterie" not in ent, "pas de verdict sans historique"
+
+
+def test_batterie_un_rebond_de_tension_durable_ne_coupe_pas_le_cycle():
+    j = JournalBatterie()
+    t, pct = 0.0, 100.0
+    for k in range(300):                        # 5 h : decharge, avec un palier de rebond de +6 % pendant 15 min
+        pct -= 0.2
+        rebond = 6.0 if 100 <= k < 115 else 0.0
+        j.note(t, pct + rebond)
+        t += 60
+    assert not j.en_charge and j.d["cycles"] == [], "un rebond qui plafonne n'est pas une charge"

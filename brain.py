@@ -750,7 +750,11 @@ class Brain:
         force = getattr(self, "suivant_force", None)
         if force:
             self.suivant_force = None
-            return force
+            if (self.discret or self.timidite() > 0.0) and (
+                    force in self.INITIATIVES_BRUYANTES or getattr(self.etats[force], "taquinerie", False)):
+                force = None                    # un appel en cours, un visiteur : pas de jeu ni de blague enchaines
+            else:
+                return force
         if self.surchauffe:
             return "nap"                        # servos trop chauds : repos assis, jamais de marche, jusqu'a refroidir
         if self.mode_calme or self.t_global < self.veille_jusqua:
@@ -988,6 +992,8 @@ class Brain:
                 veille.pause = self.cpu_chaud
 
     P_BAILLEMENT_CONTAGIEUX = 0.6
+    INITIATIVES_BRUYANTES = {"wander", "zoomies", "balle", "soleil", "cache_cache", "danse", "jour_special", "fier",
+                             "salut", "bravo", "cherche_attention", "va_observer", "picore"}
     JOURNAL_MAX = 20000
     # Journal de bord du jour (Home Assistant : sensor.microduck_journal) : ce qu'il a fait depuis minuit
     CATEGORIES_JOUR = {"wander": "promenades", "va_au_coin": "promenades", "nap": "siestes",

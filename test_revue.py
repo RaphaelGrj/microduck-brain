@@ -406,3 +406,31 @@ def test_v_memoire_fermer_sauve_l_etat_actuel():
         m.donnees["personnalite"] = {"traits": {"curiosite": 0.7}}     # change sans sauvegarde (comme les traits)
         m.fermer()
         assert Memoire(Path(d) / "m.json").donnees["personnalite"]["traits"]["curiosite"] == 0.7
+
+
+def test_w_enchainement_force_respecte_l_appel_et_le_visiteur():
+    from test_vie_maison import cerveau as cerveau_vie, vivre
+    b, _, _ = cerveau_vie()
+    b.evenement("telephone")
+    vivre(b, 1)
+    b.suivant_force = "zoomies"
+    b.fin_etat = 0.0
+    vivre(b, 0.1)
+    assert b.courant.nom != "zoomies"
+    b.suivant_force = "nap"                     # une sieste, elle, reste permise
+    b.fin_etat = 0.0
+    vivre(b, 0.1)
+    assert b.courant.nom == "nap"
+
+
+def test_w_autotest_tete_mesuree_meme_a_10_hz():
+    from test_diagnostic import ClientRobot, cerveau as cerveau_diag
+    c = ClientRobot()
+    b = cerveau_diag(c)
+    b._bascule("autotest")
+    for k in range(60):                         # 10 trames par seconde : aucune ne tombe dans [1,6 ; 1,7)
+        joints = [0.0] * 15
+        joints[5:9] = [0.95 * x for x in c.tete]
+        b.tick({"t": 0.05 + k * 0.1, "safety": {"fallen": False}, "policy": "stand", "joints": joints,
+                "targets": [0.0] * 15}, 0.1)
+    assert b.diagnostic.autotest.resultats["tete_lacet"][0], b.diagnostic.autotest.resultats
