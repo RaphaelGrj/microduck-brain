@@ -62,7 +62,8 @@ def test_commandes_en_liste_fermee(serveur):
 
 
 def test_fichiers_de_l_interface_et_pas_d_evasion(serveur):
-    for chemin in ("/", "/app.js", "/style.css", "/manifest.webmanifest", "/icone.svg"):
+    for chemin in ("/", "/app.js", "/style.css", "/manifest.webmanifest", "/icone.png", "/microduck/debout.webp",
+                   "/microduck/assis-dort.webp"):
         statut, corps = requete(serveur.port, chemin, code=None)
         assert statut == 200 and corps, chemin
     assert requete(serveur.port, "/../appli.py", code=None)[0] == 404

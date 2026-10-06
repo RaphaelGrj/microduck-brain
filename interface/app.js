@@ -169,7 +169,7 @@ function afficher(e) {
   }));
 }
 
-// Le canard dessine : une posture et une expression par famille d'etats, la tete d'apres sa vraie consigne de tete.
+// Le Microduck de l'accueil : familles d'etats -> expression (signes par-dessus) ; image d'apres posture et tete.
 const FAMILLES = {
   dort: ["nap"],
   marche: ["wander", "va_au_coin", "va_chargeur", "va_observer", "va_repas", "va_compagnie", "va_social", "pas_guide",
@@ -179,20 +179,38 @@ const FAMILLES = {
   content: ["caresse", "cajole", "accueil", "compris", "celebre", "jour_special", "compagnie", "bonjour"],
   penaud: ["penaud", "timide", "gene", "hesite"],
 };
-function dessiner(e) {
-  const svg = $("#canard");
-  const classes = ["canard"];
-  for (const [famille, etats] of Object.entries(FAMILLES)) if (etats.includes(e.etat)) classes.push(famille);
-  if (e.assis) classes.push("assis");
-  if (e.tombe) classes.push("tombe");
-  if (e.porte) classes.push("porte");
-  svg.setAttribute("class", classes.join(" "));
+const IMAGES = ["debout", "debout-tete-basse", "debout-tete-haute", "debout-gauche", "debout-droite", "debout-penche",
+  "marche", "assis", "assis-dort", "tombe"];
+IMAGES.forEach((n) => { new Image().src = `/microduck/${n}.webp`; });     // prechargees : pas de clignotement
+let pasMarche = null;
+
+function image(e, famille) {
+  if (e.tombe) return "tombe";
   const [cou, tangage, lacet, roulis] = e.tete || [0, 0, 0, 0];
-  const deg = 180 / Math.PI;
-  // vu de profil : le tangage penche la tete en avant, le roulis l'incline ; le lacet se voit comme un petit decalage
-  $("#tete").style.transform =
-    `translateX(${(-lacet * 6).toFixed(1)}px) rotate(${((tangage + cou) * deg * 0.6 + roulis * deg * 0.4).toFixed(1)}deg)`;
-  svg.setAttribute("aria-label", "Le canard : " + (ETATS[e.etat] || e.etat));
+  if (e.assis) return famille.includes("dort") || tangage + cou > 0.35 ? "assis-dort" : "assis";
+  if (Math.abs(lacet) > 0.25) return lacet > 0 ? "debout-gauche" : "debout-droite";
+  if (tangage + cou > 0.25) return "debout-tete-basse";
+  if (tangage + cou < -0.15) return "debout-tete-haute";
+  if (Math.abs(roulis) > 0.15) return "debout-penche";
+  return "debout";
+}
+
+function dessiner(e) {
+  const boite = $("#microduck"), img = $("#microduck-img");
+  const familles = Object.entries(FAMILLES).filter(([, etats]) => etats.includes(e.etat)).map(([f]) => f);
+  if (e.tombe) familles.push("tombe");
+  if (e.porte) familles.push("porte");
+  boite.className = ["microduck", ...familles].join(" ");
+  const choix = image(e, familles);
+  clearInterval(pasMarche);
+  if (familles.includes("marche") && !e.assis && !e.tombe) {
+    let n = 0;                                  // il marche : deux images en alternance
+    img.src = "/microduck/marche.webp";
+    pasMarche = setInterval(() => { img.src = `/microduck/${n++ % 2 ? "marche" : choix}.webp`; }, 380);
+  } else if (!img.src.endsWith(`/${choix}.webp`)) {
+    img.src = `/microduck/${choix}.webp`;
+  }
+  boite.setAttribute("aria-label", "Microduck : " + (ETATS[e.etat] || e.etat));
 }
 
 function liaison(ok) { $("#liaison").className = "pastille " + (ok ? "ok" : "ko"); }

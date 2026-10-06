@@ -7,5 +7,5 @@
   "background_color": "#1f2a37",
   "theme_color": "#1f2a37",
   "lang": "fr",
-  "icons": [{"src": "/icone.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}]
+  "icons": [{"src": "/icone.png", "sizes": "512x512", "type": "image/png", "purpose": "any"}]
 }

@@ -43,7 +43,7 @@ COMMANDES = {
     "regard_bas": "regard:bas", "regard_centre": "regard:centre",
 }
 TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
-         ".svg": "image/svg+xml", ".webmanifest": "application/manifest+json", ".json": "application/json"}
+         ".svg": "image/svg+xml", ".png": "image/png", ".webp": "image/webp", ".webmanifest": "application/manifest+json", ".json": "application/json"}
 
 
 def adresse_locale(ip):
