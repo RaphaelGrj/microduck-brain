@@ -280,3 +280,15 @@ def test_vacarme_prolonge_puis_retombe():
     assert "vacarme" in evts and evts.index("vacarme_fin") > evts.index("vacarme"), evts
     assert "vacarme" not in noms(analyse(np.concatenate([RNG.normal(0, 0.08, int(20 * TAUX)), fond(60)]))), \
         "un bruit de 20 s n'est pas un vacarme"
+
+
+def test_petarades_distinctes_du_tonnerre():
+    s = fond(10)
+    for k in range(8):
+        clap(s, 1.0 + 0.4 * k, amplitude=0.9, decroissance=0.03)      # chocs tres forts, rapproches
+    evts = noms(analyse(s))
+    assert "petarades" in evts, evts
+    s = fond(10)
+    clap(s, 2.0, amplitude=0.9, decroissance=0.03)                   # un coup de tonnerre isole
+    evts = noms(analyse(s))
+    assert "petarades" not in evts and "bruit" in evts, evts

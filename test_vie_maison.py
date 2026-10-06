@@ -401,3 +401,34 @@ def test_temperature_exterieure_depuis_home_assistant():
         pont._sur_changement("sensor.dehors", "11", v)
     assert [pont.evenements.get_nowait() for _ in range(pont.evenements.qsize())] == [
         "temperature_ext:12.0", "temperature_ext:13.1", "temperature_ext:7.9"]
+
+
+def test_petarades_abri_prolonge():
+    b, _, _ = cerveau()
+    vivre(b, 120, evenements=[(1.0, "petarades")])
+    noms = [e[1] for e in b.journal]
+    assert noms[0] == "startle" and set(noms[1:]) <= {"nap", "va_au_coin"}, noms
+    assert b.veille_jusqua > b.t_global and b.perso.trait("prudence") > 0.5
+
+
+def test_voix_personnelle_renforcee_par_les_reactions_et_qui_derive():
+    import random
+    from personnalite import Personnalite
+    p = Personnalite()
+    rng = random.Random(1)
+    for _ in range(10):
+        p.renforce_son("peck")
+    tirages = [p.choisit_son(rng) for _ in range(2000)]
+    assert tirages.count("peck") > tirages.count("coo") * 2, "le son qui fait reagir la maison revient plus souvent"
+    avant = dict(p.d["sons"])
+    for _ in range(30):
+        p.derive_sons(rng)
+    assert p.d["sons"] != avant and all(0.3 <= v <= 3.0 for v in p.d["sons"].values())
+    b, c, _ = cerveau()
+    b.etats["chill"].duree = lambda brain: 1e9
+    b.fin_etat = 1e9
+    b._t_babil, b._dernier_babil = 0.0, "coo"
+    b.t_global = 10.0
+    poids = b.perso.d.setdefault("sons", {"coo": 1.0, "chirp": 1.0, "peck": 1.0})["coo"]
+    vivre(b, 1, evenements=[(0.2, "caresse")])
+    assert b.perso.d["sons"]["coo"] > poids, "une caresse juste apres un roucoulement : il le retient"

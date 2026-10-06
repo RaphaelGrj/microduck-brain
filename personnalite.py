@@ -49,6 +49,33 @@ class Personnalite:
         self.d.setdefault("traits", dict(self.d["base"]))
         self._t_retour = None
 
+    # -- voix personnelle (ROADMAP "Motif sonore personnel qui derive legerement avec le temps") ------------------------
+    # Les petits sons gratuits (coo, chirp, peck) ont chacun un poids : un son suivi d'une reaction humaine dans les
+    # 30 s se renforce (il apprend ce qui attire l'attention de SA maison), et tous derivent un peu au hasard chaque
+    # jour : deux canards finissent par ne pas "parler" pareil, et le meme canard change doucement avec les mois.
+    SONS_PERSO = ("coo", "chirp", "peck")
+    RENFORCE = 0.15
+    DERIVE_JOUR = 0.05
+    POIDS_MIN, POIDS_MAX = 0.3, 3.0
+
+    def _poids_sons(self):
+        return self.d.setdefault("sons", {s: 1.0 for s in self.SONS_PERSO})
+
+    def choisit_son(self, rng):
+        p = self._poids_sons()
+        return rng.choices(self.SONS_PERSO, weights=[p[s] for s in self.SONS_PERSO])[0]
+
+    def renforce_son(self, tag):
+        p = self._poids_sons()
+        if tag in p:
+            p[tag] = min(self.POIDS_MAX, p[tag] + self.RENFORCE)
+
+    def derive_sons(self, rng):
+        """Une fois par jour : petite marche au hasard des poids."""
+        p = self._poids_sons()
+        for s in self.SONS_PERSO:
+            p[s] = min(self.POIDS_MAX, max(self.POIDS_MIN, p[s] * (1.0 + rng.uniform(-self.DERIVE_JOUR, self.DERIVE_JOUR))))
+
     def trait(self, nom):
         return self.d["traits"][nom]
 

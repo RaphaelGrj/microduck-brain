@@ -312,6 +312,8 @@ class Brain:
             # qu'il soit ou non traite immediatement (differe pendant une conversation, ignore pendant la sieste...).
             self.derniere_interaction = self.t_global
             self.ignores = 0                    # quelqu'un s'est manifeste : le decouragement s'efface
+            if base in ("caresse", "main", "appel", "voix", "commande", "intonation", "applaudissements"):
+                self._reponse_au_babil()
             if base in ("telephone", "telephone_fin"):
                 self._discretion(base == "telephone")
                 continue
@@ -488,7 +490,19 @@ class Brain:
                 continue
             if self.courant.nom == "nap":
                 continue  # ne jamais insister : on dort, l'evenement est perdu
-            if nom == "bruit":
+            if base == "petarades":
+                # Petards, feux d'artifice (audio.py) : plus que le sursaut du tonnerre - il va se mettre a l'abri dans son
+                # coin et y reste 10 min, assis ; un peu plus prudent ensuite (personnalite).
+                self.humeur.eveil = min(1.0, self.humeur.eveil + 0.6)
+                for _ in range(3):
+                    self.perso.vit("sursaut")
+                self.veille_jusqua = max(self.veille_jusqua, self.t_global + self.ABRI_PETARDS_S)
+                coin = self._coin_atteignable()
+                if coin is not None:
+                    self.etats["va_au_coin"].cible = coin
+                self.suivant_force = "va_au_coin" if coin is not None else "nap"
+                self._bascule("startle")
+            elif nom == "bruit":
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.5)
                 self.bruits = [t for t in self.bruits if self.t_global - t <= 60.0] + [self.t_global]
                 if len(self.bruits) >= 3:        # detonations en serie (petards, orage) : il va se mettre a l'abri
@@ -961,6 +975,7 @@ class Brain:
                 veille.pause = self.cpu_chaud
 
     P_BAILLEMENT_CONTAGIEUX = 0.6
+    ABRI_PETARDS_S = 600.0
     ASPI_MEFIANT, ASPI_FAMILIER = 0.3, 0.7     # familiarite (memoire.py) avec l'aspirateur
 
     def _presence_avant_la_prise(self):
@@ -1117,7 +1132,17 @@ class Brain:
             return
         if self._rng_babil.random() < dt * self.vivacite() / self.BABIL_MOYEN_S:
             self._t_babil = self.t_global
-            self.ctx.sound(self._rng_babil.choice(("coo", "chirp", "chirp", "peck")))
+            self._dernier_babil = self.perso.choisit_son(self._rng_babil)
+            self.ctx.sound(self._dernier_babil)
+
+    REPONSE_BABIL_S = 30.0
+
+    def _reponse_au_babil(self):
+        """Quelqu'un reagit (caresse, main, appel, voix...) peu apres un petit son gratuit : ce son-la plait ici."""
+        tag = getattr(self, "_dernier_babil", None)
+        if tag is not None and self.t_global - self._t_babil <= self.REPONSE_BABIL_S:
+            self.perso.renforce_son(tag)
+            self._dernier_babil = None
 
     def _surveille_peripherie(self):
         """Pendant chill (tete immobile), la veille mouvement tourne doucement ; un mouvement AU BORD de l'image (petite
@@ -1421,6 +1446,10 @@ class Brain:
         if int(self.t_global / 60.0) != int((self.t_global - dt) / 60.0):
             self.habitudes.avance()             # une fois par minute : changement d'heure
             self.perso.avance(self.t_global)    # retour lent vers son temperament de base
+            jour = getattr(self.horloge(), "tm_yday", None)
+            if jour != getattr(self, "_jour_derive_sons", None):
+                self._jour_derive_sons = jour
+                self.perso.derive_sons(self._rng_babil)   # sa voix change doucement, jour apres jour
         if self.courant.nom == "porte":
             self._traite_evenements_porte()
             self.t_etat += dt
