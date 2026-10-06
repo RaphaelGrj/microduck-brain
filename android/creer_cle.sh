@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Cree TA cle de signature de l'APK Microduck, la sauvegarde, et la donne a GitHub. A lancer UNE fois, dans WSL :
-#   bash ~/microduck-brain/android/creer_cle.sh
+# Cree TA cle de signature de l'APK Microduck, la sauvegarde, et la donne a GitHub. A lancer UNE fois (Linux ou WSL) :
+#   bash android/creer_cle.sh [dossier-de-sauvegarde]
+#   ex. bash android/creer_cle.sh /mnt/mmc-SN128_0x5c36c07b-part1/microduck/microduck-app
+# Sans dossier : Documents de Windows (WSL), sinon le dossier personnel.
 # Ensuite GitHub construit et publie l'APK tout seul a chaque nouvelle version (workflow .github/workflows/apk.yml).
 # Explications : android/CLE_DE_SIGNATURE.md. Rien de ce que fait ce script n'est envoye ailleurs que sur GitHub
-# (secrets chiffres) et dans ton dossier Documents.
+# (secrets chiffres) et dans le dossier de sauvegarde.
 set -euo pipefail
 
 DEPOT="${MICRODUCK_DEPOT:-RaphaelGrj/microduck-brain}"
@@ -37,16 +39,23 @@ EMPREINTE="$(openssl pkcs12 -in "$KS" -passin "file:$MDP" -nokeys -clcerts 2>/de
   | openssl x509 -noout -fingerprint -sha256 | cut -d= -f2)"
 ok "empreinte : $EMPREINTE"
 
-# --- 2. La sauvegarde (dans Documents, cote Windows) -----------------------------------------------------------
-etape "2/3  Sauvegarde dans tes Documents"
+# --- 2. La sauvegarde (dossier donne, sinon Documents cote Windows, sinon le dossier personnel) --------------------
+etape "2/3  Sauvegarde de la cle"
 DOCS=""
-if command -v powershell.exe >/dev/null 2>&1; then
+SAUVE="${1:-${MICRODUCK_SAUVEGARDE:-}}"
+if [ -z "$SAUVE" ] && command -v powershell.exe >/dev/null 2>&1; then
   w="$(powershell.exe -NoProfile -Command '[Environment]::GetFolderPath("MyDocuments")' 2>/dev/null | tr -d '\r')"
   [ -n "$w" ] && DOCS="$(wslpath "$w" 2>/dev/null || true)"
 fi
-[ -d "$DOCS" ] || DOCS="$HOME"
-SAUVE="$DOCS/Microduck - cle APK (SECRET)"
+if [ -z "$SAUVE" ]; then
+  [ -d "$DOCS" ] || DOCS="$HOME"
+  SAUVE="$DOCS/Microduck - cle APK (SECRET)"
+fi
 mkdir -p "$SAUVE"
+chmod 700 "$SAUVE" 2>/dev/null || true         # (carte SD en exFAT : pas de droits Unix, sans gravite)
+if [ -e "$SAUVE/microduck.keystore" ] && ! cmp -s "$KS" "$SAUVE/microduck.keystore"; then
+  echo "   $SAUVE contient deja une AUTRE cle : je n'y touche pas. Choisis un autre dossier."; exit 1
+fi
 cp "$KS" "$SAUVE/microduck.keystore"
 cp "$MDP" "$SAUVE/mot-de-passe.txt"
 cat > "$SAUVE/LISEZ-MOI.txt" <<EOF
@@ -63,7 +72,7 @@ ok "copiee dans : $SAUVE"
 # --- 3. GitHub ---------------------------------------------------------------------------------------------------
 etape "3/3  Donner la cle a GitHub (secrets chiffres du depot $DEPOT)"
 if ! command -v gh >/dev/null; then
-  echo "   L'outil GitHub (gh) n'est pas installe : je l'installe (mot de passe de WSL demande)."
+  echo "   L'outil GitHub (gh) n'est pas installe : je l'installe (ton mot de passe sudo est demande)."
   sudo apt-get update -qq && sudo apt-get install -y -qq gh || true
 fi
 if ! command -v gh >/dev/null; then

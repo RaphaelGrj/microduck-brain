@@ -2,11 +2,12 @@
 
 ## Ce que tu as à faire (une seule fois, 5 minutes)
 
-1. Dans **WSL** (Ubuntu), mets le dépôt à jour puis lance le script :
+1. Sous **Linux** (ou WSL), dans le dossier du dépôt `microduck-brain`, sur la branche `ccr-4c5851c0-mdd2p8` :
    ```
-   cd ~/microduck-brain && git pull
-   bash android/creer_cle.sh
+   bash android/creer_cle.sh /mnt/mmc-SN128_0x5c36c07b-part1/microduck/microduck-app
    ```
+   Le chemin indique où ranger la sauvegarde de la clé. Sans chemin, elle va dans Documents (WSL) ou dans ton
+   dossier personnel.
 2. Réponds à ce qu'il demande :
    - **le mot de passe de WSL**, si l'outil GitHub (`gh`) n'est pas encore installé ;
    - la **connexion à GitHub** : choisir `GitHub.com`, puis `HTTPS`, puis `Login with a web browser`. Une page
