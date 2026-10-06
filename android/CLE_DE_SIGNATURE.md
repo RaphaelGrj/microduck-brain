@@ -11,7 +11,9 @@
    - **le mot de passe de WSL**, si l'outil GitHub (`gh`) n'est pas encore installé ;
    - la **connexion à GitHub** : choisir `GitHub.com`, puis `HTTPS`, puis `Login with a web browser`. Une page
      s'ouvre : tu y colles le code à 8 caractères affiché dans WSL, puis tu valides.
-3. Sur le téléphone, **désinstalle une fois** l'appli Microduck 1.0. Installe ensuite la nouvelle version depuis
+3. Attends la première version publiée par GitHub : onglet **Releases** du dépôt, à la prochaine version de l'appli.
+   Sur le téléphone, **désinstalle une fois** l'appli Microduck installée (1.0 ou 1.1, signées par l'ancienne clé).
+   Installe ensuite la nouvelle depuis
    <https://github.com/RaphaelGrj/microduck-brain/releases/latest/download/microduck.apk>.
    Tu devras retaper le code du canard.
 
@@ -29,9 +31,9 @@ L'appli te propose alors la mise à jour d'elle-même.
 Le script ne contient aucun secret et n'envoie rien ailleurs que sur GitHub et dans tes Documents. On peut le
 relancer sans risque : il ne remplace jamais une clé existante.
 
-### Pourquoi désinstaller la 1.0
+### Pourquoi désinstaller une fois
 
-L'APK 1.0 a été signé par une clé créée dans la session cloud de Claude. Cette clé disparaîtra avec la session, et
+Les APK 1.0 et 1.1 ont été signés par une clé créée dans la session cloud de Claude. Cette clé disparaîtra avec la session, et
 elle ne doit pas te parvenir par une conversation. Pour la même raison, la clé n'est ni dans le dépôt ni envoyée
 par Claude. La tienne est créée chez toi, donc elle n'a jamais existé ailleurs.
 
