@@ -77,6 +77,8 @@ def instantane(brain, state, version=None):
         "batterie": {"pourcent": batt.get("percent"), "volts": batt.get("volts")},
         "tombe": bool(getattr(brain, "tombe", False)), "porte": bool(getattr(brain, "porte", False)),
         "assis": bool(getattr(brain.ctx, "sitting", False)),
+        # derniere consigne de tete (cou, tangage, lacet, roulis, rad) : le canard dessine de l'appli la reprend
+        "tete": [round(float(x), 2) for x in (getattr(brain.ctx, "tete_cmd", None) or (0.0, 0.0, 0.0, 0.0))][:4],
         "modes": {"calme": bool(brain.mode_calme), "garde": bool(brain.ctx.extras.get("garde")),
                   "discret": bool(getattr(brain, "discret", False)), "vacarme": bool(getattr(brain, "vacarme", False)),
                   "timidite": round(brain.timidite(), 2) if hasattr(brain, "timidite") else 0.0,

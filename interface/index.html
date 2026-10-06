@@ -41,11 +41,38 @@
       <!-- Accueil -->
       <div class="page" data-page="accueil">
         <div class="carte heros">
+          <!-- Le canard dessine : posture et expression d'apres son etat, tete d'apres sa vraie consigne de tete.
+               Une illustration, pas une image de la camera. -->
+          <svg id="canard" class="canard" viewBox="0 0 200 170" role="img" aria-label="Le canard">
+            <ellipse class="ombre" cx="100" cy="158" rx="46" ry="6"/>
+            <g class="corps-entier">
+              <g class="pattes">
+                <path class="patte" d="M86 118 v26"/><path class="patte" d="M112 118 v26"/>
+                <path class="pied" d="M78 146 h18"/><path class="pied" d="M104 146 h18"/>
+              </g>
+              <g class="tronc">
+                <ellipse class="corps" cx="100" cy="104" rx="44" ry="32"/>
+                <path class="aile" d="M78 98 q22 -14 42 4 q-16 18 -42 -4z"/>
+                <path class="queue" d="M56 96 q-14 -6 -12 -18 q10 6 18 8z"/>
+              </g>
+              <g id="tete" class="tete">
+                <path class="cou" d="M112 86 q4 -14 8 -22"/>
+                <circle class="crane" cx="124" cy="52" r="26"/>
+                <g class="yeux"><ellipse class="oeil" cx="132" cy="46" rx="4.2" ry="5"/><circle class="reflet" cx="133.5" cy="44" r="1.4"/></g>
+                <path class="paupiere" d="M126 46 q6 5 12 0"/>
+                <path class="bec" d="M146 54 q16 -2 20 5 q-10 7 -21 3z"/>
+                <circle class="joue" cx="128" cy="62" r="4"/>
+              </g>
+              <g class="zzz"><text x="150" y="26">z</text><text x="160" y="14">z</text></g>
+              <g class="exclamation"><text x="156" y="22">!</text></g>
+              <g class="coeur"><path d="M160 26 c-4 -6 -12 -2 -8 4 l8 8 l8 -8 c4 -6 -4 -10 -8 -4z"/></g>
+            </g>
+          </svg>
           <div class="etat-courant">
             <span class="libelle">En ce moment</span>
             <strong id="etat">—</strong>
+            <div id="alertes"></div>
           </div>
-          <div id="alertes"></div>
         </div>
         <div class="grille">
           <div class="carte jauge"><span class="libelle">Énergie</span><div class="barre"><i id="b-energie"></i></div><b id="v-energie">—</b></div>

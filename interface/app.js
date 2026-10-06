@@ -92,7 +92,8 @@ function barres(sel, valeurs, libelles, max = 1) {
 
 function afficher(e) {
   dernier = e;
-  texte("#etat", ETATS[e.etat] || e.etat);
+  dessiner(e);
+  texte("#etat", e.tombe ? "Il est tombé" : e.porte ? "Dans les bras" : (ETATS[e.etat] || e.etat));
   texte("#sous-titre", e.tombe ? "Il est tombé…" : e.porte ? "Dans les bras" : e.assis ? "Assis" : "Debout");
   const alertes = [];
   if (e.modes.calme) alertes.push("Mode calme");
@@ -166,6 +167,32 @@ function afficher(e) {
     const b = document.createElement("span"); b.textContent = ETATS[x.etat] || x.etat;
     li.append(a, b); return li;
   }));
+}
+
+// Le canard dessine : une posture et une expression par famille d'etats, la tete d'apres sa vraie consigne de tete.
+const FAMILLES = {
+  dort: ["nap"],
+  marche: ["wander", "va_au_coin", "va_chargeur", "va_observer", "va_repas", "va_compagnie", "va_social", "pas_guide",
+    "zoomies", "cherche_attention", "jeu_solitaire"],
+  "joue-jeu": ["balle", "soleil", "cache_cache", "danse", "zoomies", "bravo", "salut", "toupie", "fier", "celebre"],
+  alerte: ["alarme", "alerte", "startle", "sonnette", "meteo_orage", "retrait"],
+  content: ["caresse", "cajole", "accueil", "compris", "celebre", "jour_special", "compagnie", "bonjour"],
+  penaud: ["penaud", "timide", "gene", "hesite"],
+};
+function dessiner(e) {
+  const svg = $("#canard");
+  const classes = ["canard"];
+  for (const [famille, etats] of Object.entries(FAMILLES)) if (etats.includes(e.etat)) classes.push(famille);
+  if (e.assis) classes.push("assis");
+  if (e.tombe) classes.push("tombe");
+  if (e.porte) classes.push("porte");
+  svg.setAttribute("class", classes.join(" "));
+  const [cou, tangage, lacet, roulis] = e.tete || [0, 0, 0, 0];
+  const deg = 180 / Math.PI;
+  // vu de profil : le tangage penche la tete en avant, le roulis l'incline ; le lacet se voit comme un petit decalage
+  $("#tete").style.transform =
+    `translateX(${(-lacet * 6).toFixed(1)}px) rotate(${((tangage + cou) * deg * 0.6 + roulis * deg * 0.4).toFixed(1)}deg)`;
+  svg.setAttribute("aria-label", "Le canard : " + (ETATS[e.etat] || e.etat));
 }
 
 function liaison(ok) { $("#liaison").className = "pastille " + (ok ? "ok" : "ko"); }

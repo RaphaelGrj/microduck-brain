@@ -150,3 +150,60 @@ input {
 #toast.visible { opacity: 1; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* --- le canard dessine ------------------------------------------------------------------------------------------ */
+.heros { display: flex; align-items: center; gap: 12px; }
+.heros .etat-courant { flex: 1; min-width: 0; }
+.canard { width: 132px; height: 112px; flex: none; overflow: visible; }
+.canard .ombre { fill: var(--barre); }
+.canard .corps, .canard .crane { fill: #f6c84c; }
+.canard .aile, .canard .queue { fill: #e9b532; }
+.canard .cou { stroke: #f6c84c; stroke-width: 18; stroke-linecap: round; fill: none; }
+.canard .patte { stroke: #f08a3c; stroke-width: 5; stroke-linecap: round; }
+.canard .pied { stroke: #f08a3c; stroke-width: 6; stroke-linecap: round; }
+.canard .bec { fill: #f08a3c; }
+.canard .oeil { fill: #1f2a37; }
+.canard .reflet { fill: #fff; }
+.canard .paupiere { fill: none; stroke: #1f2a37; stroke-width: 2.5; stroke-linecap: round; opacity: 0; }
+.canard .joue { fill: #f08a3c; opacity: .25; }
+.canard text { font: 700 16px system-ui, sans-serif; fill: var(--discret); }
+.canard .zzz, .canard .exclamation, .canard .coeur { opacity: 0; }
+.canard .exclamation text { fill: var(--alerte); font-size: 26px; }
+.canard .coeur path { fill: #e85d75; }
+.canard .tete { transform-origin: 116px 84px; transform-box: view-box; transition: transform .45s ease; }
+.canard .corps-entier, .canard .tronc, .canard .pattes { transform-box: view-box; transition: transform .5s ease; }
+.canard .corps-entier { transform-origin: 100px 150px; }
+.canard .yeux { transform-origin: 132px 46px; transform-box: view-box; animation: cligne 5s infinite; }
+.canard .tronc { transform-origin: 100px 130px; animation: respire 3.2s ease-in-out infinite; }
+
+/* postures */
+.canard.assis .pattes { transform: scaleY(.25); transform-origin: 100px 146px; }
+.canard.assis .tronc { transform: translateY(18px); }
+.canard.assis .tete { translate: 0 18px; }
+.canard.tombe .corps-entier { transform-origin: 100px 104px; transform: rotate(85deg) translateX(4px); }
+.canard.porte .corps-entier { animation: porte 2.4s ease-in-out infinite; }
+.canard.porte .ombre { opacity: .3; }
+.canard.marche .pattes .patte:first-child, .canard.marche .pattes .pied:nth-child(3) { animation: pas .5s ease-in-out infinite alternate; }
+.canard.marche .pattes .patte:nth-child(2), .canard.marche .pattes .pied:nth-child(4) { animation: pas .5s ease-in-out infinite alternate-reverse; }
+.canard.marche .corps-entier { animation: dandine .5s ease-in-out infinite alternate; }
+
+/* expressions */
+.canard.dort .yeux { opacity: 0; animation: none; }
+.canard.dort .paupiere { opacity: 1; }
+.canard.dort .zzz { opacity: 1; animation: zzz 2.8s ease-in-out infinite; }
+.canard.dort .tronc { animation-duration: 5s; }
+.canard.alerte .exclamation { opacity: 1; animation: secoue .35s ease-in-out infinite alternate; }
+.canard.content .coeur { opacity: 1; animation: zzz 2.2s ease-in-out infinite; }
+.canard.content .joue { opacity: .6; }
+.canard.joue-jeu .corps-entier { animation: saute .6s ease-in-out infinite alternate; }
+.canard.penaud .tete { translate: 0 6px; }
+
+@keyframes cligne { 0%, 94%, 100% { transform: scaleY(1); } 97% { transform: scaleY(.1); } }
+@keyframes respire { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.025, .985); } }
+@keyframes zzz { 0% { transform: translateY(4px); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateY(-8px); opacity: 0; } }
+@keyframes pas { from { transform: translateY(0); } to { transform: translateY(-5px); } }
+@keyframes dandine { from { transform: rotate(-3deg); } to { transform: rotate(3deg); } }
+@keyframes saute { from { transform: translateY(0); } to { transform: translateY(-8px); } }
+@keyframes secoue { from { transform: rotate(-6deg); } to { transform: rotate(6deg); } }
+@keyframes porte { 0%, 100% { transform: translateY(-14px) rotate(-4deg); } 50% { transform: translateY(-18px) rotate(4deg); } }
+@media (prefers-reduced-motion: reduce) { .canard * { animation: none !important; } }
