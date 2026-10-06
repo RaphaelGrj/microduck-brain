@@ -161,3 +161,95 @@ class Soleil(Etat):
         if self.veille is not None:
             self.veille.desarmer()
         brain.ctx.calme()
+
+
+class CacheCache(Etat):
+    """Cache-cache lance par le canard (ROADMAP "Lance lui-meme une partie de cache-cache" et table Humains "cache-cache
+    au son") : un "greet" (c'est parti !), il file se cacher - vers un coin connu (navigation.AllerVers) ou, a defaut, un
+    petit trajet droit devant, toujours avec le capteur de distance -, s'assoit sans bouger, et laisse echapper de temps
+    en temps un petit "peck" : l'indice pour le trouver a l'oreille. Trouve (caresse, main tendue, "trouve !", quelqu'un
+    a moins de 30 cm) -> "wheee" et tremoussement. Personne apres CACHE_MAX_S -> il sort tout seul, un peu decu."""
+    nom = "cache_cache"
+    ALLER_MAX_S = 12.0
+    CACHE_MAX_S = 300.0
+    TROUVE_M = 0.30
+
+    def __init__(self):
+        self.cible = None                        # coin ou se cacher (odom), choisi par le cerveau ; None = droit devant
+
+    def entre(self, brain):
+        from navigation import AllerVers
+        brain.ctx.sound("greet")
+        self.phase, self.t_phase, self.resultat = "aller", 0.0, None
+        self.nav = AllerVers(self.cible) if self.cible is not None else None
+        self.prochain_indice = None
+
+    def duree(self, brain):
+        return self.ALLER_MAX_S + self.CACHE_MAX_S + 20.0
+
+    def _phase(self, nom, t):
+        self.phase, self.t_phase = nom, t
+
+    def sur_evenement(self, brain, base):
+        """Une caresse ou une main tendue pendant qu'il est cache : trouve ! (les commandes vocales "trouve" passent par
+        Brain._sur_commande)."""
+        if self.phase == "cache" and base in ("caresse", "main"):
+            self._trouve(brain, brain.t_etat)
+            return True
+        return False
+
+    def _trouve(self, brain, t):
+        self.resultat = "trouve"
+        brain.ctx.sound("wheee")
+        self._phase("fin", t)
+
+    def pas(self, brain, t):
+        ctx, dt = brain.ctx, t - self.t_phase
+        s = ctx.state or {}
+        tof = ctx.extras.get("tof")
+        lib = tof.libre(s) if tof is not None and s else None
+        if self.phase == "aller":
+            ctx.head((0.0, 0.3, 0.0, 0.0))
+            o = s.get("odom")
+            if self.nav is not None and o is not None:
+                statut, vx, vyaw = self.nav.commande(o["position"][0], o["position"][1], o["yaw"], lib)
+                fini = statut in ("arrive", "bloque")
+            else:                                # droit devant 3 s, si c'est libre
+                libre = lib is not None and lib["devant"] >= 0.45
+                vx, vyaw = (0.4 if libre else 0.0), 0.0
+                fini = dt >= 3.0 or not libre
+            ctx.move(vx=0.0 if fini else vx, vyaw=0.0 if fini else vyaw)
+            if fini or dt >= self.ALLER_MAX_S:
+                if not ctx.sitting:
+                    ctx.toggle_sit()
+                self._phase("cache", t)
+                self.prochain_indice = t + brain.rng.uniform(15.0, 30.0)
+        elif self.phase == "cache":
+            ctx.head((0.0, 0.35, 0.0, 0.0))     # tete basse, il se fait tout petit
+            if t >= self.prochain_indice:
+                ctx.sound("peck")                # l'indice sonore
+                self.prochain_indice = t + brain.rng.uniform(20.0, 40.0)
+            if dt >= 3.0 and lib is not None and lib["devant"] < self.TROUVE_M:
+                self._trouve(brain, t)
+            elif dt >= self.CACHE_MAX_S:
+                self.resultat = "abandon"
+                ctx.sound("inquire")             # "vous ne me cherchez pas ?"
+                self._phase("fin", t)
+        else:                                    # fin : il se releve, fete (trouve) ou petit salut (abandon)
+            if ctx.sitting and dt >= 0.3:
+                ctx.toggle_sit()
+            if self.resultat == "trouve" and dt >= 2.0:
+                d, fn = gestures.GESTES["content"]
+                u = dt - 2.0
+                ctx.head(fn(u) if u < d else (0, 0, 0, 0))
+                ctx.pose(gestures.content_corps(u) if u < d else None)
+            else:
+                ctx.head(gestures.oui(min(max(dt - 2.0, 0.0), 1.2)) if dt >= 2.0 else (0, 0, 0, 0))
+            ctx.move()
+            if dt >= 5.0:
+                brain.fin_etat = t
+
+    def sort(self, brain):
+        if brain.ctx.sitting and not brain.reste_assis():
+            brain.ctx.toggle_sit()
+        brain.ctx.calme()

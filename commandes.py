@@ -29,6 +29,8 @@ VOCABULAIRE = {
     "reveille toi": "commande:reveil",
     "bravo": "commande:bravo", "gentil": "commande:bravo", "c'est bien": "commande:bravo",
     "danse": "commande:danse",
+    "cache toi": "jeu_cache", "cache cache": "jeu_cache",
+    "trouve": "commande:trouve", "je t'ai trouve": "commande:trouve",
 }
 CONFIANCE_MIN = 0.6             # confiance moyenne des mots (Vosk) en dessous de laquelle on "n'a pas compris"
 

@@ -160,3 +160,52 @@ def test_detecteur_mouvement_images_synthetiques():
     d.mise_a_jour(personne(165))
     eclaire = np.clip(personne(165).astype(int) + 15, 0, 255).astype(np.uint8)
     assert not d.mise_a_jour(eclaire)[0], "un changement de lumiere global n'est pas un mouvement"
+
+
+# --- cache-cache lance par le canard ------------------------------------------------------------------------------
+def _cache(seed=70):
+    tof = FauxTofDevant()
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.9), seed=seed, extras={"tof": tof, "exploration": False})
+    b.fin_etat = 1e9
+    return b, c, tof
+
+
+def test_cache_cache_trouve_par_la_voix_ou_la_main():
+    for trouve in ("commande:trouve", "caresse"):
+        b, c, tof = _cache()
+        b.evenement("jeu_cache")
+        simule(b, c, 60, {"yaw": 0.0})
+        jeu = b.etats["cache_cache"]
+        assert b.courant.nom == "cache_cache" and jeu.phase == "cache" and b.ctx.sitting
+        assert "peck" in sons(c), "des indices sonores pour le trouver a l'oreille"
+        b.evenement(trouve)
+        simule(b, c, 10, {"yaw": 0.0}, t0=60)
+        assert jeu.resultat == "trouve" and "wheee" in sons(c) and not b.ctx.sitting, trouve
+        assert b.courant.nom != "cache_cache"
+
+
+def test_cache_cache_trouve_de_pres_ou_abandon():
+    b, c, tof = _cache(71)
+    b.evenement("jeu_cache")
+    simule(b, c, 20, {"yaw": 0.0})
+    tof.devant = 0.2                                   # quelqu'un s'est approche tout pres
+    simule(b, c, 10, {"yaw": 0.0}, t0=20)
+    assert b.etats["cache_cache"].resultat == "trouve"
+    b, c, tof = _cache(72)
+    b.evenement("jeu_cache")
+    simule(b, c, 330, {"yaw": 0.0})
+    assert b.etats["cache_cache"].resultat == "abandon" and not b.ctx.sitting
+
+
+def test_cache_cache_jamais_sans_capteur_ni_en_calme():
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.9), seed=73)
+    b.evenement("jeu_cache")
+    simule(b, c, 5, {"yaw": 0.0})
+    assert "cache_cache" not in {e[1] for e in b.journal}
+    b, c, tof = _cache(74)
+    b.evenement("calme_on")
+    b.evenement("jeu_cache")
+    simule(b, c, 5, {"yaw": 0.0})
+    assert "cache_cache" not in {e[1] for e in b.journal}

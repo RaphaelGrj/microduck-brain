@@ -250,6 +250,7 @@ class PublieurMQTT:
     # (objet, nom dans HA, icone, charge MQTT = evenement du cerveau) ; seules ces charges sont acceptees
     BOUTONS = (("jouer_soleil", "jouer a 1-2-3 soleil", "mdi:weather-sunny", "jeu_soleil"),
                ("fin_jeu", "fin du jeu", "mdi:stop-circle-outline", "fin_jeu"),
+               ("jouer_cache", "jouer a cache-cache", "mdi:eye-off-outline", "jeu_cache"),
                ("stop_taquinerie", "arrete de me taquiner", "mdi:hand-back-left", "stop_taquinerie"),
                ("tour_salut", "tour : salut", "mdi:hand-wave", "tour_salut"),
                ("tour_toupie", "tour : toupie", "mdi:rotate-360", "tour_toupie"),

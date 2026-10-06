@@ -28,7 +28,7 @@ from taquineries import Malice
 from etats_base import (DT_DEFAUT, SONS_CANARD, FATIGUE_BAS, FATIGUE_MIN, FATIGUE_PLEIN, LIBRE_MIN, TETE_PROMENADE,  # noqa: F401
                         V_PROMENADE, V_ROTATION, Chill, Ctx, Ecoute, Etat, Geste, Humeur, LookAround, Nap, Sequence,
                         TurnInPlace, Wander, _regarder, fatigue)
-from etats_jeux import Soleil
+from etats_jeux import CacheCache, Soleil
 from etats_maison import AlarmeFumee, AssisDemande, Toupie
 from etats_taquineries import (Aspirateur, Baillement, CompteEternuements, DernierMot, Esquive, FausseChute,
                                FausseNotif, FauxEndormi, FeinteBec, Fier, MimeTon, MimeVol, PousseBalle, RegardMystere,
@@ -71,6 +71,7 @@ class Brain:
     P_TOILETTE = 0.5            # apres une impression terminee : il se lisse les plumes
     P_OBSERVER = 0.03           # par passage par chill, en journee : rejoindre son coin d'observation
     CHARGE_S, CHARGE_PCT = 120.0, 2.0     # immobile 2 min et +2 % de batterie : il est sur son chargeur
+    P_CACHE_CACHE = 0.005       # initiative rare : il lance lui-meme une partie de cache-cache
     P_GAG = 0.02                # gag spontane (fausse chute, fausse notification) par passage par chill, si permis
     P_POUSSE_BALLE = 0.6        # main vers la balle a ses pieds : il la pousse hors de portee
     P_MIME_VOL = 0.3            # balle a ses pieds, un familier present : il fait mine de la voler
@@ -172,6 +173,7 @@ class Brain:
             "compliment": Sequence("compliment", [("fier", "coo")]),             # "bravo" : fierte discrete
             "chaud": Sequence("chaud", [("fatigue", "coo")]),                    # servos chauds : il s'affale
             "remarque": Remarque(),
+            "cache_cache": CacheCache(),                                         # il se cache, indices sonores
             "silence_curieux": Sequence("silence_curieux", [("curieux", "inquire")]),   # la maison est trop calme                                              # un objet qui n'etait pas la
             # social
             "signature": Sequence("signature", [("curieux", "coo"), ("fier", "wheee")]),
@@ -337,6 +339,11 @@ class Brain:
             sur_evt = getattr(self.courant, "sur_evenement", None)
             if sur_evt is not None and sur_evt(self, base):
                 continue                        # l'etat en cours (un jeu) a pris l'evenement pour lui
+            if base == "jeu_cache":
+                if not self.mode_calme and self.courant.nom not in ("cache_cache", "nap", "soleil", "alarme", "porte") \
+                        and self.ctx.extras.get("tof") is not None:
+                    self._lance_cache_cache()
+                continue
             if base == "jeu_soleil":
                 if self.mode_calme or self.courant.nom in ("soleil", "nap"):
                     continue                    # pas de jeu en mode calme ; pas pendant la sieste (ne pas reveiller)
@@ -493,6 +500,11 @@ class Brain:
             return
         if self.mode_calme or self.courant.nom in ("nap", "alarme", "porte"):
             return
+        if self.courant.nom == "cache_cache" and quoi in ("trouve", "stop", "ecoute"):
+            jeu = self.etats["cache_cache"]
+            if jeu.phase == "cache":
+                jeu._trouve(self, self.t_etat)   # "trouve !" (ou son nom, ou stop) : la partie est finie
+            return
         if quoi == "stop":
             self.evenements[0:0] = ["non", "fin_jeu"]      # coupe une taquinerie, termine un jeu
             if self.courant.nom == "assis_demande":
@@ -543,6 +555,20 @@ class Brain:
     # etat dans lequel il entre -> experience qui faconne sa personnalite (personnalite.py)
     EXPERIENCES_PAR_ETAT = {"caresse": "caresse", "accueil": "accueil", "remarque": "remarque", "wander": "promenade",
                             "startle": "sursaut", "soleil": "jeu"}
+
+    def _prepare_cache_cache(self):
+        """Ou se cacher : un coin appris (sieste ou observation) a 1-4 m, sinon droit devant."""
+        coin = None
+        for activite in ("nap", "chill"):
+            c = self.exploration.coin_favori(activite, self.t_global)
+            if c is not None and self._atteignable(c, (1.0, 4.0)):
+                coin = c
+                break
+        self.etats["cache_cache"].cible = coin
+
+    def _lance_cache_cache(self):
+        self._prepare_cache_cache()
+        self._bascule("cache_cache")
 
     def _taquinerie(self, noms, humain=False, proba=None):
         """Une taquinerie a la place de la reaction normale ? -> son nom, ou None (budget, familiarite, stop, hasard)."""
@@ -631,6 +657,12 @@ class Brain:
             if coin is not None and self._atteignable(coin, (1.0, 4.0)):
                 self.etats["va_observer"].cible = coin       # en journee : il va regarder la piece depuis son coin
                 return "va_observer"
+        if (self.presents and self.ctx.extras.get("tof") is not None and h.energie > 0.5
+                and 9 <= self.horloge().tm_hour < 21 and self.rng.random() < self.P_CACHE_CACHE * self.perso.envie_taquiner()
+                and self.malice.permise(self, "cache_cache")):
+            self.malice.noter(self, "cache_cache")      # initiative de jeu : comptee dans le budget de malice
+            self._prepare_cache_cache()
+            return "cache_cache"
         if self.rng.random() < self.P_GAG * self.perso.envie_taquiner():
             chat = self.ctx.extras.get("chat")
             gags = [g for g in ("fausse_chute", "fausse_notif") if self.malice.permise(self, g)
