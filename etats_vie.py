@@ -202,9 +202,16 @@ class VaAuCoin(Etat):
 
 class Danse(Etat):
     """De la musique (audio.py : battement regulier) : il hoche la tete en rythme et se dandine un peu, s'arrete avec
-    la musique (musique_fin) ou au bout de DUREE_MAX - pas un juke-box : DELAI_DANSE_S avant de recommencer."""
+    la musique (musique_fin) ou au bout de DUREE_MAX - pas un juke-box : DELAI_DANSE_S avant de recommencer.
+
+    Rythme visible (ROADMAP) : avec une camera (extras "mouvement"), il commence par REGARDER sans bouger (la
+    difference d'images exige une camera immobile) ; si quelqu'un bouge EN RYTHME devant lui (mouvement.py,
+    rythme_correspond), il danse AVEC lui : un "wheee", des hochements plus amples. Sinon il danse seul, comme avant."""
     nom = "danse"
     DUREE_MAX = 30.0
+    REGARDE_S = 4.0              # observation immobile avant de danser (camera seulement)
+    STABILISATION_S = 0.5        # la tete s'immobilise avant d'armer la detection
+    AMPLITUDE_ENSEMBLE = 1.6
 
     def __init__(self):
         self.bpm = 100
@@ -212,6 +219,20 @@ class Danse(Etat):
     def entre(self, brain):
         self.periode = 60.0 / (self.bpm / 2 if self.bpm > 130 else self.bpm)    # a 180 BPM, un hochement sur deux
         brain.ctx.sound("chirp")
+        self.veille = brain.ctx.extras.get("mouvement")
+        if self.veille is not None and not hasattr(self.veille, "en_rythme"):
+            self.veille = None
+        self.t0 = self.REGARDE_S if self.veille is not None else 0.0     # debut des hochements
+        self.arme = False
+        self.ensemble = False
+
+    def sort(self, brain):
+        self._desarme()
+
+    def _desarme(self):
+        if self.arme:
+            self.veille.desarmer()
+            self.arme = False
 
     def duree(self, brain):
         return self.DUREE_MAX
@@ -223,9 +244,24 @@ class Danse(Etat):
         return base.startswith("musique")
 
     def pas(self, brain, t):
-        k = gestures._smooth(t, 0.0, 1.0) * (1.0 - gestures._smooth(t, brain.fin_etat - 1.0, brain.fin_etat))
-        phase = 2 * math.pi * t / self.periode
-        brain.ctx.head((0.0, 0.2 * k * max(0.0, math.sin(phase)), 0.0, 0.12 * k * math.sin(phase / 2)))
+        if t < self.t0:
+            brain.ctx.head((0.0, 0.0, 0.0, 0.0))          # il regarde, immobile : la camera doit l'etre
+            brain.ctx.move()
+            if not self.arme and t >= self.STABILISATION_S:
+                self.veille.armer(periode_s=0.1)
+                self.arme = True
+            return
+        if self.arme:
+            self.ensemble = self.veille.en_rythme(self.bpm)
+            self._desarme()
+            if self.ensemble:
+                print(f"[{brain.t_global:6.1f}s] quelqu'un danse en rythme : il danse avec lui", flush=True)
+                brain.ctx.sound("wheee")
+                brain.perso.vit("jeu")
+        a = self.AMPLITUDE_ENSEMBLE if self.ensemble else 1.0
+        k = gestures._smooth(t, self.t0, self.t0 + 1.0) * (1.0 - gestures._smooth(t, brain.fin_etat - 1.0, brain.fin_etat))
+        phase = 2 * math.pi * (t - self.t0) / self.periode
+        brain.ctx.head((0.0, 0.2 * a * k * max(0.0, math.sin(phase)), 0.0, 0.12 * a * k * math.sin(phase / 2)))
         brain.ctx.pose((0.0, 0.12 * k * math.sin(phase / 2), 0.0) if k > 0.05 else None)
         brain.ctx.move()
 
