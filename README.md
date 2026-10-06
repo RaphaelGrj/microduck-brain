@@ -36,6 +36,13 @@ réseau de neurones n'est entraîné ici. Le même code pilote le vrai robot ou 
 
 ## L'application Microduck (téléphone)
 
+**Avec ou sans Home Assistant.** Au premier démarrage, sans configuration, le canard ouvre une installation de
+30 minutes : depuis le téléphone, on choisit son nom, les habitants et le code de l'appli. Tout le reste se règle dans
+l'appli (Réglages → Connexions) : Home Assistant (facultatif), imprimantes 3D suivies en direct (Prusa par PrusaLink,
+Elegoo par SDCP), appareils, code enfant. `ha.toml` devient facultatif ; ce que l'appli écrit (`configuration.json`,
+`configuration.py`) prend le dessus section par section. L'appli existe en français et en anglais (`interface/i18n.js`).
+
+
 Le canard sert lui-même son application, sans Home Assistant et sans serveur ailleurs (`appli.py` + `interface/`).
 1. Dans `ha.toml`, définis un code d'au moins 6 caractères :
    ```toml
@@ -78,7 +85,15 @@ du dépôt, dans `~/.microduck-android/`.
 - **Réglages → Routines** : « à 18 h 30 en semaine, il vient me voir », « le dimanche, il danse ».
 - **Réglages → Sauvegarde** : ce qu'il a appris, ses lieux, tes schémas et ses réglages, dans un fichier sur le
   téléphone (jamais `ha.toml`) ; une restauration s'applique au prochain démarrage du canard.
-- **APK** : présence par le téléphone (quand il rejoint le Wi-Fi de la maison, le canard t'accueille, sans Home
+- **Jouer** : statistiques et défi à plusieurs du jeu de balle ; **studio de chorégraphies** (`choregraphies.py` :
+  tête, sons de canard, gestes, s'asseoir) ; **comportements** (politiques de `robotd` : installées, à essayer, à ajouter).
+- **Caractère** : curseurs calme ↔ joueur, discret ↔ bavard, sage ↔ taquin.
+- **Commander** : pas répétés tant que le doigt reste appuyé, regard au pavé tactile.
+- **Santé → Mises à jour et rapport** : nouvelle version du cerveau installée sur demande
+  (`deploy/robot/mettre_a_jour.sh`, retour possible), rapport de diagnostic sans donnée personnelle.
+- **Aide** intégrée ; **profil enfant** (code enfant : jeux, regard, « Où es-tu ? »).
+- **APK** : plusieurs canards ; publication par GitHub Actions (`.github/workflows/apk.yml`, étiquette `apk-v*`) ;
+  présence par le téléphone (quand il rejoint le Wi-Fi de la maison, le canard t'accueille, sans Home
   Assistant ; le départ, lui, vient de Home Assistant) et mise à jour proposée quand une nouvelle version est publiée.
 
 **En haut à droite** :
@@ -129,7 +144,7 @@ uv run python canard.py ha.toml  # le canard complet (robotd local ; options : -
 | Son | `audio.py` (réflexes sans réseau de neurones : chocs, claquements, musique, voix, alarme…), `commandes.py` (commandes vocales Vosk hors ligne) |
 | Jeu de balle | `approach.py` (approche + tir), `jeu.py` (passe au joueur) |
 | Santé | `diagnostic.py`, `bench_cerveau.py` (coût d'une trame : 0,03 ms en moyenne sur PC, budget 20 ms) |
-| Application | `appli.py` (serveur local, API JSON, flux en direct), `interface/` (HTML, CSS, JS sans framework ; `demo.js` = canard imaginaire), `android/` (APK) |
+| Application | `appli.py` (serveur local, API JSON, flux en direct), `configuration.py`, `imprimantes.py`, `choregraphies.py`, `interface/` (HTML, CSS, JS sans framework ; `demo.js` = canard imaginaire), `android/` (APK) |
 | Home Assistant | `pont_ha.py`, `ha.exemple.toml` (modèle de configuration commenté), `mock_ha.py` / `mock_mqtt.py` (faux HA et faux broker pour les tests), `HOME_ASSISTANT.md` |
 | Simulateur | `valider_sim.py` (13 scénarios), `truth.py` (vérité terrain du simulateur, sert seulement à mesurer), bancs `*_eval.py`, `scripts-wsl/` |
 | Robot | `deploy/robot/` (installation sur le canard), `contrib/` (patchs proposés à `robotd` pour partager le micro) |

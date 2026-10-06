@@ -206,7 +206,7 @@ function batteries(bt) {
 }
 
 // Sa semaine : une barre par jour (toutes activites), puis les totaux
-const JOURS = ["dim", "lun", "mar", "mer", "jeu", "ven", "sam"];
+const JOURS = ["dim.", "lun.", "mar.", "mer.", "jeu.", "ven.", "sam."];
 function semaine(jours) {
   const totaux = {};
   const sommes = jours.map((j) => Object.entries(j.compte || {}).reduce((a, [k, v]) => { totaux[k] = (totaux[k] || 0) + v; return a + v; }, 0));

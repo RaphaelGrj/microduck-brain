@@ -334,6 +334,9 @@
             <div class="ajout-filament"><input id="presence-nom" placeholder="Ton prénom" maxlength="40" aria-label="Ton prénom">
               <button id="presence-enregistrer">OK</button></div>
           </div>
+          <div class="reglage"><div><b>Langue</b><p class="discret">Language</p></div>
+            <select id="langue" class="choix-langue" aria-label="Langue / Language">
+              <option value="">Auto</option><option value="fr">Français</option><option value="en">English</option></select></div>
           <button id="oublier" class="large">Oublier le code</button>
         </div>
         <div class="carte">
@@ -592,6 +595,7 @@
     <form method="dialog"><button class="large">Fermer</button></form>
   </dialog>
 
+  <script src="/i18n.js"></script>
   <script src="/demo.js"></script>
   <script src="/app.js"></script>
   <script src="/boutique.js"></script>

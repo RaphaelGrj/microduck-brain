@@ -1,0 +1,48 @@
+# Publie l'APK de l'application Microduck : une « release » GitHub par etiquette apk-v* (ex. apk-v1.0), avec
+# microduck.apk et version.json. A lancer aussi a la main (onglet Actions -> APK -> Run workflow).
+# Secrets a creer une fois (Settings -> Secrets and variables -> Actions) :
+#   MICRODUCK_KEYSTORE_B64           la cle de signature, en base64 (base64 -w0 microduck.keystore)
+#   MICRODUCK_KEYSTORE_MOT_DE_PASSE  son mot de passe
+# Toujours la MEME cle : sinon Android refuse d'installer la mise a jour par-dessus.
+name: APK
+on:
+  push:
+    tags: ["apk-v*"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Outils Android (paquets Ubuntu, sans Android Studio)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends aapt apksigner dalvik-exchange zipalign android-sdk-platform-23
+      - name: Cle de signature
+        env:
+          CLE: ${{ secrets.MICRODUCK_KEYSTORE_B64 }}
+          MDP: ${{ secrets.MICRODUCK_KEYSTORE_MOT_DE_PASSE }}
+        run: |
+          if [ -z "$CLE" ] || [ -z "$MDP" ]; then
+            echo "::error::secrets MICRODUCK_KEYSTORE_B64 et MICRODUCK_KEYSTORE_MOT_DE_PASSE manquants (voir l'en-tete du fichier)"
+            exit 1
+          fi
+          mkdir -p "$HOME/.microduck-android" && chmod 700 "$HOME/.microduck-android"
+          echo "$CLE" | base64 -d > "$HOME/.microduck-android/microduck.keystore"
+          printf '%s' "$MDP" > "$HOME/.microduck-android/mot-de-passe"
+      - name: Construire
+        run: bash android/construire.sh
+      - name: Publier
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(python3 -c 'import json; print(json.load(open("android/version.json"))["versionName"])')
+          gh release create "$GITHUB_REF_NAME" android/sortie/microduck.apk android/version.json \
+            --title "Application Microduck $VERSION" --notes "APK $VERSION. Installer : ouvrir microduck.apk sur le téléphone."
+      - uses: actions/upload-artifact@v4
+        with:
+          name: microduck-apk
+          path: android/sortie/microduck.apk

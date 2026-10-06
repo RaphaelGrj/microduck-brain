@@ -112,7 +112,7 @@ public class Veille extends JobService {
             try {                                      // NotificationChannel (Android 8+), par reflexion : compile en API 23
                 Class<?> canal = Class.forName("android.app.NotificationChannel");
                 Object ch = canal.getConstructor(String.class, CharSequence.class, int.class)
-                        .newInstance(CANAL, "Alertes du canard", 4 /* IMPORTANCE_HIGH */);
+                        .newInstance(CANAL, Accueil.L("Alertes du canard", "Duck alerts"), 4 /* IMPORTANCE_HIGH */);
                 NotificationManager.class.getMethod("createNotificationChannel", canal).invoke(nm, ch);
                 b = Notification.Builder.class.getConstructor(Context.class, String.class).newInstance(c, CANAL);
             } catch (Exception e) {
@@ -136,9 +136,9 @@ public class Veille extends JobService {
         AppWidgetManager awm = AppWidgetManager.getInstance(c);
         int[] ids = awm.getAppWidgetIds(new ComponentName(c, WidgetCanard.class));
         if (ids.length == 0) return;
-        String etat = e.optBoolean("tombe") ? "Il est tombé" : e.optBoolean("porte") ? "Dans les bras" : Etats.libelle(e.optString("etat"));
+        String etat = e.optBoolean("tombe") ? Accueil.L("Il est tombé", "He fell") : e.optBoolean("porte") ? Accueil.L("Dans les bras", "In someone's arms") : Etats.libelle(e.optString("etat"));
         JSONObject batt = e.optJSONObject("batterie");
-        String detail = (batt != null && !batt.isNull("pourcent") ? "Batterie " + Math.round(batt.optDouble("pourcent")) + " %" : "Batterie —")
+        String detail = (batt != null && !batt.isNull("pourcent") ? Accueil.L("Batterie ", "Battery ") + Math.round(batt.optDouble("pourcent")) + " %" : Accueil.L("Batterie —", "Battery —"))
                 + " · " + new java.text.SimpleDateFormat("HH:mm", java.util.Locale.FRANCE).format(new java.util.Date());
         RemoteViews v = WidgetCanard.vue(c);
         v.setTextViewText(R.id.w_etat, etat);

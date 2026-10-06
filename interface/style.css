@@ -371,3 +371,4 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .faq summary { cursor: pointer; font-weight: 600; }
 .faq p { margin: 8px 0 0; color: var(--discret); }
 .glossaire dd { text-align: left; }
+.choix-langue { font: inherit; min-height: 40px; border-radius: 10px; border: 1px solid var(--bord); background: var(--carte); color: var(--texte); padding: 0 8px; }

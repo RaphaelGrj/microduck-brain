@@ -37,6 +37,9 @@ public class Accueil extends Activity {
     static final int ORANGE = 0xFFF26A1B;
     static final int ORANGE_FONCE = 0xFFC24A08;
     static final int PORT = 8090;
+    /** Francais si le telephone est en francais, anglais sinon (comme l'interface : i18n.js). */
+    static final boolean FR = java.util.Locale.getDefault().getLanguage().equals("fr");
+    static String L(String fr, String en) { return FR ? fr : en; }
 
     private EditText adresse;
     private TextView message;
@@ -81,7 +84,7 @@ public class Accueil extends Activity {
         titre.setPadding(0, dp(12), 0, dp(4));
         col.addView(titre);
 
-        TextView intro = texte("Le téléphone doit être sur le même Wi-Fi que le canard.", 15, 0xFF555555);
+        TextView intro = texte(L("Le téléphone doit être sur le même Wi-Fi que le canard.", "The phone must be on the same Wi-Fi as the duck."), 15, 0xFF555555);
         intro.setGravity(Gravity.CENTER);
         col.addView(intro);
 
@@ -93,13 +96,13 @@ public class Accueil extends Activity {
         col.addView(majBouton, largeur(dp(16)));
         verifierMiseAJour();
 
-        chercher = bouton("Chercher le canard sur le Wi-Fi", true);
+        chercher = bouton(L("Chercher le canard sur le Wi-Fi", "Find the duck on the Wi-Fi"), true);
         chercher.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { chercher(); }
         });
         col.addView(chercher, largeur(dp(28)));
 
-        TextView ou = texte("ou son adresse", 13, 0xFF888888);
+        TextView ou = texte(L("ou son adresse", "or his address"), 13, 0xFF888888);
         ou.setGravity(Gravity.CENTER);
         ou.setPadding(0, dp(18), 0, dp(6));
         col.addView(ou);
@@ -116,7 +119,7 @@ public class Accueil extends Activity {
         });
         col.addView(adresse, largeur(0));
 
-        Button connecter = bouton("Se connecter", false);
+        Button connecter = bouton(L("Se connecter", "Connect"), false);
         connecter.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { ouvrir(); }
         });
@@ -127,7 +130,7 @@ public class Accueil extends Activity {
         message.setPadding(0, dp(14), 0, 0);
         col.addView(message);
 
-        Button demo = bouton("Essayer en démo (sans le canard)", false);
+        Button demo = bouton(L("Essayer en démo (sans le canard)", "Try the demo (without the duck)"), false);
         demo.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 startActivity(new Intent(Accueil.this, Canard.class).putExtra("url", Canard.DEMO));
@@ -135,7 +138,7 @@ public class Accueil extends Activity {
         });
         col.addView(demo, largeur(dp(36)));
 
-        TextView note = texte("Rien ne sort de la maison : l'appli ne parle qu'au canard, sur le réseau local.",
+        TextView note = texte(L("Rien ne sort de la maison : l'appli ne parle qu'au canard, sur le réseau local.", "Nothing leaves the house: the app only talks to the duck, on the local network."),
                 12, 0xFF888888);
         note.setGravity(Gravity.CENTER);
         note.setPadding(0, dp(20), 0, 0);
@@ -169,7 +172,7 @@ public class Accueil extends Activity {
                     if (!apk.startsWith("https://")) return;
                     runOnUiThread(new Runnable() {
                         public void run() {
-                            majBouton.setText("Mise à jour " + v.optString("versionName") + " disponible");
+                            majBouton.setText(L("Mise à jour ", "Update ") + v.optString("versionName") + L(" disponible", " available"));
                             majBouton.setVisibility(View.VISIBLE);
                             majBouton.setOnClickListener(new View.OnClickListener() {
                                 public void onClick(View b) {
@@ -251,7 +254,7 @@ public class Accueil extends Activity {
     /** Ouvre l'interface du canard a l'adresse tapee (ip, ip:port ou http://...). */
     private void ouvrir() {
         String a = adresse.getText().toString().trim();
-        if (a.isEmpty()) { message.setText("Tape l'adresse du canard, ou cherche-le."); return; }
+        if (a.isEmpty()) { message.setText(L("Tape l'adresse du canard, ou cherche-le.", "Type the duck's address, or search for it.")); return; }
         if (!a.startsWith("http://") && !a.startsWith("https://")) a = "http://" + a;
         try {
             URL u = new URL(a);
@@ -262,16 +265,16 @@ public class Accueil extends Activity {
             message.setText("");
             startActivity(new Intent(this, Canard.class).putExtra("url", url));
         } catch (Exception e) {
-            message.setText("Adresse invalide.");
+            message.setText(L("Adresse invalide.", "Invalid address."));
         }
     }
 
     /** Interroge /api/sante sur tout le sous-reseau du telephone (/24), port 8090 : le premier qui repond « microduck ». */
     private void chercher() {
         final List<String> bases = sousReseaux();
-        if (bases.isEmpty()) { message.setText("Pas de Wi-Fi : connecte le téléphone au réseau de la maison."); return; }
+        if (bases.isEmpty()) { message.setText(L("Pas de Wi-Fi : connecte le téléphone au réseau de la maison.", "No Wi-Fi: connect the phone to the home network.")); return; }
         chercher.setEnabled(false);
-        message.setText("Recherche…");
+        message.setText(L("Recherche…", "Searching…"));
         new Thread(new Runnable() {
             public void run() {
                 final java.util.concurrent.ConcurrentHashMap<String, String> trouves = new java.util.concurrent.ConcurrentHashMap<String, String>();
@@ -293,7 +296,7 @@ public class Accueil extends Activity {
                     public void run() {
                         chercher.setEnabled(true);
                         if (trouves.isEmpty()) {
-                            message.setText("Aucun canard trouvé. Est-il allumé, et sur ce Wi-Fi ?");
+                            message.setText(L("Aucun canard trouvé. Est-il allumé, et sur ce Wi-Fi ?", "No duck found. Is he on, and on this Wi-Fi?"));
                             return;
                         }
                         for (java.util.Map.Entry<String, String> t : trouves.entrySet()) retenirCanard(t.getKey(), t.getValue());
@@ -301,7 +304,7 @@ public class Accueil extends Activity {
                             adresse.setText(trouves.keySet().iterator().next());
                             ouvrir();
                         } else {
-                            message.setText(trouves.size() + " canards trouvés : choisis.");
+                            message.setText(trouves.size() + L(" canards trouvés : choisis.", " ducks found: pick one."));
                             dessinerCanards();
                         }
                     }

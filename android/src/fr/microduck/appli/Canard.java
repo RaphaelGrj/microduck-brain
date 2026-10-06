@@ -74,10 +74,10 @@ public class Canard extends Activity {
                 String retour = url.replace("\"", "");
                 v.loadDataWithBaseURL(null, "<!doctype html><meta name=viewport content='width=device-width'>"
                         + "<body style='font-family:sans-serif;text-align:center;padding:48px 24px;color:#333'>"
-                        + "<h2 style='color:#f26a1b'>Microduck ne répond pas</h2>"
-                        + "<p>Le canard est-il allumé, et le téléphone sur le même Wi-Fi ?</p>"
+                        + "<h2 style='color:#f26a1b'>" + Accueil.L("Microduck ne répond pas", "Microduck is not responding") + "</h2>"
+                        + "<p>" + Accueil.L("Le canard est-il allumé, et le téléphone sur le même Wi-Fi ?", "Is the duck on, and the phone on the same Wi-Fi?") + "</p>"
                         + "<p><a href=\"" + retour + "\" style='display:inline-block;padding:14px 22px;"
-                        + "background:#c24a08;color:#fff;border-radius:14px;text-decoration:none'>Réessayer</a></p>",
+                        + "background:#c24a08;color:#fff;border-radius:14px;text-decoration:none'>" + Accueil.L("Réessayer", "Try again") + "</a></p>",
                         "text/html", "utf-8", null);
             }
         });
@@ -90,7 +90,7 @@ public class Canard extends Activity {
                     Intent choix = new Intent(Intent.ACTION_GET_CONTENT);
                     choix.addCategory(Intent.CATEGORY_OPENABLE);
                     choix.setType("*/*");               // les STL n'ont pas de type fiable sur Android
-                    startActivityForResult(Intent.createChooser(choix, "Ta pièce (STL)"), CHOIX_FICHIER);
+                    startActivityForResult(Intent.createChooser(choix, Accueil.L("Ta pièce (STL)", "Your part (STL)")), CHOIX_FICHIER);
                 } catch (ActivityNotFoundException e) {
                     fichierRappel = null;
                     return false;
@@ -134,9 +134,9 @@ public class Canard extends Activity {
                     java.io.OutputStream out = getContentResolver().openOutputStream(donnees.getData());
                     out.write(aEnregistrer);
                     out.close();
-                    android.widget.Toast.makeText(this, "Enregistré", android.widget.Toast.LENGTH_SHORT).show();
+                    android.widget.Toast.makeText(this, Accueil.L("Enregistré", "Saved"), android.widget.Toast.LENGTH_SHORT).show();
                 } catch (Exception e) {
-                    android.widget.Toast.makeText(this, "Enregistrement impossible", android.widget.Toast.LENGTH_SHORT).show();
+                    android.widget.Toast.makeText(this, Accueil.L("Enregistrement impossible", "Could not save"), android.widget.Toast.LENGTH_SHORT).show();
                 }
             }
             aEnregistrer = null;

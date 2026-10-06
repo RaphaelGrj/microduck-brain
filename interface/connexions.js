@@ -208,3 +208,13 @@
     $("#glossaire").replaceChildren(...libelles.map((v) => Object.assign(document.createElement("li"), { textContent: v })));
   });
 })();
+
+// ---------- langue ----------
+(function () {
+  const s = document.querySelector("#langue");
+  try { s.value = localStorage.getItem("microduck-langue") || ""; } catch (e) { /* prive */ }
+  s.addEventListener("change", () => {
+    try { if (s.value) localStorage.setItem("microduck-langue", s.value); else localStorage.removeItem("microduck-langue"); } catch (e) { /* prive */ }
+    location.reload();
+  });
+})();
