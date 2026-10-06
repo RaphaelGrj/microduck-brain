@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Images du VRAI Microduck pour l'application (interface/microduck/*.webp), rendues depuis son modele 3D officiel
 (microduck_rl : MJCF exporte d'Onshape et ses pieces STL) : poses debout / assis / tombe, plusieurs positions de tete,
-fond transparent. A relancer si le modele change. (L'icone de l'appli vient de outils/icone_logo.py.)
+fond transparent ; plus, par pose, l'ombrage et la carte des groupes de pieces (son « look » recolore sur l'accueil).
+A relancer si le modele change. (L'icone de l'appli vient de outils/icone_logo.py.)
 
     MUJOCO_GL=osmesa uv run --with mujoco --with pillow python outils/rendu_microduck.py ~/microduck_rl
 
@@ -77,15 +78,45 @@ def rendre(m, d, r):
     return np.dstack([rgb, alpha])
 
 
+def calques(m, d, r, groupe_geom):
+    """Pour son « look » sur l'accueil (schema de couleurs du design) : l'ombrage seul (pieces toutes blanches) et,
+    pour chaque pixel, le numero du groupe de pieces (outils/modele_3d.py GROUPES, 1..n ; 0 = rien)."""
+    cam = mujoco.MjvCamera()
+    cam.lookat[:] = (0.0, 0.0, 0.11)
+    cam.distance, cam.azimuth, cam.elevation = 0.62, 205.0, -8.0
+    couleurs = m.mat_rgba.copy()
+    m.mat_rgba[:, :3] = 0.92                        # blanc : il ne reste que la lumiere
+    r.update_scene(d, camera=cam)
+    ombre = r.render().copy().mean(axis=2).astype(np.uint8)
+    m.mat_rgba[:] = couleurs
+    r.enable_segmentation_rendering()
+    r.update_scene(d, camera=cam)
+    seg = r.render().copy()
+    r.disable_segmentation_rendering()
+    geom = seg[:, :, 0]
+    groupes = np.zeros(geom.shape, np.uint8)
+    est_geom = seg[:, :, 1] == int(mujoco.mjtObj.mjOBJ_GEOM)
+    groupes[est_geom] = groupe_geom[np.clip(geom[est_geom], 0, len(groupe_geom) - 1)]
+    return ombre, groupes
+
+
 def main(racine):
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from modele_3d import GROUPES
     m = charger(racine)
     d = mujoco.MjData(m)
     r = mujoco.Renderer(m, TAILLE, TAILLE)
     SORTIE.mkdir(parents=True, exist_ok=True)
-    images = {}
+    numero = {p: k + 1 for k, (_, _, pieces, _) in enumerate(GROUPES) for p in pieces}
+    groupe_geom = np.zeros(m.ngeom, np.uint8)
+    for i in range(m.ngeom):
+        if m.geom_type[i] == mujoco.mjtGeom.mjGEOM_MESH and m.geom_group[i] == 2:
+            groupe_geom[i] = numero.get(mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_MESH, m.geom_dataid[i]), 0)
+    images, couches = {}, {}
     for nom, cle, tete, retouches in POSES:
         poser(m, d, cle, tete, retouches)
         images[nom] = rendre(m, d, r)
+        couches[nom] = calques(m, d, r, groupe_geom)
     # meme cadrage pour toutes les poses (le canard ne "saute" pas d'une image a l'autre) : boite englobante commune
     masque = np.any(np.stack([im[:, :, 3] > 0 for im in images.values()]), axis=0)
     ys, xs = np.nonzero(masque)
@@ -94,6 +125,11 @@ def main(racine):
     for nom, im in images.items():
         Image.fromarray(im, "RGBA").crop(boite).save(SORTIE / f"{nom}.webp", "WEBP", quality=88, method=6)
         print(nom, (SORTIE / f"{nom}.webp").stat().st_size // 1024, "Ko")
+        ombre, groupes = couches[nom]
+        groupes = np.where(im[:, :, 3] > 0, groupes, 0).astype(np.uint8)
+        Image.fromarray(np.dstack([ombre, ombre, ombre, im[:, :, 3]]), "RGBA").crop(boite).save(
+            SORTIE / f"{nom}-ombre.webp", "WEBP", quality=90, method=6)
+        Image.fromarray(groupes, "L").crop(boite).save(SORTIE / f"{nom}-groupes.png", optimize=True)
 
 
 if __name__ == "__main__":

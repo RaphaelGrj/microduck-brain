@@ -69,6 +69,17 @@ du dépôt, dans `~/.microduck-android/`.
 - **Réglages → Sa journée** : heures calmes, bonjour du matin (semaine, week-end), repas, auto-test, rythme. Ils sont
   gardés dans `reglages.json` (`reglages.py`) et prennent le dessus sur `ha.toml`, qui n'est jamais réécrit.
 - **Widget Android** : son état et sa batterie sur l'écran d'accueil.
+- **Où es-tu ?** (accueil) : trois petits `chirp` pour le retrouver (pas en mode calme).
+- **Son look** : le Microduck de l'accueil prend les couleurs du schéma actif du design, pose par pose (ombrage et
+  carte des pièces rendus par `outils/rendu_microduck.py`).
+- **Design → Fiche d'impression** (quoi imprimer, dans quelle couleur, avec les liens des STL d'origine) et
+  **Photo** (image 4:3 du Microduck 3D, pour partager ou illustrer une fiche du catalogue).
+- **Santé → Mise en route** : la liste du jour de la livraison, cochée toute seule quand le canard peut vérifier.
+- **Réglages → Routines** : « à 18 h 30 en semaine, il vient me voir », « le dimanche, il danse ».
+- **Réglages → Sauvegarde** : ce qu'il a appris, ses lieux, tes schémas et ses réglages, dans un fichier sur le
+  téléphone (jamais `ha.toml`) ; une restauration s'applique au prochain démarrage du canard.
+- **APK** : présence par le téléphone (quand il rejoint le Wi-Fi de la maison, le canard t'accueille, sans Home
+  Assistant ; le départ, lui, vient de Home Assistant) et mise à jour proposée quand une nouvelle version est publiée.
 
 **En haut à droite** :
 - **Design** (palette) : le vrai Microduck en 3D, d'après son modèle officiel allégé (`outils/modele_3d.py`).

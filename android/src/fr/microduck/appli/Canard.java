@@ -20,7 +20,8 @@ import java.io.InputStream;
 /** L'interface du canard en plein ecran. En demo, elle est servie depuis l'APK (assets/interface) avec un canard imaginaire. */
 public class Canard extends Activity {
     static final String DEMO = "http://demo.microduck.local/index.html";
-    private static final int CHOIX_FICHIER = 1;
+    private static final int CHOIX_FICHIER = 1, CREER_FICHIER = 2;
+    private byte[] aEnregistrer;
     private WebView vue;
     private String hote;
     private ValueCallback<Uri[]> fichierRappel;
@@ -113,8 +114,34 @@ public class Canard extends Activity {
         return "application/octet-stream";
     }
 
+    /** Pont.enregistrer : le selecteur de fichiers d'Android (aucune permission de stockage necessaire). */
+    void enregistrer(String nom, String type, byte[] octets) {
+        aEnregistrer = octets;
+        Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+                .setType(type == null ? "application/octet-stream" : type).putExtra(Intent.EXTRA_TITLE, nom);
+        try {
+            startActivityForResult(i, CREER_FICHIER);
+        } catch (ActivityNotFoundException e) {
+            aEnregistrer = null;
+        }
+    }
+
     @Override
     protected void onActivityResult(int code, int resultat, Intent donnees) {
+        if (code == CREER_FICHIER) {
+            if (resultat == RESULT_OK && donnees != null && donnees.getData() != null && aEnregistrer != null) {
+                try {
+                    java.io.OutputStream out = getContentResolver().openOutputStream(donnees.getData());
+                    out.write(aEnregistrer);
+                    out.close();
+                    android.widget.Toast.makeText(this, "Enregistré", android.widget.Toast.LENGTH_SHORT).show();
+                } catch (Exception e) {
+                    android.widget.Toast.makeText(this, "Enregistrement impossible", android.widget.Toast.LENGTH_SHORT).show();
+                }
+            }
+            aEnregistrer = null;
+            return;
+        }
         if (code == CHOIX_FICHIER && fichierRappel != null) {
             fichierRappel.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultat, donnees));
             fichierRappel = null;

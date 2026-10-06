@@ -189,7 +189,88 @@ function listeFilaments() {
 
 function maj() {
   listeSchemas(); listeFilaments(); nuancier();
+  const s = donnees.schemas.find((x) => x.nom === donnees.actif);
+  if (window.appliquerLook) window.appliquerLook(s ? s.couleurs : null);     // son look sur l'accueil
   $("#design-schema").textContent = donnees.actif || "Couleurs d'origine";
+}
+
+// ---------- fiche d'impression ----------
+const NOMS_PIECES = {
+  top_head_shell: "Dessus de la tête", bottom_head_shell: "Dessous de la tête", face_part: "Face", jaw: "Bec",
+  jaw_soft: "Bec souple", soft_mouth_top: "Bec souple (haut)", noenoeil: "Tour de l'œil", left_shell: "Coque gauche",
+  right_shell: "Coque droite", trunk_base: "Châssis", motor_support: "Support moteur", yaw2roll: "Pièce de hanche",
+  yaw_roll_motion: "Pièce de hanche (rotation)", bearing_roll: "Roulement de hanche", neck: "Cou", neck_pitch: "Cou (tangage)",
+  hip_l: "Hanche", upper_leg_left: "Cuisse gauche", upper_leg_right: "Cuisse droite", leg: "Jambe",
+  upper_leg_rigidity_plate: "Plaque de cuisse", foot_left: "Pied gauche", foot_right: "Pied droit",
+  ankle_left: "Cheville gauche", ankle_right: "Cheville droite", sole_left: "Semelle gauche", sole_right: "Semelle droite",
+  power_support: "Support de batterie", banana_pcb_locker: "Verrou de carte",
+};
+const STL = "https://github.com/pollen-robotics/microduck_rl/blob/main/src/mjlab_microduck/robot/microduck/assets/";
+
+function nomCouleur(hex) {
+  hex = hex.toLowerCase();
+  const f = donnees.filaments.find((x) => x.couleur.toLowerCase() === hex);
+  if (f) return f.nom;
+  const p = PALETTE.find((x) => x[1].toLowerCase() === hex);
+  if (p) return p[0];
+  const rgb = (h) => [1, 3, 5].map((k) => parseInt(h.slice(k, k + 2), 16));
+  const [r, g, b] = rgb(hex);                     // sinon : la couleur de la palette la plus proche
+  const proche = PALETTE.map(([nom, h]) => { const [r2, g2, b2] = rgb(h); return [(r - r2) ** 2 + (g - g2) ** 2 + (b - b2) ** 2, nom]; })
+    .sort((a, b2) => a[0] - b2[0])[0][1];
+  return `≈ ${proche} (${hex})`;
+}
+
+function fiche() {
+  // couleur -> pieces imprimables (avec leur nombre : deux hanches, deux jambes...)
+  const parCouleur = new Map();
+  for (const inst of modele.instances) {
+    const g = groupes[inst.groupe];
+    if (!g.imprimable) continue;
+    const c = (couleurs[g.id] || origine[g.id]).toLowerCase();
+    if (!parCouleur.has(c)) parCouleur.set(c, new Map());
+    const m = parCouleur.get(c);
+    m.set(inst.piece, (m.get(inst.piece) || 0) + 1);
+  }
+  const titre = donnees.actif || "Schéma en cours";
+  const lignes = [`Microduck — ${titre}`, ""];
+  const blocs = [...parCouleur.entries()].sort((a, b) => b[1].size - a[1].size).map(([hex, pieces]) => {
+    const h3 = document.createElement("h3");
+    const p = document.createElement("span"); p.className = "pastille-couleur"; p.style.background = hex;
+    h3.append(p, nomCouleur(hex));
+    const ul = document.createElement("ul");
+    lignes.push(`${nomCouleur(hex)} (${hex}) :`);
+    for (const [piece, n] of [...pieces.entries()].sort()) {
+      const li = document.createElement("li"), a = document.createElement("a");
+      a.href = STL + piece + ".stl"; a.target = "_blank"; a.rel = "noopener";
+      a.textContent = (NOMS_PIECES[piece] || piece) + (n > 1 ? ` × ${n}` : "");
+      li.append(a); ul.append(li);
+      lignes.push(`  - ${NOMS_PIECES[piece] || piece}${n > 1 ? " x" + n : ""} : ${piece}.stl`);
+    }
+    lignes.push("");
+    return [h3, ul];
+  }).flat();
+  lignes.push("STL d'origine : " + STL);
+  $("#fiche-schema").textContent = `${titre} · ${parCouleur.size} couleur${parCouleur.size > 1 ? "s" : ""}`;
+  $("#fiche-contenu").replaceChildren(...blocs);
+  ficheTexte = lignes.join("\n");
+  $("#vue-fiche").showModal();
+}
+let ficheTexte = "";
+
+// ---------- photo (4:3, pour partager un schema ou illustrer une fiche du catalogue) ----------
+function photo() {
+  const L = 1200, H = 900, avant = rendu.getSize(new THREE.Vector2()), ratio = rendu.getPixelRatio();
+  for (const id in materiaux) materiaux[id].emissive.setHex(0x000000);
+  rendu.setPixelRatio(1); rendu.setSize(L, H, false);
+  camera.aspect = L / H; camera.updateProjectionMatrix();
+  rendu.setClearColor(0xf5f4f2, 1);
+  rendu.render(scene, camera);
+  const url = rendu.domElement.toDataURL("image/jpeg", 0.92);
+  rendu.setClearColor(0x000000, 0);
+  rendu.setPixelRatio(ratio); rendu.setSize(avant.x, avant.y, false);
+  taille();
+  const nom = (donnees.actif || "microduck").normalize("NFD").replace(/[^\w]+/g, "-").replace(/^-|-$/g, "").toLowerCase();
+  window.enregistrerFichier(`${nom || "microduck"}.jpg`, "image/jpeg", url);
 }
 
 // ---------- STL perso ----------
@@ -277,5 +358,18 @@ const comparer = $("#design-comparer");
 const montrerOrigine = (oui) => { for (const id in materiaux) materiaux[id].color.set(oui ? origine[id] : (couleurs[id] || origine[id])); };
 comparer.addEventListener("pointerdown", () => montrerOrigine(true));
 for (const ev of ["pointerup", "pointerleave", "pointercancel"]) comparer.addEventListener(ev, () => montrerOrigine(false));
+
+$("#fiche-impression").addEventListener("click", fiche);
+$("#design-photo").addEventListener("click", photo);
+$("#fiche-enregistrer").addEventListener("click", () => window.enregistrerFichier(
+  `impression-${(donnees.actif || "microduck").toLowerCase().replace(/[^\w]+/g, "-")}.txt`, "text/plain", ficheTexte));
+$("#fiche-copier").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(ficheTexte); }
+  catch (e) {                                  // http sur le reseau local : pas de presse-papiers « moderne »
+    const t = document.createElement("textarea"); t.value = ficheTexte; document.body.append(t); t.select();
+    document.execCommand("copy"); t.remove();
+  }
+  window.toast("Fiche copiée");
+});
 
 window.MicroduckDesign = { ouvrir, essayer };

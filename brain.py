@@ -160,6 +160,8 @@ class Brain:
             "taquin": Sequence("taquin", [("non", "inquire")]),    # "non..." puis il joue quand meme
             # reflexes sonores (audio.py)
             "appel": Sequence("appel", [("curieux", "inquire"), ("oui", "greet")]),   # deux claquements : "oui ?"
+            # « Ou es-tu ? » de l'application : trois petits chirp pour qu'on le retrouve (sous un meuble...)
+            "ou_es_tu": Sequence("ou_es_tu", [("curieux", "chirp"), ("oui", "chirp"), ("curieux", "chirp")]),
             "bravo": Sequence("bravo", [("content", "wheee")]),                       # applaudissements
             "danse": Danse(),                                                        # musique : hochements en rythme
             # taquineries, lot A (socle : taquineries.py)
@@ -340,6 +342,16 @@ class Brain:
                 self.exploration = Exploration()
                 self.chargeur = None
                 print(f"[{self.t_global:6.1f}s] carte effacee", flush=True)
+                continue
+            if base == "ou_es_tu":
+                # depuis l'application : il se signale. Pas en mode calme (silence promis), ni a terre ou dans les bras.
+                if not self.mode_calme and not self.tombe and self.courant.nom not in ("alarme", "porte"):
+                    self._bascule("ou_es_tu")
+                continue
+            if base == "routine_compagnie":
+                # routine programmee dans l'application (« a 18 h, il vient me voir ») : comme son envie de compagnie
+                if not self.mode_calme and not self.tombe and self.courant.nom not in ("alarme", "porte"):
+                    self._bascule("cherche_attention")
                 continue
             if base == "batterie_mise":
                 # depuis l'application : quelle batterie du pack est dans le canard (statistiques par batterie)
@@ -1525,6 +1537,20 @@ class Brain:
             self.chargeur = pos
             self._charge_ref = (self.t_global, pct, pos)
 
+    routines = ()                               # [(heure, minute, jours (0 = lundi), evenement)] : reglages.py
+
+    def _verifie_routines(self):
+        """Routines programmees dans l'application : a l'heure dite, les jours dits, l'evenement part une fois."""
+        h = self.horloge()
+        cle = (getattr(h, "tm_yday", None), getattr(h, "tm_hour", None), getattr(h, "tm_min", None))
+        if cle == getattr(self, "_minute_routines", None):
+            return
+        self._minute_routines = cle
+        for heure, minute, jours, evt in self.routines:
+            if heure == cle[1] and minute == cle[2] and getattr(h, "tm_wday", 0) in jours:
+                print(f"[{self.t_global:6.1f}s] routine {heure:02d}:{minute:02d} : {evt}", flush=True)
+                self.evenement(evt)
+
     def _verifie_bonjour(self):
         h = self.horloge()
         jour = getattr(h, "tm_yday", None)
@@ -1647,6 +1673,8 @@ class Brain:
         self._traite_evenements()
         if self.bonjour is not None:
             self._verifie_bonjour()                 # apres les evenements : un "calme_on" en attente passe d'abord
+        if self.routines:
+            self._verifie_routines()
         self._verifie_autotest()
         self._verifie_jour_special()
         self.humeur.avance(dt, self.courant.nom, self.vivacite())

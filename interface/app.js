@@ -18,7 +18,7 @@ const ETATS = {
   coup_oeil: "Un coup d'œil", compagnie: "Il te tient compagnie", va_compagnie: "Il vient te voir",
   penaud: "Penaud", cajole: "Content", compris: "Compris !", pas_guide: "Il marche (télécommande)",
   regard_guide: "Il regarde (télécommande)", retrait: "Trop de bruit, il s'éloigne", jour_special: "Jour spécial !",
-  fier: "Il est fier", baillement: "Il bâille", baillement_contagieux: "Il bâille", fausse_chute: "Fausse chute !",
+  fier: "Il est fier", ou_es_tu: "Je suis là !", baillement: "Il bâille", baillement_contagieux: "Il bâille", fausse_chute: "Fausse chute !",
 };
 const JOUR = { promenades: ["promenade", "promenades"], siestes: ["sieste", "siestes"], jeux: ["jeu", "jeux"],
   danses: ["danse", "danses"], caresses: ["caresse", "caresses"], accueils: ["accueil", "accueils"],
@@ -280,7 +280,37 @@ async function chargerJournee() {
   $("#r-repas").replaceChildren(...(r.repas || []).map(ligneRepas));
   $("#r-autotest").checked = !!r.autotest;
   $("#r-circadien").checked = !!r.circadien;
+  $("#r-routines").replaceChildren(...(r.routines || []).map(ligneRoutine));
 }
+const JOURS_COURTS = ["L", "M", "M", "J", "V", "S", "D"];          // 0 = lundi, comme le canard (tm_wday)
+const ACTIONS_ROUTINE = { vient_me_voir: "Il vient me voir", salut: "Salut", danse: "Danse", toupie: "Toupie",
+  jouer_balle: "Jeu de balle", jouer_soleil: "1-2-3 soleil", jouer_cache: "Cache-cache", ou_es_tu: "Il se signale",
+  diagnostic: "Diagnostic", calme_on: "Mode calme : oui", calme_off: "Mode calme : non" };
+function ligneRoutine(r) {
+  r = r || { heure: "18:00", jours: [0, 1, 2, 3, 4], action: "vient_me_voir" };
+  const d = document.createElement("div"); d.className = "routine";
+  const h = document.createElement("input"); h.type = "time"; h.value = r.heure; h.setAttribute("aria-label", "Heure");
+  const a = document.createElement("select"); a.setAttribute("aria-label", "Action");
+  for (const [k, v] of Object.entries(ACTIONS_ROUTINE)) a.add(new Option(v, k, false, k === r.action));
+  const x = document.createElement("button"); x.textContent = "✕"; x.setAttribute("aria-label", "Retirer la routine");
+  x.addEventListener("click", () => d.remove());
+  const j = document.createElement("div"); j.className = "jours";
+  JOURS_COURTS.forEach((l, k) => {
+    const b = document.createElement("button"); b.textContent = l; b.dataset.jour = k;
+    b.setAttribute("aria-pressed", String(r.jours.includes(k)));
+    b.addEventListener("click", () => b.setAttribute("aria-pressed", String(b.getAttribute("aria-pressed") !== "true")));
+    j.append(b);
+  });
+  d.append(h, a, x, j);
+  return d;
+}
+function lireRoutines() {
+  return [...document.querySelectorAll("#r-routines .routine")].map((d) => ({
+    heure: d.querySelector("input").value, action: d.querySelector("select").value,
+    jours: [...d.querySelectorAll(".jours button[aria-pressed=true]")].map((b) => +b.dataset.jour),
+  })).filter((r) => r.heure && r.jours.length);
+}
+$("#r-routine-ajout").addEventListener("click", () => $("#r-routines").append(ligneRoutine()));
 $("#r-calmes").addEventListener("change", (e) => { $("#r-calmes-heures").hidden = !e.target.checked; });
 $("#r-repas-ajout").addEventListener("click", () => $("#r-repas").append(ligneRepas()));
 $("#r-enregistrer").addEventListener("click", async () => {
@@ -290,11 +320,158 @@ $("#r-enregistrer").addEventListener("click", async () => {
     await api("/api/reglages", { heures_calmes: calmes, bonjour: heureVersTexte($("#r-bonjour").value),
       bonjour_weekend: heureVersTexte($("#r-bonjour-we").value),
       repas: [...document.querySelectorAll("#r-repas input")].map((i) => i.value).filter(Boolean),
-      autotest: $("#r-autotest").checked, circadien: $("#r-circadien").checked });
+      autotest: $("#r-autotest").checked, circadien: $("#r-circadien").checked, routines: lireRoutines() });
     toast("Réglages enregistrés");
     chargerJournee();
   } catch (x) { toast(x.message === "code" ? "Code refusé" : "Microduck ne répond pas"); }
 });
+
+// Enregistrer un fichier sur le telephone : l'APK demande ou (Android), un navigateur le telecharge
+function enregistrerFichier(nom, type, contenu) {
+  let base64;
+  if (contenu.startsWith("data:")) base64 = contenu.split(",")[1];
+  else {                                         // (par morceaux : une sauvegarde peut peser plusieurs centaines de Ko)
+    const octets = new TextEncoder().encode(contenu);
+    let bin = "";
+    for (let i = 0; i < octets.length; i += 0x8000) bin += String.fromCharCode(...octets.subarray(i, i + 0x8000));
+    base64 = btoa(bin);
+  }
+  if (window.MicroduckAndroid && window.MicroduckAndroid.enregistrer) {
+    window.MicroduckAndroid.enregistrer(nom, type, base64);
+    return;
+  }
+  const a = document.createElement("a");
+  a.href = contenu.startsWith("data:") ? contenu : "data:" + type + ";base64," + base64;
+  a.download = nom;
+  document.body.append(a); a.click(); a.remove();
+}
+
+// Son « look » : le schema actif du design repeint le Microduck de l'accueil, pose par pose (ombrage x couleur de
+// chaque groupe de pieces : interface/microduck/<pose>-ombre.webp et -groupes.png, outils/rendu_microduck.py)
+let look = null, ordreGroupes = null;
+const cacheLook = new Map();
+function chargerImage(src) {
+  return new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ko; i.src = src; });
+}
+async function imageLook(pose) {
+  const cle = pose + JSON.stringify(look);
+  if (cacheLook.has(cle)) return cacheLook.get(cle);
+  if (!ordreGroupes) ordreGroupes = (await fetch("/design/microduck.json").then((r) => r.json())).groupes;
+  const [ombre, groupes] = await Promise.all([chargerImage(`/microduck/${pose}-ombre.webp`), chargerImage(`/microduck/${pose}-groupes.png`)]);
+  const c = document.createElement("canvas"); c.width = ombre.width; c.height = ombre.height;
+  const g = c.getContext("2d", { willReadFrequently: true });
+  g.drawImage(groupes, 0, 0); const idx = g.getImageData(0, 0, c.width, c.height).data;
+  g.clearRect(0, 0, c.width, c.height); g.drawImage(ombre, 0, 0);
+  const img = g.getImageData(0, 0, c.width, c.height), px = img.data;
+  const couleurs = [[0, 0, 0], ...ordreGroupes.map((gr) => {
+    const h = (look[gr.id] || gr.origine).slice(1);
+    return [0, 2, 4].map((k) => parseInt(h.slice(k, k + 2), 16));
+  })];
+  for (let i = 0; i < px.length; i += 4) {
+    const col = couleurs[idx[i]] || couleurs[0], o = px[i] / 235;
+    px[i] = Math.min(255, o * col[0]); px[i + 1] = Math.min(255, o * col[1]); px[i + 2] = Math.min(255, o * col[2]);
+  }
+  g.putImageData(img, 0, 0);
+  const url = c.toDataURL("image/png");
+  cacheLook.set(cle, url);
+  return url;
+}
+function srcPose(pose) { return `/microduck/${pose}.webp`; }
+async function poserImage(img, pose) {
+  if (!look) { if (!img.src.endsWith(srcPose(pose))) img.src = srcPose(pose); return; }
+  try { const url = await imageLook(pose); if (img.dataset.pose !== pose || img.src !== url) { img.src = url; img.dataset.pose = pose; } }
+  catch (e) { img.src = srcPose(pose); }
+}
+window.appliquerLook = (couleurs) => {         // appele par le design quand le schema actif change
+  look = couleurs && Object.keys(couleurs).length ? couleurs : null;
+  if (dernier) dessiner(dernier);
+};
+async function chargerLook() {
+  try {
+    const d = await api("/api/design");
+    const s = (d.schemas || []).find((x) => x.nom === d.actif);
+    window.appliquerLook(s ? s.couleurs : null);
+  } catch (e) { /* pas de design : l'image d'origine */ }
+}
+
+// Mise en route : la liste du jour de la livraison (auto = verifie par le canard, sinon coche a la main)
+const MISE_EN_ROUTE = [
+  { id: "appli", titre: "Appli connectée au canard", auto: () => true },
+  { id: "wifi", titre: "Wi-Fi de la maison lié au lieu actuel", detail: "Réglages → Lieux",
+    auto: async () => { const l = await api("/api/lieux"); return l.lieux.some((x) => x.id === l.actuel && x.reseaux.length); } },
+  { id: "batteries", titre: "Batteries numérotées 1, 2, 3 au feutre", detail: "Santé → Ses batteries" },
+  { id: "diag", titre: "Premier diagnostic : tout va bien", detail: "Santé → Lancer le diagnostic",
+    auto: () => dernier && dernier.maintenance.diagnostic.ok === true },
+  { id: "capteurs", titre: "Capteur de distance et caméra vus par le diagnostic",
+    auto: () => { const d = (dernier && dernier.maintenance.diagnostic.detail) || {};
+      return String(d.tof || "").startsWith("OK") && String(d.camera || "").startsWith("OK"); } },
+  { id: "bec", titre: "Index du bec confirmé (scénario bec_index)", detail: "valider_sim.py, en premier" },
+  { id: "validation", titre: "Validation groupée dans duck-sim", detail: "scripts-wsl/valider-tout.sh (~45 min)" },
+  { id: "ha", titre: "Home Assistant le voit (entités microduck)", detail: "ha.toml rempli sur le canard" },
+  { id: "look", titre: "Ses couleurs choisies dans le design", auto: () => !!look },
+];
+async function miseEnRoute() {
+  let coches = {};
+  try { coches = JSON.parse(memoire("microduck-mise-en-route") || "{}"); } catch (e) { /* vide */ }
+  let faits = 0;
+  const lignes = await Promise.all(MISE_EN_ROUTE.map(async (m) => {
+    let fait = !!coches[m.id];
+    if (m.auto) { try { fait = !!(await m.auto()); } catch (e) { fait = false; } }
+    if (fait) faits++;
+    const li = document.createElement("li"); if (fait) li.className = "fait";
+    const n = document.createElement("div"); n.className = "nom";
+    const b = document.createElement("b"); b.textContent = (fait ? "✓ " : "") + m.titre;
+    n.append(b);
+    if (m.detail || m.auto) { const sm = document.createElement("small"); sm.textContent = [m.detail, m.auto ? "auto" : null].filter(Boolean).join(" · "); n.append(sm); }
+    li.append(n);
+    if (!m.auto) {
+      const c = document.createElement("input"); c.type = "checkbox"; c.className = "case"; c.checked = fait;
+      c.setAttribute("aria-label", m.titre);
+      c.addEventListener("change", () => { coches[m.id] = c.checked; memoire("microduck-mise-en-route", JSON.stringify(coches)); miseEnRoute(); });
+      li.append(c);
+    }
+    return li;
+  }));
+  $("#mer-liste").replaceChildren(...lignes);
+  $("#mer-progres").textContent = `${faits} / ${MISE_EN_ROUTE.length}`;
+  if (faits < MISE_EN_ROUTE.length && !memoire("microduck-mise-en-route-vue")) { $("#mise-en-route").open = true; memoire("microduck-mise-en-route-vue", "1"); }
+}
+
+// Sauvegarde de sa memoire, et restauration (appliquee au prochain demarrage du canard)
+$("#sauvegarder").addEventListener("click", async () => {
+  try {
+    const s = await api("/api/sauvegarde");
+    enregistrerFichier(`microduck-sauvegarde-${new Date().toISOString().slice(0, 10)}.json`, "application/json", JSON.stringify(s));
+  } catch (x) { toast("Microduck ne répond pas"); }
+});
+$("#restaurer").addEventListener("change", async (e) => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  try {
+    const s = JSON.parse(await f.text());
+    if (!confirm("Remplacer sa mémoire par cette sauvegarde ? Elle s'applique au prochain démarrage du canard.")) return;
+    await api("/api/restauration", s);
+    toast("Sauvegarde envoyée : redémarre le canard");
+  } catch (x) { toast(x instanceof SyntaxError ? "Ce fichier n'est pas une sauvegarde" : x.message); }
+});
+
+// Presence par ce telephone (APK) : il previent le canard quand il rejoint le Wi-Fi de la maison
+function initPresence() {
+  const a = window.MicroduckAndroid;
+  if (!a || !a.presence || window.MicroduckDemo) return;
+  $("#presence-tel").hidden = false;
+  const nom = a.prenom ? a.prenom() : "";
+  $("#presence-nom").value = nom;
+  $("#presence-actif").checked = !!nom;
+}
+function enregistrerPresence() {
+  const nom = $("#presence-actif").checked ? $("#presence-nom").value.trim() : "";
+  if ($("#presence-actif").checked && !nom) { $("#presence-nom").focus(); return; }
+  window.MicroduckAndroid.presence(nom);
+  toast(nom ? `Il saura quand tu arrives, ${nom}` : "Présence désactivée");
+}
+$("#presence-enregistrer").addEventListener("click", enregistrerPresence);
+$("#presence-actif").addEventListener("change", enregistrerPresence);
 
 // Le Microduck de l'accueil : familles d'etats -> expression (signes par-dessus) ; image d'apres posture et tete.
 const FAMILLES = {
@@ -332,10 +509,10 @@ function dessiner(e) {
   clearInterval(pasMarche);
   if (familles.includes("marche") && !e.assis && !e.tombe) {
     let n = 0;                                  // il marche : deux images en alternance
-    img.src = "/microduck/marche.webp";
-    pasMarche = setInterval(() => { img.src = `/microduck/${n++ % 2 ? "marche" : choix}.webp`; }, 380);
-  } else if (!img.src.endsWith(`/${choix}.webp`)) {
-    img.src = `/microduck/${choix}.webp`;
+    poserImage(img, "marche");
+    pasMarche = setInterval(() => { poserImage(img, n++ % 2 ? "marche" : choix); }, 380);
+  } else {
+    poserImage(img, choix);
   }
   boite.setAttribute("aria-label", "Microduck : " + (ETATS[e.etat] || e.etat));
 }
@@ -478,6 +655,7 @@ async function entrer(c) {
     ecouter();
     rafraichirCarte();
     verifierAlertes();
+    chargerLook();
     // APK : il retient l'adresse et le code pour verifier les alertes en arriere-plan (notifications, widget)
     if (window.MicroduckAndroid && !window.MicroduckDemo) window.MicroduckAndroid.retenir(location.origin, c);
   } catch (x) {
@@ -489,14 +667,15 @@ async function entrer(c) {
 document.addEventListener("click", (ev) => {
   const b = ev.target.closest("button");
   if (!b) return;
-  if (b.dataset.cmd) commande(b.dataset.cmd, b.dataset.cmd === "diagnostic" ? "Diagnostic demandé" : null);
+  if (b.dataset.cmd) commande(b.dataset.cmd, { diagnostic: "Diagnostic demandé", ou_es_tu: "Écoute bien…" }[b.dataset.cmd] || null);
   if (b.dataset.onglet) {
     document.querySelectorAll(".onglets button").forEach((o) => o.removeAttribute("aria-current"));
     b.setAttribute("aria-current", "page");
     document.querySelectorAll(".page").forEach((p) => { p.hidden = p.dataset.page !== b.dataset.onglet; });
     window.scrollTo(0, 0);
     if (b.dataset.onglet === "accueil") rafraichirCarte();
-    if (b.dataset.onglet === "reglages") { rafraichirLieux(); chargerJournee(); }
+    if (b.dataset.onglet === "reglages") { rafraichirLieux(); chargerJournee(); initPresence(); }
+    if (b.dataset.onglet === "sante") miseEnRoute();
   }
 });
 $("#t-calme").addEventListener("click", () => commande(dernier && dernier.modes.calme ? "calme_off" : "calme_on"));

@@ -69,7 +69,21 @@ public class Veille extends JobService {
         SharedPreferences pr = prefs(c);
         String url = pr.getString("url", null), code = pr.getString("code", null);
         if (url == null || code == null) return;
-        JSONObject etat = new JSONObject(lire(url + "/api/etat", code));
+        JSONObject etat;
+        try {
+            etat = new JSONObject(lire(url + "/api/etat", code));
+        } catch (Exception e) {
+            pr.edit().putBoolean("joignable", false).apply();   // hors de la maison (ou canard eteint)
+            throw e;
+        }
+        // presence par ce telephone : il etait injoignable, le voila sur le Wi-Fi de la maison -> « je suis la »
+        String prenom = pr.getString("prenom", "");
+        if (!pr.getBoolean("joignable", false) && prenom.length() > 0) {
+            try {
+                ecrire(url + "/api/presence", code, new JSONObject().put("nom", prenom).toString());
+            } catch (Exception e) { /* la prochaine fois */ }
+        }
+        pr.edit().putBoolean("joignable", true).apply();
         majWidget(c, etat);
         double depuis = Double.longBitsToDouble(pr.getLong("depuis", Double.doubleToLongBits(System.currentTimeMillis() / 1000.0 - 3600)));
         alertes(c, new JSONObject(lire(url + "/api/alertes?depuis=" + depuis, code)).getJSONArray("alertes"));
@@ -130,6 +144,22 @@ public class Veille extends JobService {
         v.setTextViewText(R.id.w_etat, etat);
         v.setTextViewText(R.id.w_detail, detail);
         awm.updateAppWidget(ids, v);
+    }
+
+    static void ecrire(String adresse, String code, String json) throws Exception {
+        HttpURLConnection h = (HttpURLConnection) new URL(adresse).openConnection();
+        h.setConnectTimeout(4000);
+        h.setReadTimeout(6000);
+        h.setRequestMethod("POST");
+        h.setDoOutput(true);
+        h.setRequestProperty("X-Microduck-Code", code);
+        h.setRequestProperty("Content-Type", "application/json");
+        try {
+            h.getOutputStream().write(json.getBytes("UTF-8"));
+            if (h.getResponseCode() != 200) throw new Exception("HTTP " + h.getResponseCode());
+        } finally {
+            h.disconnect();
+        }
     }
 
     static String lire(String adresse, String code) throws Exception {

@@ -43,6 +43,10 @@ public class Accueil extends Activity {
     private TextView message;
     private Button chercher;
     private SharedPreferences prefs;
+    private Button majBouton;
+
+    // derniere version publiee de l'APK (android/version.json, ecrit par construire.sh) et l'APK lui-meme
+    static final String DEPOT = "https://raw.githubusercontent.com/RaphaelGrj/microduck-brain/ccr-4c5851c0-mdd2p8/android/";
 
     @Override
     protected void onCreate(Bundle b) {
@@ -80,6 +84,11 @@ public class Accueil extends Activity {
         TextView intro = texte("Le téléphone doit être sur le même Wi-Fi que le canard.", 15, 0xFF555555);
         intro.setGravity(Gravity.CENTER);
         col.addView(intro);
+
+        majBouton = bouton("", true);                       // « Mise a jour x.y disponible » (cache tant qu'il n'y en a pas)
+        majBouton.setVisibility(View.GONE);
+        col.addView(majBouton, largeur(dp(16)));
+        verifierMiseAJour();
 
         chercher = bouton("Chercher le canard sur le Wi-Fi", true);
         chercher.setOnClickListener(new View.OnClickListener() {
@@ -133,6 +142,44 @@ public class Accueil extends Activity {
         defile.setBackgroundColor(Color.WHITE);
         defile.addView(col);
         setContentView(defile);
+    }
+
+    /** Une version plus recente sur GitHub ? Le bouton ouvre son telechargement dans le navigateur (installation par Android). */
+    private void verifierMiseAJour() {
+        new Thread(new Runnable() {
+            public void run() {
+                try {
+                    HttpURLConnection c = (HttpURLConnection) new URL(DEPOT + "version.json").openConnection();
+                    c.setConnectTimeout(5000);
+                    c.setReadTimeout(5000);
+                    c.setUseCaches(false);
+                    if (c.getResponseCode() != 200) return;
+                    InputStream in = c.getInputStream();
+                    ByteArrayOutputStream out = new ByteArrayOutputStream();
+                    byte[] t = new byte[1024];
+                    int n;
+                    while ((n = in.read(t)) > 0 && out.size() < 8192) out.write(t, 0, n);
+                    final org.json.JSONObject v = new org.json.JSONObject(out.toString("UTF-8"));
+                    int moi = getPackageManager().getPackageInfo(getPackageName(), 0).versionCode;
+                    if (v.getInt("versionCode") <= moi) return;
+                    final String apk = v.optString("apk", DEPOT + "microduck.apk");
+                    if (!apk.startsWith("https://")) return;
+                    runOnUiThread(new Runnable() {
+                        public void run() {
+                            majBouton.setText("Mise à jour " + v.optString("versionName") + " disponible");
+                            majBouton.setVisibility(View.VISIBLE);
+                            majBouton.setOnClickListener(new View.OnClickListener() {
+                                public void onClick(View b) {
+                                    try {
+                                        startActivity(new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(apk)));
+                                    } catch (Exception e) { message.setText("Ouvre " + apk); }
+                                }
+                            });
+                        }
+                    });
+                } catch (Exception e) { /* pas d'Internet : on verra au prochain lancement */ }
+            }
+        }).start();
     }
 
     /** Ouvre l'interface du canard a l'adresse tapee (ip, ip:port ou http://...). */

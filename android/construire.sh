@@ -57,5 +57,12 @@ zipalign -f -p 4 "$TMP/brut.apk" "$TMP/aligne.apk"
 apksigner sign --ks "$CLES/microduck.keystore" --ks-pass "file:$CLES/mot-de-passe" --ks-key-alias microduck \
   --min-sdk-version 23 --out "$SORTIE/microduck.apk" "$TMP/aligne.apk"
 apksigner verify "$SORTIE/microduck.apk"
+# version.json : ce que l'appli compare a sa propre version pour proposer la mise a jour
+python3 - "$ICI/AndroidManifest.xml" > "$ICI/version.json" <<'PY'
+import json, re, sys
+m = open(sys.argv[1], encoding="utf-8").read()
+print(json.dumps({"versionCode": int(re.search(r'versionCode="(\d+)"', m).group(1)),
+                  "versionName": re.search(r'versionName="([^"]+)"', m).group(1)}))
+PY
 rm -rf "$TMP"
 echo "APK : $SORTIE/microduck.apk ($(du -h "$SORTIE/microduck.apk" | cut -f1))"

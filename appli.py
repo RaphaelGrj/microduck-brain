@@ -21,6 +21,9 @@ API :
   GET  /api/design          schemas de couleurs et filaments du design space ; POST /api/design pour les garder
   GET  /api/alertes?depuis=T les alertes (chute, batterie, garde, incendie, impressions...) apres l'instant T (s)
   GET  /api/reglages        heures calmes, bonjour, repas... ; POST /api/reglages pour les changer (reglages.py)
+  POST /api/presence        {"nom": ...} : le telephone de quelqu'un vient d'arriver sur le Wi-Fi de la maison
+  GET  /api/sauvegarde      sa memoire (apprentissages, lieux, design, reglages ; jamais ha.toml ni jeton)
+  POST /api/restauration    une sauvegarde, appliquee au prochain demarrage du canard
   GET  /api/sante           test de vie, sans code (pour savoir si le canard repond)
 Le code se passe dans l'en-tete `X-Microduck-Code` (ou `?code=` pour le flux).
 """
@@ -50,7 +53,7 @@ COMMANDES = {
     "salut": "tour_salut", "toupie": "tour_toupie", "assis": "tour_assis", "danse": "commande:danse",
     "stop": "commande:stop", "stop_taquinerie": "stop_taquinerie", "diagnostic": "diagnostic",
     "calme_on": "calme_on", "calme_off": "calme_off", "garde_on": "garde_on", "garde_off": "garde_off",
-    "oublier_carte": "oublier_carte",
+    "oublier_carte": "oublier_carte", "ou_es_tu": "ou_es_tu",
     "batterie_1": "batterie_mise:1", "batterie_2": "batterie_mise:2", "batterie_3": "batterie_mise:3",
     "avance": "guide:avance", "gauche": "guide:gauche", "droite": "guide:droite",
     "regard_gauche": "regard:gauche", "regard_droite": "regard:droite", "regard_haut": "regard:haut",
@@ -189,6 +192,27 @@ def valider_design(d):
     return {"filaments": filaments, "schemas": schemas, "actif": actif if any(sc["nom"] == actif for sc in schemas) else None}
 
 
+def fichiers_sauvegardes(appli):
+    """Ce qu'une sauvegarde contient : nom -> chemin. Jamais ha.toml (jeton Home Assistant)."""
+    import lieux
+    import memoire
+    import reglages
+    return {"memoire.json": memoire.CHEMIN_DEFAUT, "lieux.json": lieux.CHEMIN_DEFAUT,
+            "design.json": appli.fichier_design, "reglages.json": appli.fichier_reglages or reglages.CHEMIN_DEFAUT}
+
+
+def appliquer_restaurations(chemins, log=print):
+    """Au demarrage (canard.py), avant de lire la memoire : les fichiers « .restaurer » remplacent les actuels."""
+    for chemin in chemins:
+        attente = Path(str(chemin) + ".restaurer")
+        if attente.exists():
+            try:
+                os.replace(attente, chemin)
+                log(f"sauvegarde restauree : {chemin.name}")
+            except OSError as e:
+                log(f"restauration impossible ({chemin.name}) : {e}")
+
+
 class Appli:
     def __init__(self, code, port=PORT_DEFAUT, log=print, version=None, hote="0.0.0.0"):
         if not code or len(str(code)) < 6:
@@ -201,7 +225,7 @@ class Appli:
         self._verrou_alertes = threading.Lock()
         self._avant = None                      # instantane precedent : on alerte sur les changements
         self._ecoute = None
-        self.fichier_design = Path(os.environ.get("MICRODUCK_DESIGN", Path.home() / ".local/share/microduck/design.json"))
+        self.fichier_design = self.fichier_design_defaut()
         self.cerveau = None                     # section [cerveau] fusionnee (canard.py) : reglages modifiables
         self.fichier_reglages = None
         self._reglages_a_appliquer = None
@@ -209,6 +233,10 @@ class Appli:
         self._t_photo = self._t_carte = -1e9
         self._echecs = {}                       # ip -> instant du dernier code faux (freine les essais)
         self.serveur = None
+
+    @staticmethod
+    def fichier_design_defaut():
+        return Path(os.environ.get("MICRODUCK_DESIGN", Path.home() / ".local/share/microduck/design.json"))
 
     # -- cote cerveau (boucle a 50 Hz) --------------------------------------------------------------------------
     def photographier(self, brain, state):
@@ -348,6 +376,17 @@ class Appli:
                             depuis = 0.0
                         self._json(200, {"maintenant": time.time(), "alertes": appli.alertes_depuis(depuis)})
                     return
+                if url.path == "/api/sauvegarde":
+                    if self._autorise():
+                        fichiers = {}
+                        for nom, chemin in fichiers_sauvegardes(appli).items():
+                            try:
+                                fichiers[nom] = json.loads(Path(chemin).read_text())
+                            except (OSError, ValueError):
+                                pass
+                        self._json(200, {"format": "microduck-sauvegarde", "version": 1, "date": time.time(),
+                                         "cerveau": appli.version, "fichiers": fichiers})
+                    return
                 if url.path == "/api/reglages":
                     if self._autorise():
                         if appli.cerveau is None:
@@ -391,17 +430,40 @@ class Appli:
                 chemin = urlparse(self.path).path
                 if not adresse_locale(self.client_address[0]):
                     return self._json(403, {"erreur": "reseau local seulement"})
-                if chemin not in ("/api/commande", "/api/lieu", "/api/design", "/api/reglages"):
+                if chemin not in ("/api/commande", "/api/lieu", "/api/design", "/api/reglages", "/api/presence",
+                                  "/api/restauration"):
                     return self._json(404, {"erreur": "inconnu"})
                 if not self._autorise():
                     return
                 try:
-                    n = min(int(self.headers.get("Content-Length", "0")), 65536 if chemin == "/api/design" else 4096)
+                    n = min(int(self.headers.get("Content-Length", "0")),
+                            {"/api/design": 65536, "/api/restauration": 8 * 1024 * 1024}.get(chemin, 4096))
                     corps = json.loads(self.rfile.read(n) or b"{}")
                     if not isinstance(corps, dict):
                         raise ValueError
                 except (ValueError, AttributeError):
                     return self._json(400, {"erreur": "JSON attendu"})
+                if chemin == "/api/presence":
+                    nom = corps.get("nom")
+                    nom = "".join(c for c in nom if c.isprintable() and c not in "|:").strip()[:40] if isinstance(nom, str) else ""
+                    if not nom:
+                        return self._json(400, {"erreur": "nom attendu"})
+                    appli.evenements.put(f"presence:{nom}|home")    # comme Home Assistant : il arrive, on l'accueille
+                    return self._json(200, {"ok": True})
+                if chemin == "/api/restauration":
+                    fichiers = corps.get("fichiers") if corps.get("format") == "microduck-sauvegarde" else None
+                    connus = fichiers_sauvegardes(appli)
+                    if not isinstance(fichiers, dict) or not fichiers or any(
+                            k not in connus or not isinstance(v, dict) for k, v in fichiers.items()):
+                        return self._json(400, {"erreur": "ce n'est pas une sauvegarde de Microduck"})
+                    try:
+                        for nom, contenu in fichiers.items():
+                            cible = Path(str(connus[nom]) + ".restaurer")
+                            cible.parent.mkdir(parents=True, exist_ok=True)
+                            cible.write_text(json.dumps(contenu, ensure_ascii=False))
+                    except OSError:
+                        return self._json(500, {"erreur": "enregistrement impossible"})
+                    return self._json(200, {"ok": True, "redemarrer": True, "fichiers": sorted(fichiers)})
                 if chemin == "/api/reglages":
                     import reglages
                     propre = reglages.valider(corps) if appli.cerveau is not None else None

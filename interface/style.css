@@ -301,3 +301,24 @@ input {
 .semaine .aujourdhui i { background: var(--orange-fonce); }
 .semaine b { font-size: .8rem; font-variant-numeric: tabular-nums; }
 .semaine span { font-size: .75rem; color: var(--discret); }
+
+/* Ou es-tu, mise en route, routines, fiche d'impression */
+.ou-es-tu { margin-top: 10px; min-height: 40px; padding: 6px 14px; border-radius: 999px; }
+.mise-en-route summary { display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; }
+.mise-en-route summary::-webkit-details-marker { display: none; }
+.mise-en-route summary h2 { margin: 0; }
+.mise-en-route li .nom small { display: block; color: var(--discret); font-size: .8rem; }
+.mise-en-route li.fait .nom b { text-decoration: line-through; color: var(--discret); }
+.routines { display: grid; gap: 10px; padding-bottom: 10px; }
+.routine { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; padding: 8px;
+  border: 1px solid var(--bord); border-radius: 12px; }
+.routine input[type=time], .routine select { font: inherit; color: var(--texte); background: var(--carte);
+  border: 1px solid var(--bord); border-radius: 10px; min-height: 40px; padding: 0 6px; min-width: 0; }
+.routine .jours { grid-column: 1 / -1; display: flex; gap: 4px; }
+.routine .jours button { flex: 1; min-height: 34px; padding: 0; border-radius: 8px; }
+.routine .jours button[aria-pressed="true"] { background: var(--orange-fonce); color: var(--accent-texte); border-color: transparent; }
+.routine > button { min-height: 36px; padding: 4px 10px; }
+.fiche h3 { display: flex; align-items: center; gap: 8px; margin: 14px 0 6px; font-size: 1rem; }
+.fiche ul { margin: 0; padding-left: 20px; }
+.fiche li { margin: 3px 0; }
+.fiche a { color: var(--orange-fonce); }

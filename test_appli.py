@@ -331,3 +331,58 @@ def test_semaine_et_batteries_dans_l_instantane():
     assert e["semaine"] and e["semaine"][-1]["compte"] == e["du_jour"]
     bt = e["maintenance"]["batterie"]
     assert bt["actuelle"] == "1" and bt["a_nommer"] is False and set(bt["batteries"]) == {"1", "2", "3"}
+
+
+def test_ou_es_tu_et_routines():
+    """« Ou es-tu ? » : trois chirp, sauf en mode calme. Routines : a l'heure dite, les jours dits, une seule fois."""
+    import reglages
+    b, c, horloge = cerveau()
+    vivre(b, 0.5)
+    vivre(b, 0.2, evenements=[(0.0, appli.COMMANDES["ou_es_tu"])])
+    assert b.courant.nom == "ou_es_tu"
+    vivre(b, 6)
+    b.evenement("calme_on")
+    vivre(b, 0.5)
+    vivre(b, 0.2, evenements=[(0.0, "ou_es_tu")])
+    assert b.courant.nom != "ou_es_tu"                                # silence promis en mode calme
+    b.evenement("calme_off")
+    vivre(b, 0.5)
+    reglages.appliquer(b, {"routines": [{"heure": "18:00", "jours": [horloge.jour % 7], "action": "ou_es_tu"},
+                                        {"heure": "18:00", "jours": [(horloge.jour + 1) % 7], "action": "danse"},
+                                        {"heure": "25:00", "jours": [0], "action": "danse"},
+                                        {"heure": "18:00", "jours": [0], "action": "formater"}]})
+    assert len(b.routines) == 2
+    horloge.heure, horloge.minute = 18, 0
+    vus = []
+    b.ecouteurs.append(vus.append)
+    vivre(b, 3)
+    assert vus.count("ou_es_tu") == 1 and "commande:danse" not in vus  # une fois, et seulement le bon jour
+
+
+def test_presence_sauvegarde_restauration(serveur, tmp_path, monkeypatch):
+    import time
+    import lieux
+    import memoire
+    import reglages
+    monkeypatch.setattr(memoire, "CHEMIN_DEFAUT", tmp_path / "memoire.json")
+    monkeypatch.setattr(lieux, "CHEMIN_DEFAUT", tmp_path / "lieux.json")
+    monkeypatch.setattr(reglages, "CHEMIN_DEFAUT", tmp_path / "reglages.json")
+    serveur.fichier_design = tmp_path / "design.json"
+    (tmp_path / "memoire.json").write_text(json.dumps({"etres": {"Raphael": {"rencontres": 3}}}))
+    (tmp_path / "design.json").write_text(json.dumps({"filaments": []}))
+    assert requete(serveur.port, "/api/presence", corps={"nom": "Raphaël|absent"})[0] == 200
+    assert serveur.source() == ["presence:Raphaëlabsent|home"]       # le nom ne peut pas forger un autre evenement
+    statut, corps = requete(serveur.port, "/api/sauvegarde")
+    sauvegarde = json.loads(corps)
+    assert statut == 200 and set(sauvegarde["fichiers"]) == {"memoire.json", "design.json"}
+    assert "ha.toml" not in corps.decode() and "token" not in corps.decode()
+    assert requete(serveur.port, "/api/restauration", corps={"format": "autre", "fichiers": {}})[0] == 400
+    assert requete(serveur.port, "/api/restauration",
+                   corps={**sauvegarde, "fichiers": {"../../etc/passwd": {}}})[0] == 400
+    sauvegarde["fichiers"]["memoire.json"]["etres"]["Chat"] = {"rencontres": 1}
+    r = json.loads(requete(serveur.port, "/api/restauration", corps=sauvegarde)[1])
+    assert r["redemarrer"] and json.loads((tmp_path / "memoire.json").read_text())["etres"].keys() == {"Raphael"}
+    appli.appliquer_restaurations([tmp_path / "memoire.json", tmp_path / "design.json"], log=lambda m: None)
+    assert "Chat" in json.loads((tmp_path / "memoire.json").read_text())["etres"]
+    assert not (tmp_path / "memoire.json.restaurer").exists()
+    time.sleep(1.1)

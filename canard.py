@@ -62,7 +62,12 @@ def assembler(client, args, log=print, cfg=None, cerveau=None, appli_cfg=None):
     """-> dict(extras, sources, crochets, options, pont, fils) ; `cfg` = config HA deja lue (ou None), `cerveau` =
     section [cerveau] du fichier de config (lue meme sans Home Assistant : le canard vit sans lui)."""
     cerveau = cerveau if cerveau is not None else ((cfg or {}).get("cerveau") or {})
+    import appli as appli_mod
+    import lieux as lieux_tmp
     import reglages
+    # une sauvegarde restauree depuis l'application s'applique ici, avant que la memoire soit lue
+    appli_mod.appliquer_restaurations([memoire.CHEMIN_DEFAUT, lieux_tmp.CHEMIN_DEFAUT, reglages.CHEMIN_DEFAUT,
+                                       appli_mod.Appli.fichier_design_defaut()], log=log)
     cerveau = {**cerveau, **reglages.lire()}           # reglages changes dans l'appli : prennent le dessus sur ha.toml
     extras, sources, crochets, fils = {"memoire": memoire.Memoire(ecriture_differee=True)}, [], [], []
     extras["autotest"] = cerveau.get("autotest", True)     # auto-test au premier reveil de la journee (diagnostic.py)
@@ -130,6 +135,7 @@ def assembler(client, args, log=print, cfg=None, cerveau=None, appli_cfg=None):
             sources.append(appli.source)
             crochets.append(appli.photographier)
             appli.cerveau = dict(cerveau)
+            appli._reglages_a_appliquer = dict(cerveau)     # routines programmees : actives des le demarrage
         except ValueError as e:
             log(f"application Microduck desactivee : {e}")
     lieux = None

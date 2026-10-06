@@ -25,7 +25,8 @@
   setTimeout(() => alertes.push({ t: Date.now() / 1000, type: "impression_finie", titre: "Impression finie",
     texte: "Saturn 4 Ultra", importante: false }), 25000);
   let reglagesDemo = { heures_calmes: [23, 7], bonjour: "07:30", bonjour_weekend: "09:30", repas: ["12:30", "19:30"],
-    autotest: true, circadien: true };                      // « Effacer sa carte » : il repart de zero ici
+    autotest: true, circadien: true,
+    routines: [{ heure: "18:30", jours: [0, 1, 2, 3, 4], action: "vient_me_voir" }, { heure: "10:00", jours: [6], action: "danse" }] };                      // « Effacer sa carte » : il repart de zero ici
   let i = 0, finEtat = 0, force = null, tete = null, assis = false, calme = false, garde = false;
   let diag = { ok: true, le: "ce matin, 7 h 42", demande: false, finDemande: 0 };
   const journal = [], duJour = { promenades: 3, siestes: 1, jeux: 2, caresses: 4, accueils: 1 };
@@ -94,6 +95,7 @@
   function commande(nom) {
     if (JEUX[nom]) { if (!calme) changer(JEUX[nom], nom.startsWith("jouer") ? 25 : 6); force = nom; }
     else if (REGARDS[nom]) { tete = REGARDS[nom]; changer("regard_guide", 6); }
+    else if (nom === "ou_es_tu") changer("ou_es_tu", 4);
     else if (nom === "assis") { assis = !assis; changer("assis_demande", 3); }
     else if (nom === "stop" || nom === "fin_jeu") { assis = false; changer("chill", 10); }
     else if (nom === "calme_on" || nom === "calme_off") { calme = nom === "calme_on"; finEtat = 0; }
@@ -190,7 +192,7 @@
       { nom: "PETG Blanc", couleur: "#f2f1ec" }],
     schemas: [{ nom: "Noir et orange", couleurs: { dessus_tete: "#2b2a30", coques: "#2b2a30", cuisses: "#2b2a30",
       face: "#f2f1ec", bec: "#f26a1b", pieds: "#f26a1b", dessous_tete: "#f26a1b" } }],
-    actif: null,
+    actif: "Noir et orange",
   };
 
   function api(chemin, corps) {
@@ -201,6 +203,10 @@
       const depuis = +new URLSearchParams(chemin.split("?")[1]).get("depuis") || 0;
       return { maintenant: Date.now() / 1000, alertes: alertes.filter((a) => a.t > depuis) };
     }
+    if (chemin === "/api/sauvegarde") return { format: "microduck-sauvegarde", version: 1, date: Date.now() / 1000,
+      cerveau: "démo", fichiers: { "design.json": DESIGN, "reglages.json": reglagesDemo } };
+    if (chemin === "/api/restauration") return { ok: true, redemarrer: true };
+    if (chemin === "/api/presence") return { ok: true };
     if (chemin === "/api/reglages") { if (corps) reglagesDemo = { ...reglagesDemo, ...corps }; return reglagesDemo; }
     if (chemin === "/api/design") {                   // schemas et filaments : dans ce telephone, en demo
       if (corps) { try { localStorage.setItem("microduck-demo-design", JSON.stringify(corps)); } catch (e) { /* prive */ } return { ok: true }; }

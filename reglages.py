@@ -12,7 +12,11 @@ from pathlib import Path
 import memoire
 
 CHEMIN_DEFAUT = Path(os.environ.get("MICRODUCK_REGLAGES", memoire.CHEMIN_DEFAUT.parent / "reglages.json"))
-CLES = ("heures_calmes", "bonjour", "bonjour_weekend", "repas", "autotest", "circadien")
+CLES = ("heures_calmes", "bonjour", "bonjour_weekend", "repas", "autotest", "circadien", "routines")
+# routines programmables (liste fermee) : action de l'appli -> evenement du cerveau
+ROUTINES = {"vient_me_voir": "routine_compagnie", "salut": "tour_salut", "danse": "commande:danse",
+            "toupie": "tour_toupie", "jouer_balle": "jeu_balle", "jouer_soleil": "jeu_soleil", "jouer_cache": "jeu_cache",
+            "ou_es_tu": "ou_es_tu", "diagnostic": "diagnostic", "calme_on": "calme_on", "calme_off": "calme_off"}
 
 
 def heure(v):
@@ -50,6 +54,14 @@ def valider(d):
     for cle in ("autotest", "circadien"):
         if cle in d:
             out[cle] = bool(d[cle])
+    if "routines" in d:
+        out["routines"] = []
+        for r in (d["routines"] if isinstance(d["routines"], list) else [])[:20]:
+            if not isinstance(r, dict) or r.get("action") not in ROUTINES or heure(r.get("heure")) is None:
+                continue
+            jours = sorted({j for j in (r.get("jours") or []) if isinstance(j, int) and not isinstance(j, bool) and 0 <= j < 7})
+            if jours:
+                out["routines"].append({"heure": texte_heure(heure(r["heure"])), "jours": jours, "action": r["action"]})
     return out
 
 
@@ -81,6 +93,7 @@ def pour_appli(cerveau):
         "repas": sorted({texte_heure(heure(r)) for r in (cerveau.get("repas") or []) if heure(r) is not None}),
         "autotest": bool(cerveau.get("autotest", True)),
         "circadien": bool(cerveau.get("circadien", True)),
+        "routines": (valider({"routines": cerveau.get("routines") or []}) or {}).get("routines", []),
     }
 
 
@@ -93,3 +106,4 @@ def appliquer(brain, cerveau):
     brain.ctx.extras["repas"] = [heure(r) for r in v["repas"]]
     brain.ctx.extras["autotest"] = v["autotest"]
     brain.ctx.extras["circadien"] = v["circadien"]
+    brain.routines = [(*heure(r["heure"]), tuple(r["jours"]), ROUTINES[r["action"]]) for r in v["routines"]]

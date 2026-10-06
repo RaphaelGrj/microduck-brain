@@ -61,6 +61,7 @@
             <span class="libelle">En ce moment</span>
             <strong id="etat">—</strong>
             <div id="alertes"></div>
+            <button data-cmd="ou_es_tu" class="ou-es-tu">📍 Où es-tu ?</button>
           </div>
         </div>
         <div class="grille">
@@ -136,6 +137,11 @@
 
       <!-- Maintenance -->
       <div class="page" data-page="sante" hidden>
+        <details class="carte mise-en-route" id="mise-en-route">
+          <summary><h2>Mise en route</h2><span id="mer-progres" class="etiquette"></span></summary>
+          <p class="discret petit">À la livraison, dans l'ordre. Les points marqués « auto » se cochent tout seuls.</p>
+          <ul id="mer-liste" class="liste-choix"></ul>
+        </details>
         <div class="carte">
           <h2>Diagnostic</h2>
           <p id="diag-resume" class="discret">—</p>
@@ -211,6 +217,9 @@
             <input type="checkbox" id="r-autotest" class="case"></div>
           <div class="reglage"><div><b>Rythme de la journée</b><p class="discret">Plus vif le matin, plus calme le soir.</p></div>
             <input type="checkbox" id="r-circadien" class="case"></div>
+          <div class="reglage"><div><b>Routines</b><p class="discret">À heure fixe, les jours choisis.</p></div>
+            <button id="r-routine-ajout" aria-label="Ajouter une routine">+</button></div>
+          <div id="r-routines" class="routines"></div>
           <button id="r-enregistrer" class="principal large">Enregistrer</button>
         </div>
         <div class="carte" id="carte-lieux" hidden>
@@ -234,7 +243,23 @@
         </dialog>
         <div class="carte">
           <h2>Ce téléphone</h2>
+          <div id="presence-tel" hidden>
+            <div class="reglage"><div><b>Prévenir le canard quand j'arrive</b>
+              <p class="discret">Quand ce téléphone rejoint le Wi-Fi de la maison, il t'accueille (même sans Home Assistant).</p></div>
+              <input type="checkbox" id="presence-actif" class="case"></div>
+            <div class="ajout-filament"><input id="presence-nom" placeholder="Ton prénom" maxlength="40" aria-label="Ton prénom">
+              <button id="presence-enregistrer">OK</button></div>
+          </div>
           <button id="oublier" class="large">Oublier le code</button>
+        </div>
+        <div class="carte">
+          <h2>Sauvegarde</h2>
+          <p class="discret petit">Ce qu'il a appris (habitants, personnalité, lieux, batteries), tes schémas et ses
+            réglages, dans un fichier sur ce téléphone. Jamais le jeton Home Assistant.</p>
+          <div class="boutons">
+            <button id="sauvegarder" class="principal">Enregistrer</button>
+            <label class="bouton-like">Restaurer…<input id="restaurer" type="file" accept=".json,application/json" hidden></label>
+          </div>
         </div>
       </div>
 
@@ -295,6 +320,10 @@
           <button id="schema-sauver" class="principal">Enregistrer</button>
           <button id="schema-nouveau">Repartir de l'origine</button>
         </div>
+        <div class="boutons">
+          <button id="fiche-impression">Fiche d'impression</button>
+          <button id="design-photo">Photo</button>
+        </div>
       </div>
       <div class="carte">
         <h2>Mes filaments</h2>
@@ -324,6 +353,17 @@
         téléphone ; le canard n'envoie rien.</p>
     </main>
   </section>
+
+  <dialog id="vue-fiche" class="vue-lieu">
+    <h2>Fiche d'impression</h2>
+    <p id="fiche-schema" class="discret petit"></p>
+    <div id="fiche-contenu" class="fiche"></div>
+    <div class="boutons">
+      <button id="fiche-copier">Copier</button>
+      <button id="fiche-enregistrer">Enregistrer</button>
+    </div>
+    <form method="dialog"><button class="large">Fermer</button></form>
+  </dialog>
 
   <script src="/demo.js"></script>
   <script src="/app.js"></script>
