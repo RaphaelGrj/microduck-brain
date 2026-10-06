@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Images du VRAI Microduck pour l'application (interface/microduck/*.webp), rendues depuis son modele 3D officiel
 (microduck_rl : MJCF exporte d'Onshape et ses pieces STL) : poses debout / assis / tombe, plusieurs positions de tete,
-fond transparent. A relancer si le modele change.
+fond transparent. A relancer si le modele change. (L'icone de l'appli vient de outils/icone_logo.py.)
 
     MUJOCO_GL=osmesa uv run --with mujoco --with pillow python outils/rendu_microduck.py ~/microduck_rl
 
@@ -77,24 +77,6 @@ def rendre(m, d, r):
     return np.dstack([rgb, alpha])
 
 
-def icone(m, d, r):
-    """L'icone de l'appli : la tete du Microduck en gros plan, sur l'orange Microduck, 512 x 512 (PNG : iPhone)."""
-    poser(m, d, "STAND", (0, -0.05, 0.25, 0), {})
-    cam = mujoco.MjvCamera()
-    tete = d.xpos[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, m.body(m.jnt_bodyid[TETE_ROULIS - 6]).name)]
-    cam.lookat[:] = tete + np.array([0.0, 0.0, 0.01])
-    cam.distance, cam.azimuth, cam.elevation = 0.25, 200.0, -6.0
-    r.update_scene(d, camera=cam)
-    rgb = r.render().copy()
-    r.enable_depth_rendering()
-    r.update_scene(d, camera=cam)
-    prof = r.render().copy()
-    r.disable_depth_rendering()
-    fond = np.array([242, 106, 27], dtype=np.uint8)          # orange Microduck
-    objet = (prof < prof.max() * 0.999)[:, :, None]
-    Image.fromarray(np.where(objet, rgb, fond)).save(SORTIE.parent / "icone.png", optimize=True)
-
-
 def main(racine):
     m = charger(racine)
     d = mujoco.MjData(m)
@@ -112,8 +94,6 @@ def main(racine):
     for nom, im in images.items():
         Image.fromarray(im, "RGBA").crop(boite).save(SORTIE / f"{nom}.webp", "WEBP", quality=88, method=6)
         print(nom, (SORTIE / f"{nom}.webp").stat().st_size // 1024, "Ko")
-    icone(m, d, r)
-    print("icone", (SORTIE.parent / "icone.png").stat().st_size // 1024, "Ko")
 
 
 if __name__ == "__main__":

@@ -48,6 +48,8 @@ function toast(texte) {
 }
 
 async function api(chemin, corps) {
+  const demo = window.MicroduckDemo;                 // mode demo (demo.js) : un canard imaginaire, dans le telephone
+  if (demo) return corps ? demo.commande(corps.commande) : demo.instantane();
   const r = await fetch(chemin, {
     method: corps ? "POST" : "GET",
     headers: { "X-Microduck-Code": code, "Content-Type": "application/json" },
@@ -216,6 +218,10 @@ function dessiner(e) {
 function liaison(ok) { $("#liaison").className = "pastille " + (ok ? "ok" : "ko"); }
 
 function ecouter() {
+  if (window.MicroduckDemo) {
+    setInterval(() => { liaison(true); afficher(window.MicroduckDemo.instantane()); }, 1000);
+    return;
+  }
   if (flux) flux.close();
   flux = new EventSource("/api/flux?code=" + encodeURIComponent(code));
   flux.onmessage = (m) => { liaison(true); try { const e = JSON.parse(m.data); if (e.etat) afficher(e); } catch (x) { /* trame partielle */ } };
@@ -252,5 +258,5 @@ $("#t-garde").addEventListener("click", () => commande(dernier && dernier.modes.
 $("#oublier").addEventListener("click", () => { memoire("microduck-code", null); location.reload(); });
 $("#form-code").addEventListener("submit", (ev) => { ev.preventDefault(); entrer($("#code").value.trim()); });
 
-const enregistre = memoire("microduck-code");
+const enregistre = window.MicroduckDemo ? "demo" : memoire("microduck-code");
 if (enregistre) entrer(enregistre); else $("#appairage").hidden = false;

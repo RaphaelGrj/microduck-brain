@@ -42,7 +42,8 @@ def test_sante_etat_et_code(serveur):
     b, _, _ = cerveau()
     vivre(b, 1)
     serveur.photographier(b, {"battery": {"percent": 77.0, "volts": 7.7}})
-    assert requete(serveur.port, "/api/sante", code=None)[0] == 200
+    statut, corps = requete(serveur.port, "/api/sante", code=None)
+    assert statut == 200 and json.loads(corps)["appli"] == "microduck"   # l'appli Android reconnait le canard ainsi
     assert requete(serveur.port, "/api/etat", code=None)[0] == 401
     import time
     time.sleep(1.1)                                         # un code faux freine l'essai suivant d'1 s
@@ -147,3 +148,20 @@ def test_garde_activee_depuis_l_appli():
     assert b.ctx.extras["garde"]
     vivre(b, 0.2, evenements=[(0.1, "garde_off")])
     assert not b.ctx.extras["garde"]
+
+
+def test_demo_inerte_hors_mode_demo():
+    """demo.js (canard imaginaire de l'appli Android) ne s'active que sur l'hote de demo ou avec ?demo."""
+    js = (appli.DOSSIER / "demo.js").read_text(encoding="utf-8")
+    assert 'location.hostname !== "demo.microduck.local"' in js
+    assert "fetch(" not in js and "XMLHttpRequest" not in js and "WebSocket" not in js   # rien ne sort du telephone
+    html = (appli.DOSSIER / "index.html").read_text(encoding="utf-8")
+    assert html.index("/demo.js") < html.index("/app.js")
+
+
+def test_manifeste_android():
+    """L'APK ne demande que l'acces reseau, et vise une version d'Android installable aujourd'hui."""
+    from pathlib import Path
+    m = (Path(__file__).parent / "android" / "AndroidManifest.xml").read_text(encoding="utf-8")
+    assert m.count("uses-permission") == 1 and "android.permission.INTERNET" in m
+    assert 'android:targetSdkVersion="34"' in m and 'android:allowBackup="false"' in m

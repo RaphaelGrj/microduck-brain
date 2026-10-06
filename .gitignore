@@ -2,9 +2,13 @@ __pycache__/
 *.pyc
 .venv/
 *.png
+!interface/icone.png
+!outils/logo.png
 *.log
 modeles/
 *.onnx
 ha.toml
 *token*
 photos_chat/
+android/construction/
+android/sortie/

@@ -183,7 +183,7 @@ class Appli:
                 if not adresse_locale(self.client_address[0]):
                     return self._json(403, {"erreur": "reseau local seulement"})
                 if url.path == "/api/sante":
-                    return self._json(200, {"ok": True, "version": appli.version})
+                    return self._json(200, {"ok": True, "appli": "microduck", "version": appli.version})
                 if url.path == "/api/etat":
                     if self._autorise():
                         self._json(200, appli.etat)

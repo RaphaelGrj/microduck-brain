@@ -45,6 +45,12 @@ Le canard sert lui-même son application, sans Home Assistant et sans serveur ai
 2. Sur le téléphone, connecté au même Wi-Fi, ouvre `http://<ip-du-canard>:8090` et entre le code.
 3. Ajoute la page à l'écran d'accueil : elle s'ouvre ensuite comme une appli.
 
+**Appli Android** (`android/`) : un APK de 180 Ko qui trouve le canard tout seul sur le Wi-Fi et ouvre l'interface
+en plein écran, plus un **mode démo** pour l'essayer sans le robot. Il ne contient aucune logique : l'interface reste
+servie par le canard, donc une mise à jour du cerveau met l'appli à jour. Construction sans Android Studio :
+`bash android/construire.sh` (outils des paquets Ubuntu, voir l'en-tête du script). La clé de signature est créée hors
+du dépôt, dans `~/.microduck-android/`.
+
 **Sections** :
 - **Accueil** : humeur, batterie, qui est là, journal du jour.
 - **Jouer** : balle, cache-cache, 1-2-3 soleil, danse, tours.
@@ -93,7 +99,7 @@ uv run python canard.py ha.toml  # le canard complet (robotd local ; options : -
 | Son | `audio.py` (réflexes sans réseau de neurones : chocs, claquements, musique, voix, alarme…), `commandes.py` (commandes vocales Vosk hors ligne) |
 | Jeu de balle | `approach.py` (approche + tir), `jeu.py` (passe au joueur) |
 | Santé | `diagnostic.py`, `bench_cerveau.py` (coût d'une trame : 0,03 ms en moyenne sur PC, budget 20 ms) |
-| Application | `appli.py` (serveur local, API JSON, flux en direct), `interface/` (HTML, CSS, JS sans framework) |
+| Application | `appli.py` (serveur local, API JSON, flux en direct), `interface/` (HTML, CSS, JS sans framework ; `demo.js` = canard imaginaire), `android/` (APK) |
 | Home Assistant | `pont_ha.py`, `ha.exemple.toml` (modèle de configuration commenté), `mock_ha.py` / `mock_mqtt.py` (faux HA et faux broker pour les tests), `HOME_ASSISTANT.md` |
 | Simulateur | `valider_sim.py` (13 scénarios), `truth.py` (vérité terrain du simulateur, sert seulement à mesurer), bancs `*_eval.py`, `scripts-wsl/` |
 | Robot | `deploy/robot/` (installation sur le canard), `contrib/` (patchs proposés à `robotd` pour partager le micro) |
