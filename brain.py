@@ -33,7 +33,7 @@ from etats_maison import AlarmeFumee, AssisDemande, Toupie
 from etats_taquineries import (Aspirateur, Baillement, CompteEternuements, DernierMot, Esquive, FausseChute,
                                FausseNotif, FauxEndormi, FeinteBec, Fier, MimeTon, MimeVol, PousseBalle, RegardMystere,
                                SourdeOreille)
-from etats_vie import (Remarque, Accueil, Bonjour, Caresse, Danse, JeuSolitaire, MainTendue, Porte, RechercheAttention,
+from etats_vie import (Picore, Remarque, Zoomies, Accueil, Bonjour, Caresse, Danse, JeuSolitaire, MainTendue, Porte, RechercheAttention,
                        RegardeChat, VaAuCoin)
 
 class Brain:
@@ -71,6 +71,8 @@ class Brain:
     P_TOILETTE = 0.5            # apres une impression terminee : il se lisse les plumes
     P_OBSERVER = 0.03           # par passage par chill, en journee : rejoindre son coin d'observation
     CHARGE_S, CHARGE_PCT = 120.0, 2.0     # immobile 2 min et +2 % de batterie : il est sur son chargeur
+    P_ZOOMIES = 0.1             # tres en forme et tres eveille : petite folle course (M9 Zoomies)
+    P_PICORE = 0.01             # picorer le sol par curiosite (M9 GroundPick)
     P_BALLE = 0.15              # balle vue a 0,3-2 m et de l'energie : il va jouer avec
     P_CACHE_CACHE = 0.005       # initiative rare : il lance lui-meme une partie de cache-cache
     P_GAG = 0.02                # gag spontane (fausse chute, fausse notification) par passage par chill, si permis
@@ -175,6 +177,7 @@ class Brain:
             "chaud": Sequence("chaud", [("fatigue", "coo")]),                    # servos chauds : il s'affale
             "remarque": Remarque(),
             "cache_cache": CacheCache(),
+            "zoomies": Zoomies(), "picore": Picore(),                            # M9 : trop-plein d'energie, picorer
             "balle": JeuBalle(),                                                 # M9 BallPlay : approche + tir avec vision                                         # il se cache, indices sonores
             "silence_curieux": Sequence("silence_curieux", [("curieux", "inquire")]),   # la maison est trop calme                                              # un objet qui n'etait pas la
             # social
@@ -670,6 +673,14 @@ class Brain:
             self.malice.noter(self, "cache_cache")      # initiative de jeu : comptee dans le budget de malice
             self._prepare_cache_cache()
             return "cache_cache"
+        chat = self.ctx.extras.get("chat")
+        chat_la = chat is not None and getattr(getattr(chat, "suivi", None), "visible", False)
+        if (h.energie > 0.85 and h.eveil > 0.5 and not chat_la and not self.surchauffe
+                and self.ctx.extras.get("tof") is not None and self.horloge().tm_hour in range(8, 22)
+                and self.rng.random() < self.P_ZOOMIES * (1.5 - self.perso.trait("prudence"))):
+            return "zoomies"                    # trop-plein d'energie
+        if self.rng.random() < self.P_PICORE:
+            return "picore"
         veille_balle = self.ctx.extras.get("balle")
         vue = veille_balle.position() if veille_balle is not None else None
         if (vue is not None and 0.3 <= math.hypot(*vue) <= 2.0 and h.energie > 0.5 and not self.surchauffe

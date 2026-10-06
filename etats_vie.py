@@ -409,3 +409,71 @@ class Remarque(Etat):
         penche = 0.2 * gestures._smooth(t, 1.2, 1.8) * (1.0 - gestures._smooth(t, 2.8, 3.4))
         brain.ctx.head((n, p, y, r + penche))
         brain.ctx.move()
+
+
+class Zoomies(Etat):
+    """Zoomies (M9) : un trop-plein d'energie - quelques pirouettes et sprints courts, tete haute, "wheee". Chaque sprint
+    exige 80 cm libres devant (il va plus vite qu'en promenade) et s'arrete des que ce n'est plus le cas ; un vide
+    ou un capteur muet termine tout. 3 a 5 segments, jamais plus de 10 s."""
+    nom = "zoomies"
+    V_SPRINT = 0.5
+    LIBRE_SPRINT = 0.8
+
+    def entre(self, brain):
+        brain.ctx.sound("wheee")
+        self.segments = []
+        for _ in range(brain.rng.randint(3, 5)):
+            self.segments.append(("tourne", brain.rng.uniform(0.5, 1.0), brain.rng.choice((-1.0, 1.0))))
+            self.segments.append(("sprint", brain.rng.uniform(0.8, 1.3), 0.0))
+        self.total = min(10.0, sum(d for _, d, _ in self.segments))
+
+    def duree(self, brain):
+        return self.total + 0.5
+
+    def pas(self, brain, t):
+        s = brain.ctx.state or {}
+        tof = brain.ctx.extras.get("tof")
+        lib = tof.libre(s) if tof is not None and s else None
+        if lib is None or lib.get("vide", float("inf")) < 0.4:
+            brain.ctx.move()
+            brain.fin_etat = min(brain.fin_etat, t + 0.3)
+            return
+        u = 0.0
+        for genre, d, signe in self.segments:
+            if t < u + d:
+                brain.ctx.head((0.0, -0.15, 0.2 * signe, 0.0))
+                if genre == "tourne":
+                    brain.ctx.move(vyaw=1.5 * signe)
+                else:
+                    brain.ctx.move(vx=self.V_SPRINT if lib["devant"] >= self.LIBRE_SPRINT else 0.0)
+                return
+            u += d
+        brain.ctx.head((0.0, 0.0, 0.0, 0.0))
+        brain.ctx.move()
+
+
+class Picore(Etat):
+    """GroundPick (M9) spontane : il pique le sol par curiosite (skill officiel `ground_pick`, pilote par le robot),
+    puis un petit "peck" content."""
+    nom = "picore"
+
+    def entre(self, brain):
+        r = brain.ctx.client.request("robot.do", {"skill": "ground_pick"})
+        self.refuse = isinstance(r, dict) and "error" in r
+        self.fini = None
+
+    def duree(self, brain):
+        return 0.5 if self.refuse else 8.0
+
+    def pas(self, brain, t):
+        if self.refuse:
+            return
+        pol = (brain.ctx.state or {}).get("policy")
+        if self.fini is None and ((t >= 1.0 and pol != "ground_pick") or t >= 6.0):
+            self.fini = t
+            brain.ctx.sound("peck")
+        if self.fini is not None:
+            brain.ctx.head(gestures.oui(min(t - self.fini, 1.2)))
+            brain.ctx.move()
+            if t - self.fini >= 1.4:
+                brain.fin_etat = t

@@ -101,3 +101,31 @@ def test_il_va_jouer_tout_seul_quand_il_voit_sa_balle():
     b.fin_etat = 0.0
     simule(b, 30)
     assert "balle" in {e[1] for e in b.journal}
+
+
+# --- M9 : Zoomies, GroundPick spontane --------------------------------------------------------------------------
+def test_zoomies_en_pleine_forme_et_sans_danger():
+    c, tof = FauxClient(), Tof()
+    b = Brain(c, Humeur(energie=0.95, eveil=0.9), seed=910, horloge=__import__("test_brain").FauxHorloge(15),
+              extras={"tof": tof, "exploration": False})
+    b.P_ZOOMIES = 1.0
+    b.fin_etat = 0.0
+    simule(b, 12)
+    assert "zoomies" in {e[1] for e in b.journal}
+    sprints = [p["vx"] for m, p in c.appels if m == "robot.move" and p["vx"] > 0.45]
+    assert sprints, "des sprints"
+    c, tof = FauxClient(), Tof()
+    tof.vide = 0.2
+    b = Brain(c, Humeur(energie=0.95, eveil=0.9), seed=911, horloge=__import__("test_brain").FauxHorloge(15),
+              extras={"tof": tof, "exploration": False})
+    b._bascule("zoomies")
+    simule(b, 3)
+    assert not any(m == "robot.move" and p["vx"] > 0 for m, p in c.appels), "un vide devant : aucun sprint"
+
+
+def test_picore_le_sol():
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.9), seed=912)
+    b._bascule("picore")
+    simule(b, 9)
+    assert ("robot.do", {"skill": "ground_pick"}) in c.appels and "peck" in sons(c)
