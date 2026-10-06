@@ -14,7 +14,7 @@ EVENEMENTS = ["bruit", "chat", "personne", "main", "caresse", "appel", "applaudi
               "tour_salut", "tour_toupie", "tour_assis", "ecoute_on", "ecoute_off", "calme_on", "calme_off",
               "alarme_fumee:Salon", "orage", "info", "toc_porte", "alarme_fumee:son", "commande:assis",
               "commande:debout", "commande:stop", "commande:bravo", "commande:danse", "commande:ecoute",
-              "commande:pas_compris", "commande:reveil", "son_bref", "voix", "jeu_cache", "commande:trouve"]
+              "commande:pas_compris", "commande:reveil", "son_bref", "voix", "jeu_cache", "commande:trouve", "jeu_balle"]
 
 
 class Client:
@@ -113,6 +113,19 @@ class TofAleatoire:
                 "couloir": {"devant": 2.0, "gauche": 0.3, "droite": 0.3, "vide": float("inf")}}[self.scene] | {"n": 3}
 
 
+class ApprocheFactice:
+    """Controleur d'approche factice pour l'endurance : il avance, puis tire au bout de 3 s."""
+    def __init__(self, client):
+        self.c, self.n, self.etat = client, 0, "CHERCHER"
+
+    def pas(self, s):
+        self.c.notify("robot.move", {"vx": 0.4, "vy": 0.0, "vyaw": 0.0})
+
+    def etape(self, s):
+        self.n += 1
+        self.etat = "FINI" if self.n >= 150 else self.etat
+
+
 class Leurre:
     """Veilles camera factices (balle, mouvement, chat) aux reponses aleatoires."""
     def __init__(self, rng):
@@ -136,6 +149,11 @@ class Leurre:
         return None
 
 
+# Ce test verifie la securite de la MARCHE : on retire du flux ce qui l'immobilise durablement (mode calme, "assis"),
+# deja couvert par test_endurance_deux_heures_invariants - sinon une graine malchanceuse dort toute l'heure.
+EVENEMENTS_MARCHE = [e for e in EVENEMENTS if e not in ("calme_on", "tour_assis", "commande:assis")]
+
+
 def test_endurance_tous_capteurs_jamais_vers_un_vide():
     for seed in (11, 12):
         rng = random.Random(seed)
@@ -155,13 +173,14 @@ def test_endurance_tous_capteurs_jamais_vers_un_vide():
 
         c = C(ref)
         b = Brain(c, Humeur(energie=0.8), seed=seed, horloge=FauxHorloge(14),
-                  extras={"tof": tof, "balle": leurre, "mouvement": leurre, "chat": leurre, "exploration": False})
+                  extras={"tof": tof, "balle": leurre, "mouvement": leurre, "chat": leurre, "exploration": False,
+                          "fabrique_approche": ApprocheFactice})
         ref[0] = b
         b.presents.add("Raphael")
         t, prochain = 0.0, 5.0
         while t < 3600.0:
             if t >= prochain:
-                b.evenement(rng.choice(EVENEMENTS))
+                b.evenement(rng.choice(EVENEMENTS_MARCHE))
                 prochain = t + rng.expovariate(1 / 30.0)
             leurre.suivi.visible = rng.random() < 0.002 or (leurre.suivi.visible and rng.random() < 0.995)
             b.tick({"t": t, "safety": {"fallen": False}, "policy": "stand", "battery": {"percent": 70.0},

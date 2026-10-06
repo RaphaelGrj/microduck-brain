@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Jeux avec les habitants : 1-2-3 soleil.
+"""Jeux : 1-2-3 soleil, cache-cache lance par le canard, jeu de balle autonome (M9 BallPlay).
 """
 import math
 
@@ -252,4 +252,105 @@ class CacheCache(Etat):
     def sort(self, brain):
         if brain.ctx.sitting and not brain.reste_assis():
             brain.ctx.toggle_sit()
+        brain.ctx.calme()
+
+
+class JeuBalle(Etat):
+    """Jeu de balle autonome (M9 "BallPlay", projet prioritaire n°1) : le controleur d'approche + tir avec vision
+    (approach.Approche, valide en arene 19/20) pilote trame par trame depuis le cerveau. Apres le tir, il regarde ou est
+    la balle (balle.VeilleBalle) : partie au loin -> "wheee" et tremoussement ; restee a ses pieds -> petit depit comique
+    ("non" de la tete + soupir "coo"), puis souvent un regain de motivation (nouvel essai), MANCHES_MAX au plus.
+
+    Securite : le controleur ne regarde pas le capteur de distance ; ici, a chaque trame, un vide a moins de 30 cm devant
+    (ou un capteur muet) coupe la marche et termine le jeu. Jamais sans capteur de distance."""
+    nom = "balle"
+    MANCHE_MAX_S = 90.0
+    MANCHES_MAX = 3
+    PARTIE_M = 0.35              # balle a plus de 35 cm apres le tir : il l'a bien tapee
+
+    def entre(self, brain):
+        brain.ctx.sound("chirp")
+        self.manche, self.resultat = 0, None
+        self._nouvelle_manche(brain, 0.0)
+
+    def duree(self, brain):
+        return self.MANCHES_MAX * (self.MANCHE_MAX_S + 10.0)
+
+    def _nouvelle_manche(self, brain, t):
+        fabrique = brain.ctx.extras.get("fabrique_approche")
+        if fabrique is None:
+            import approach
+            fabrique = lambda client: approach.Approche(client, "orange", log=lambda m: None)   # noqa: E731
+        self.ap = fabrique(brain.ctx.client)
+        self.manche += 1
+        self.phase, self.t_phase = "approche", t
+
+    def _arreter_vision(self):
+        vis = getattr(self.ap, "vis", None)
+        if vis is not None:
+            vis.run_flag = False
+
+    def pas(self, brain, t):
+        ctx, dt = brain.ctx, t - self.t_phase
+        s = ctx.state or {}
+        if self.phase == "approche":
+            tof = ctx.extras.get("tof")
+            lib = tof.libre(s) if tof is not None and s else None
+            if lib is None or lib.get("vide", math.inf) < 0.3:
+                ctx.move()                       # le dernier ecrit gagne : on annule la commande du controleur
+                self._fin(brain, t, "securite")
+                return
+            self.ap.pas(s)
+            self.ap.etape(s)
+            if self.ap.etat == "FINI":
+                self._arreter_vision()
+                self._phase(t, "regarde")
+            elif dt >= self.MANCHE_MAX_S:
+                ctx.move()
+                self._arreter_vision()
+                self._fin(brain, t, "pas_trouvee")
+        elif self.phase == "regarde":            # le tir est parti : on laisse la balle rouler, tete au neutre
+            ctx.head((0.0, 0.0, 0.0, 0.0))
+            ctx.move()
+            if dt >= 2.5:
+                veille = ctx.extras.get("balle")
+                b = veille.position(age_max=2.5) if veille is not None else None
+                reussi = b is None or b[0] >= self.PARTIE_M    # plus visible devant lui : partie au loin
+                if reussi:
+                    ctx.sound("wheee")
+                    self._phase(t, "fete")
+                else:
+                    ctx.sound("coo")              # soupir
+                    self._phase(t, "depit")
+        elif self.phase == "fete":
+            d, fn = gestures.GESTES["content"]
+            ctx.head(fn(dt) if dt < d else (0, 0, 0, 0))
+            ctx.pose(gestures.content_corps(dt) if dt < d else None)
+            ctx.move()
+            if dt >= d + 0.3:
+                self._fin(brain, t, "reussi")
+        elif self.phase == "depit":              # "non" de la tete, puis souvent on retente
+            d, fn = gestures.GESTES["non"]
+            ctx.head(fn(dt) if dt < d else (0, 0, 0, 0))
+            ctx.move()
+            if dt >= d + 0.5:
+                if self.manche < self.MANCHES_MAX and brain.rng.random() < 0.7:
+                    ctx.sound("inquire")          # regain de motivation
+                    self._nouvelle_manche(brain, t)
+                else:
+                    self._fin(brain, t, "rate")
+        else:
+            ctx.move()
+
+    def _phase(self, t, nom):
+        self.phase, self.t_phase = nom, t
+
+    def _fin(self, brain, t, resultat):
+        self.resultat = resultat
+        self.phase = "fin"
+        brain.fin_etat = t
+
+    def sort(self, brain):
+        self._arreter_vision()
+        brain.ctx.pose(None)
         brain.ctx.calme()

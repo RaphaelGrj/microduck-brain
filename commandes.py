@@ -29,6 +29,7 @@ VOCABULAIRE = {
     "reveille toi": "commande:reveil",
     "bravo": "commande:bravo", "gentil": "commande:bravo", "c'est bien": "commande:bravo",
     "danse": "commande:danse",
+    "la balle": "jeu_balle", "joue a la balle": "jeu_balle", "va chercher": "jeu_balle",
     "cache toi": "jeu_cache", "cache cache": "jeu_cache",
     "trouve": "commande:trouve", "je t'ai trouve": "commande:trouve",
 }

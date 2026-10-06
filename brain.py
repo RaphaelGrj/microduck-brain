@@ -28,7 +28,7 @@ from taquineries import Malice
 from etats_base import (DT_DEFAUT, SONS_CANARD, FATIGUE_BAS, FATIGUE_MIN, FATIGUE_PLEIN, LIBRE_MIN, TETE_PROMENADE,  # noqa: F401
                         V_PROMENADE, V_ROTATION, Chill, Ctx, Ecoute, Etat, Geste, Humeur, LookAround, Nap, Sequence,
                         TurnInPlace, Wander, _regarder, fatigue)
-from etats_jeux import CacheCache, Soleil
+from etats_jeux import CacheCache, JeuBalle, Soleil
 from etats_maison import AlarmeFumee, AssisDemande, Toupie
 from etats_taquineries import (Aspirateur, Baillement, CompteEternuements, DernierMot, Esquive, FausseChute,
                                FausseNotif, FauxEndormi, FeinteBec, Fier, MimeTon, MimeVol, PousseBalle, RegardMystere,
@@ -71,6 +71,7 @@ class Brain:
     P_TOILETTE = 0.5            # apres une impression terminee : il se lisse les plumes
     P_OBSERVER = 0.03           # par passage par chill, en journee : rejoindre son coin d'observation
     CHARGE_S, CHARGE_PCT = 120.0, 2.0     # immobile 2 min et +2 % de batterie : il est sur son chargeur
+    P_BALLE = 0.15              # balle vue a 0,3-2 m et de l'energie : il va jouer avec
     P_CACHE_CACHE = 0.005       # initiative rare : il lance lui-meme une partie de cache-cache
     P_GAG = 0.02                # gag spontane (fausse chute, fausse notification) par passage par chill, si permis
     P_POUSSE_BALLE = 0.6        # main vers la balle a ses pieds : il la pousse hors de portee
@@ -173,7 +174,8 @@ class Brain:
             "compliment": Sequence("compliment", [("fier", "coo")]),             # "bravo" : fierte discrete
             "chaud": Sequence("chaud", [("fatigue", "coo")]),                    # servos chauds : il s'affale
             "remarque": Remarque(),
-            "cache_cache": CacheCache(),                                         # il se cache, indices sonores
+            "cache_cache": CacheCache(),
+            "balle": JeuBalle(),                                                 # M9 BallPlay : approche + tir avec vision                                         # il se cache, indices sonores
             "silence_curieux": Sequence("silence_curieux", [("curieux", "inquire")]),   # la maison est trop calme                                              # un objet qui n'etait pas la
             # social
             "signature": Sequence("signature", [("curieux", "coo"), ("fier", "wheee")]),
@@ -339,6 +341,11 @@ class Brain:
             sur_evt = getattr(self.courant, "sur_evenement", None)
             if sur_evt is not None and sur_evt(self, base):
                 continue                        # l'etat en cours (un jeu) a pris l'evenement pour lui
+            if base == "jeu_balle":
+                if (not self.mode_calme and self.ctx.extras.get("tof") is not None and not self.surchauffe
+                        and self.courant.nom not in ("balle", "nap", "alarme", "porte")):
+                    self._bascule("balle")
+                continue
             if base == "jeu_cache":
                 if not self.mode_calme and self.courant.nom not in ("cache_cache", "nap", "soleil", "alarme", "porte") \
                         and self.ctx.extras.get("tof") is not None:
@@ -663,6 +670,11 @@ class Brain:
             self.malice.noter(self, "cache_cache")      # initiative de jeu : comptee dans le budget de malice
             self._prepare_cache_cache()
             return "cache_cache"
+        veille_balle = self.ctx.extras.get("balle")
+        vue = veille_balle.position() if veille_balle is not None else None
+        if (vue is not None and 0.3 <= math.hypot(*vue) <= 2.0 and h.energie > 0.5 and not self.surchauffe
+                and self.ctx.extras.get("tof") is not None and self.rng.random() < self.P_BALLE * self.perso.envie_promenade()):
+            return "balle"                      # il voit sa balle, en forme : il va jouer avec (seul ou pas)
         if self.rng.random() < self.P_GAG * self.perso.envie_taquiner():
             chat = self.ctx.extras.get("chat")
             gags = [g for g in ("fausse_chute", "fausse_notif") if self.malice.permise(self, g)
