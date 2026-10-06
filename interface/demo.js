@@ -185,5 +185,19 @@
     return instantane();
   }
 
-  window.MicroduckDemo = { instantane, commande, carte, api };
+  // Marketplace en demo, quand le vrai catalogue est vide ou injoignable : deux pieces imaginaires, sans lien.
+  function exemplesBoutique() {
+    return [
+      { id: "ex1", nom: "Coque de tête « Casque »", exemple: true, categorie: "tête", bientot: true, liens: {},
+        description: "Exemple : ta pièce apparaîtra ainsi, avec ses photos et ses liens Printables et Cults.",
+        impression: { materiau: "PLA", temps: "3 h 20", filament_g: 45, supports: false }, auteur: "RaphaelGrj",
+        licence: "CC BY-NC 4.0", photos: ["/microduck/debout-gauche.webp", "/microduck/debout.webp"],
+        remplace_nom: "Dessus de la tête" },
+      { id: "ex2", nom: "Semelles antidérapantes", exemple: true, categorie: "pieds", bientot: true, liens: {},
+        description: "Exemple : semelles en TPU pour le carrelage.", impression: { materiau: "TPU 95A", temps: "1 h" },
+        photos: ["/microduck/marche.webp"] },
+    ];
+  }
+
+  window.MicroduckDemo = { instantane, commande, carte, api, exemplesBoutique };
 })();

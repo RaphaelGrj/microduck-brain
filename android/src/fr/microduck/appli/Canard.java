@@ -2,6 +2,9 @@ package fr.microduck.appli;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
+import android.content.Intent;
+import android.webkit.ValueCallback;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
@@ -17,7 +20,10 @@ import java.io.InputStream;
 /** L'interface du canard en plein ecran. En demo, elle est servie depuis l'APK (assets/interface) avec un canard imaginaire. */
 public class Canard extends Activity {
     static final String DEMO = "http://demo.microduck.local/index.html";
+    private static final int CHOIX_FICHIER = 1;
     private WebView vue;
+    private String hote;
+    private ValueCallback<Uri[]> fichierRappel;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -25,6 +31,7 @@ public class Canard extends Activity {
         super.onCreate(b);
         getWindow().setStatusBarColor(Accueil.ORANGE_FONCE);
         final String url = getIntent().getStringExtra("url");
+        hote = Uri.parse(url).getHost();
         vue = new WebView(this);
         vue.setBackgroundColor(Color.WHITE);
         WebSettings s = vue.getSettings();
@@ -49,6 +56,18 @@ public class Canard extends Activity {
 
             @Override
             @SuppressWarnings("deprecation")
+            public boolean shouldOverrideUrlLoading(WebView v, String lien) {
+                // le canard (ou la demo) reste dans l'appli ; Printables, Cults... s'ouvrent dans le navigateur
+                Uri u = Uri.parse(lien);
+                if (hote != null && hote.equals(u.getHost())) return false;
+                try {
+                    startActivity(new Intent(Intent.ACTION_VIEW, u));
+                } catch (ActivityNotFoundException e) { /* aucun navigateur */ }
+                return true;
+            }
+
+            @Override
+            @SuppressWarnings("deprecation")
             public void onReceivedError(WebView v, int code, String description, String echec) {
                 String retour = url.replace("\"", "");
                 v.loadDataWithBaseURL(null, "<!doctype html><meta name=viewport content='width=device-width'>"
@@ -60,7 +79,23 @@ public class Canard extends Activity {
                         "text/html", "utf-8", null);
             }
         });
-        vue.setWebChromeClient(new WebChromeClient());  // sans lui, confirm() repond toujours « non »
+        vue.setWebChromeClient(new WebChromeClient() {  // sans lui, confirm() repond toujours « non »
+            @Override
+            public boolean onShowFileChooser(WebView v, ValueCallback<Uri[]> rappel, FileChooserParams params) {
+                if (fichierRappel != null) fichierRappel.onReceiveValue(null);
+                fichierRappel = rappel;                 // « Ma piece (STL) » du design : choisir un fichier du telephone
+                try {
+                    Intent choix = new Intent(Intent.ACTION_GET_CONTENT);
+                    choix.addCategory(Intent.CATEGORY_OPENABLE);
+                    choix.setType("*/*");               // les STL n'ont pas de type fiable sur Android
+                    startActivityForResult(Intent.createChooser(choix, "Ta pièce (STL)"), CHOIX_FICHIER);
+                } catch (ActivityNotFoundException e) {
+                    fichierRappel = null;
+                    return false;
+                }
+                return true;
+            }
+        });
         setContentView(vue);
         vue.loadUrl(url);
     }
@@ -75,6 +110,16 @@ public class Canard extends Activity {
         if (chemin.endsWith(".json")) return "application/json";
         if (chemin.endsWith(".webmanifest")) return "application/manifest+json";
         return "application/octet-stream";
+    }
+
+    @Override
+    protected void onActivityResult(int code, int resultat, Intent donnees) {
+        if (code == CHOIX_FICHIER && fichierRappel != null) {
+            fichierRappel.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultat, donnees));
+            fichierRappel = null;
+            return;
+        }
+        super.onActivityResult(code, resultat, donnees);
     }
 
     @Override

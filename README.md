@@ -64,6 +64,15 @@ du dépôt, dans `~/.microduck-android/`.
   - Chaque lieu garde sa dernière carte, qu'on peut regarder dans l'appli.
 - **Journal** : ce qu'il a fait.
 
+**En haut à droite** :
+- **Design** (palette) : le vrai Microduck en 3D, d'après son modèle officiel allégé (`outils/modele_3d.py`).
+  - Toucher une pièce et la recolorer avec tes filaments ou une couleur libre.
+  - Comparer avec l'origine, enregistrer des schémas (gardés sur le canard).
+  - Poser ton propre STL, dessiné dans le repère de la pièce d'origine.
+- **Marketplace** (sac) : les pièces du dépôt [microduck-catalogue](https://github.com/RaphaelGrj/microduck-catalogue).
+  - Liens Printables et Cults, et « Essayer sur mon Microduck » dans le design.
+  - Le catalogue est lu par le téléphone : le canard n'envoie rien.
+
 L'accès est limité au réseau local, avec le code. Les commandes viennent d'une liste fermée et passent par le cerveau
 comme n'importe quel événement. Aucune image ni aucun son n'est envoyé au téléphone.
 

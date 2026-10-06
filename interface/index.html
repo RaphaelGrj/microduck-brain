@@ -274,7 +274,24 @@
     </main>
   </section>
 
+  <!-- Marketplace : les pieces du catalogue (depot microduck-catalogue), telechargees chez Printables ou Cults -->
+  <section id="boutique" class="ecran plein" hidden>
+    <header class="entete">
+      <button class="icone-bouton retour" data-fermer aria-label="Retour">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="titre-plein"><h1>Marketplace</h1><p class="discret">Pièces à imprimer pour Microduck</p></div>
+    </header>
+    <main>
+      <div id="filtres" class="filtres" role="tablist" aria-label="Catégories"></div>
+      <p id="boutique-etat" class="discret centre">Chargement du catalogue…</p>
+      <ul id="pieces" class="pieces"></ul>
+      <p class="discret petit centre">Le téléchargement se fait sur Printables ou Cults. Le catalogue est lu par le
+        téléphone ; le canard n'envoie rien.</p>
+    </main>
+  </section>
+
   <script src="/demo.js"></script>
   <script src="/app.js"></script>
+  <script src="/boutique.js"></script>
 </body>
 </html>

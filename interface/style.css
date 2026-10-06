@@ -263,3 +263,22 @@ input {
 .ajout-filament input:first-child { flex: 1; min-width: 0; min-height: 44px; padding: 0 10px; border-radius: 10px;
   border: 1px solid var(--bord); background: var(--carte); color: var(--texte); font: inherit; }
 .ajout-filament input[type=color] { width: 44px; height: 44px; border: 0; padding: 0; background: none; }
+
+/* Marketplace */
+.filtres { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 12px; scrollbar-width: none; }
+.filtres button { flex: none; min-height: 36px; padding: 6px 14px; border-radius: 999px; }
+.filtres button[aria-selected="true"] { background: var(--orange-fonce); color: var(--accent-texte); border-color: transparent; }
+.pieces { list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; }
+.piece { background: var(--carte); border-radius: 18px; box-shadow: var(--ombre); overflow: hidden; }
+.piece .photos { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; background: var(--barre); }
+.piece .photos img { flex: none; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; scroll-snap-align: start; }
+.piece .photos .sans-photo { width: 100%; aspect-ratio: 4 / 3; display: grid; place-items: center; font-size: 3rem; }
+.piece .corps-piece { padding: 14px 16px 16px; }
+.piece h3 { margin: 0 0 4px; font-size: 1.1rem; }
+.piece .meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+.piece p { margin: 0 0 10px; white-space: pre-line; }
+.piece .liens { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.piece .liens a { display: flex; align-items: center; justify-content: center; min-height: 46px; border-radius: 12px;
+  text-decoration: none; font-weight: 600; background: var(--orange-fonce); color: var(--accent-texte); }
+.piece .liens a.secondaire { background: var(--barre); color: var(--texte); border: 1px solid var(--bord); }
+.piece .essayer { width: 100%; margin-top: 8px; }

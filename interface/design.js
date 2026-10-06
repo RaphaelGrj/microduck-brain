@@ -215,8 +215,8 @@ function remplacer(piece, geo) {
 }
 
 async function essayer(url, piece, nom) {
-  // depuis la marketplace : une piece du catalogue posee sur le Microduck
-  await ouvrir();
+  // depuis la marketplace : une piece du catalogue posee sur le Microduck (le design prend la place de la marketplace)
+  await ouvrir(true);
   const tampon = await fetch(url).then((r) => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); });
   if (!originales[piece]) throw new Error("pièce inconnue : " + piece);
   remplacer(piece, lireStl(tampon));
@@ -226,9 +226,9 @@ async function essayer(url, piece, nom) {
 }
 
 // ---------- ecran ----------
-async function ouvrir() {
+async function ouvrir(remplacer) {
   $("#design").hidden = false;
-  history.pushState({ ecran: "design" }, "");
+  if (remplacer) history.replaceState({ ecran: "design" }, ""); else history.pushState({ ecran: "design" }, "");
   if (!pret) {
     pret = (async () => {
       try { Object.assign(donnees, await window.api("/api/design")); } catch (e) { /* vide : on garde les valeurs par defaut */ }
