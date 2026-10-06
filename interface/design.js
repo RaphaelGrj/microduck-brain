@@ -12,7 +12,15 @@ const PALETTE = [["Blanc", "#f4f4f2"], ["Gris clair", "#c9c9c4"], ["Gris", "#7d7
   ["Bleu", "#2f6fd6"], ["Turquoise", "#25a5a0"], ["Vert", "#4c9a3d"], ["Beige", "#d9c7a7"], ["Bois", "#9b6b43"]];
 
 let modele, groupes = {}, materiaux = {}, origine = {}, couleurs = {}, choix = null, pieceChoisie = null;
-let donnees = { filaments: [], schemas: [], actif: null };
+let donnees = { filaments: [], couleurs: [], schemas: [], actif: null };
+const CATALOGUE = "https://raw.githubusercontent.com/RaphaelGrj/microduck-catalogue/main/catalogue.json";
+
+// code couleur saisi : "#f26a1b", "f26a1b", "#f6b" -> "#f26a1b" (ou null)
+function hexNormal(v) {
+  let h = String(v || "").trim().toLowerCase().replace(/^#/, "");
+  if (/^[0-9a-f]{3}$/.test(h)) h = h.split("").map((c) => c + c).join("");
+  return /^[0-9a-f]{6}$/.test(h) ? "#" + h : null;
+}
 let rendu, scene, camera, controles, racine, geometries = {}, originales = {}, maillages = [], pret = null;
 
 // ---------- chargement ----------
@@ -110,15 +118,25 @@ function choisir(groupe, piece) {
   const actif = !!(g && g.imprimable);
   document.querySelectorAll("#nuancier button, #groupe-origine").forEach((b) => { b.disabled = !actif; });
   $("#couleur-libre").disabled = !actif;
+  $("#couleur-hex").disabled = !actif; $("#couleur-garder").disabled = !actif;
   $("#stl-perso").disabled = !actif;
   $("#stl-retirer").disabled = !(piece && geometries[piece] !== originales[piece]);
-  if (actif) $("#couleur-libre").value = couleurs[choix] || origine[choix];
+  if (actif) montrerCode(couleurs[choix] || origine[choix]);
+  else $("#couleur-hex").value = "";
   nuancier();
 }
 
 // ---------- couleurs ----------
+function montrerCode(hex) {
+  $("#couleur-libre").value = hex;
+  if (document.activeElement !== $("#couleur-hex")) $("#couleur-hex").value = hex;
+  $("#couleur-hex").removeAttribute("aria-invalid");
+}
+
 function peindre(groupe, couleur) {
+  couleur = couleur.toLowerCase();
   couleurs[groupe] = couleur;
+  if (groupe === choix) montrerCode(couleur);
   materiaux[groupe].color.set(couleur);
   $("#design-schema").textContent = (donnees.actif ? donnees.actif : "Nouveau schéma") + " · modifié";
   nuancier();
@@ -134,15 +152,17 @@ function nuancier() {
   const actuelle = choix ? (couleurs[choix] || origine[choix]).toLowerCase() : null;
   const pastille = ([nom, hex]) => {
     const b = document.createElement("button");
-    b.style.background = hex; b.title = nom; b.setAttribute("aria-label", nom);
+    b.style.background = hex; b.title = `${nom} (${hex})`; b.setAttribute("aria-label", nom);
     b.setAttribute("aria-pressed", String(actuelle === hex.toLowerCase()));
     b.disabled = !(choix && groupes[choix].imprimable);
     b.addEventListener("click", () => peindre(choix, hex));
     return b;
   };
-  const sep = document.createElement("span"); sep.className = "separateur";
+  const sep = () => Object.assign(document.createElement("span"), { className: "separateur" });
+  const perso = donnees.couleurs || [];
   $("#nuancier").replaceChildren(...donnees.filaments.map((f) => pastille([f.nom, f.couleur])),
-    ...(donnees.filaments.length ? [sep] : []), ...PALETTE.map(pastille));
+    ...(donnees.filaments.length ? [sep()] : []), ...perso.map((f) => pastille([f.nom, f.couleur])),
+    ...(perso.length ? [sep()] : []), ...PALETTE.map(pastille));
 }
 
 // ---------- schemas et filaments (sur le canard) ----------
@@ -163,6 +183,8 @@ function listeSchemas() {
     nom.className = "nom" + (s.nom === donnees.actif ? " actif" : "");
     const voir = document.createElement("button"); voir.textContent = "Voir";
     voir.addEventListener("click", () => { appliquer(s.couleurs); donnees.actif = s.nom; sauver(); maj(); });
+    const partager = document.createElement("button"); partager.textContent = "⇪"; partager.setAttribute("aria-label", "Partager " + s.nom);
+    partager.addEventListener("click", () => partagerSchema(s));
     const suppr = document.createElement("button"); suppr.textContent = "✕"; suppr.setAttribute("aria-label", "Supprimer " + s.nom);
     suppr.addEventListener("click", () => {
       if (!confirm(`Supprimer le schéma « ${s.nom} » ?`)) return;
@@ -170,9 +192,23 @@ function listeSchemas() {
       if (donnees.actif === s.nom) donnees.actif = null;
       sauver(); maj();
     });
-    li.append(ap, nom, voir, suppr);
+    li.append(ap, nom, voir, partager, suppr);
     return li;
   }) : [Object.assign(document.createElement("li"), { textContent: "Aucun schéma enregistré pour l'instant." })]));
+}
+
+function listeCouleurs() {
+  const perso = donnees.couleurs || [];
+  $("#couleurs-perso").replaceChildren(...(perso.length ? perso.map((f) => {
+    const li = document.createElement("li");
+    const p = document.createElement("span"); p.className = "pastille-couleur"; p.style.background = f.couleur;
+    const nom = document.createElement("span"); nom.className = "nom"; nom.textContent = f.nom;
+    const code = document.createElement("code"); code.textContent = f.couleur;
+    const suppr = document.createElement("button"); suppr.textContent = "✕"; suppr.setAttribute("aria-label", "Retirer " + f.nom);
+    suppr.addEventListener("click", () => { donnees.couleurs = perso.filter((x) => x !== f); sauver(); maj(); });
+    li.append(p, nom, code, suppr);
+    return li;
+  }) : [Object.assign(document.createElement("li"), { className: "discret", textContent: "Aucune couleur gardée pour l'instant." })]));
 }
 
 function listeFilaments() {
@@ -188,7 +224,7 @@ function listeFilaments() {
 }
 
 function maj() {
-  listeSchemas(); listeFilaments(); nuancier();
+  listeSchemas(); listeCouleurs(); listeFilaments(); nuancier();
   const s = donnees.schemas.find((x) => x.nom === donnees.actif);
   if (window.appliquerLook) window.appliquerLook(s ? s.couleurs : null);     // son look sur l'accueil
   $("#design-schema").textContent = donnees.actif || "Couleurs d'origine";
@@ -322,7 +358,7 @@ async function ouvrir(remplacer) {
       await charger();
       const s = donnees.schemas.find((x) => x.nom === donnees.actif);
       appliquer(s ? s.couleurs : null);
-      maj(); choisir(null, null);
+      maj(); choisir(null, null); chargerCatalogue();
     })().catch((e) => { pret = null; $("#vue3d-attente").textContent = "Impossible de charger le modèle 3D."; throw e; });
   }
   await pret;
@@ -330,6 +366,101 @@ async function ouvrir(remplacer) {
 }
 
 $("#couleur-libre").addEventListener("input", (e) => { if (choix) peindre(choix, e.target.value); });
+$("#couleur-hex").addEventListener("input", (e) => {
+  const h = hexNormal(e.target.value);
+  e.target.setAttribute("aria-invalid", String(!h && e.target.value.trim().length >= 3));
+  if (h && choix) peindre(choix, h);
+});
+$("#couleur-hex").addEventListener("change", (e) => { if (choix) montrerCode(couleurs[choix] || origine[choix]); e.target.value = $("#couleur-libre").value; });
+$("#couleur-garder").addEventListener("click", () => {
+  const hex = hexNormal($("#couleur-hex").value) || $("#couleur-libre").value;
+  const nom = prompt(`Nom de cette couleur (${hex})`, hex);
+  if (nom === null) return;
+  donnees.couleurs = (donnees.couleurs || []).filter((c) => c.couleur !== hex)
+    .concat([{ nom: nom.trim().slice(0, 40) || hex, couleur: hex }]).slice(-50);
+  sauver(); maj(); window.toast("Couleur gardée");
+});
+
+// ---------- partage des schemas : fichier, texte, QR code, catalogue ----------
+const PREFIXE = "MICRODUCK-SCHEMA:";
+const groupeConnu = (g) => Object.prototype.hasOwnProperty.call(origine, g);
+function schemaPropre(s) {
+  if (!s || typeof s !== "object" || typeof s.couleurs !== "object") return null;
+  const c = {};
+  for (const [g, v] of Object.entries(s.couleurs)) { const h = hexNormal(v); if (h && (!modele || groupeConnu(g))) c[g] = h; }
+  return Object.keys(c).length ? { nom: String(s.nom || "Schéma importé").trim().slice(0, 40), couleurs: c } : null;
+}
+function partagerSchema(s) {
+  const texte = PREFIXE + JSON.stringify({ nom: s.nom, couleurs: s.couleurs });
+  if (window.montrerQR) window.montrerQR(s.nom, texte, "Scanne ce code, copie le texte, puis « Coller un schéma » dans le design de l'autre téléphone. « Exporter mes schémas » donne un fichier.");
+}
+function importer(texte) {
+  texte = String(texte || "").trim();
+  if (texte.startsWith(PREFIXE)) texte = texte.slice(PREFIXE.length);
+  const d = JSON.parse(texte);
+  const liste = (d.schemas || (d.schema ? [d.schema] : [d])).map(schemaPropre).filter(Boolean);
+  let n = 0;
+  for (const s of liste) {
+    let nom = s.nom, k = 2;
+    const pareil = donnees.schemas.find((x) => x.nom === nom);
+    if (pareil && JSON.stringify(pareil.couleurs) === JSON.stringify(s.couleurs)) continue;
+    while (donnees.schemas.some((x) => x.nom === nom)) nom = `${s.nom.slice(0, 36)} ${k++}`;
+    donnees.schemas = donnees.schemas.concat([{ nom, couleurs: s.couleurs }]).slice(-50);
+    n++;
+  }
+  for (const cle of ["filaments", "couleurs"]) {          // (fichier « Exporter mes schemas » : bobines et couleurs aussi)
+    for (const f of d[cle] || []) {
+      const h = hexNormal(f && f.couleur);
+      if (h && !(donnees[cle] || []).some((x) => x.couleur === h && x.nom === f.nom)) {
+        donnees[cle] = (donnees[cle] || []).concat([{ nom: String(f.nom || h).slice(0, 40), couleur: h }]).slice(-50);
+      }
+    }
+  }
+  if (!liste.length && !(d.filaments || d.couleurs)) throw new Error("vide");
+  sauver(); maj();
+  window.toast(n ? `${n} schéma${n > 1 ? "s" : ""} ajouté${n > 1 ? "s" : ""}` : "Rien de nouveau");
+}
+$("#schemas-exporter").addEventListener("click", () => {
+  if (!donnees.schemas.length && !(donnees.couleurs || []).length) { window.toast("Aucun schéma à exporter"); return; }
+  window.enregistrerFichier(`microduck-schemas-${new Date().toISOString().slice(0, 10)}.json`, "application/json",
+    JSON.stringify({ format: "microduck-schemas", version: 1, schemas: donnees.schemas, filaments: donnees.filaments,
+      couleurs: donnees.couleurs || [] }, null, 1));
+});
+$("#schemas-importer").addEventListener("change", async (e) => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  try { importer(await f.text()); } catch (x) { window.toast("Ce fichier n'est pas un schéma de Microduck"); }
+});
+$("#schemas-coller").addEventListener("click", async () => {
+  let texte = "";
+  try { texte = await navigator.clipboard.readText(); } catch (x) { /* pas d'acces au presse-papiers */ }
+  if (!texte || !texte.includes("couleurs")) texte = prompt("Colle le texte du schéma :", "") || "";
+  if (!texte) return;
+  try { importer(texte); } catch (x) { window.toast("Ce texte n'est pas un schéma de Microduck"); }
+});
+let catalogueSchemas = null;
+async function chargerCatalogue() {
+  try {
+    if (!catalogueSchemas) catalogueSchemas = ((await (await fetch(CATALOGUE, { cache: "no-cache" })).json()).schemas || []);
+  } catch (x) {
+    $("#schemas-catalogue").replaceChildren(Object.assign(document.createElement("li"), { className: "discret", textContent: "Catalogue injoignable (Internet ?)" }));
+    return;
+  }
+  $("#schemas-catalogue").replaceChildren(...(catalogueSchemas.length ? catalogueSchemas.map((s) => {
+    const li = document.createElement("li");
+    const ap = document.createElement("span"); ap.className = "apercu-schema";
+    for (const g of ["dessus_tete", "face", "bec", "coques", "pieds"]) {
+      const i = document.createElement("i"); i.style.background = s.couleurs[g] || origine[g]; ap.append(i);
+    }
+    const nom = document.createElement("span"); nom.className = "nom"; nom.textContent = s.nom + (s.auteur ? ` · ${s.auteur}` : "");
+    const voir = document.createElement("button"); voir.textContent = "Voir";
+    voir.addEventListener("click", () => { appliquer(s.couleurs); $("#design-schema").textContent = "Aperçu : " + s.nom; });
+    const ajouter = document.createElement("button"); ajouter.textContent = "Ajouter";
+    ajouter.addEventListener("click", () => { try { importer(JSON.stringify(s)); } catch (x) { window.toast("Schéma illisible"); } });
+    li.append(ap, nom, voir, ajouter);
+    return li;
+  }) : [Object.assign(document.createElement("li"), { className: "discret", textContent: "Pas encore de schéma partagé." })]));
+}
 $("#groupe-origine").addEventListener("click", () => { if (choix) { delete couleurs[choix]; materiaux[choix].color.set(origine[choix]); nuancier(); } });
 $("#stl-perso").addEventListener("change", async (e) => {
   const f = e.target.files[0]; e.target.value = "";

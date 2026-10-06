@@ -52,6 +52,22 @@ Le canard sert lui-même son application, sans Home Assistant et sans serveur ai
 2. Sur le téléphone, connecté au même Wi-Fi, ouvre `http://<ip-du-canard>:8090` et entre le code.
 3. Ajoute la page à l'écran d'accueil : elle s'ouvre ensuite comme une appli.
 
+**Sur iPhone et iPad** : l'appli web du canard s'installe depuis Safari, sans App Store.
+1. Le téléphone sur le Wi-Fi de la maison, ouvre `http://<ip-du-canard>:8090`. Le plus simple : Réglages → Sur un
+   autre appareil → QR, puis scanner avec l'appareil photo.
+2. Dans Safari : **Partager → Sur l'écran d'accueil**. Elle s'ouvre ensuite en plein écran, comme une appli.
+
+Limites, propres à iOS pour une page web servie en `http` sur le réseau local :
+- pas de notifications en arrière-plan (les alertes s'affichent dans l'appli) ;
+- pas de widget ;
+- pas de présence par le Wi-Fi.
+
+Une vraie appli de l'App Store demanderait un Mac et un compte développeur Apple (99 €/an).
+
+**Sur ordinateur** (Windows, macOS, Linux) : `ordinateur/`, application Electron qui trouve le canard toute seule.
+GitHub la construit à chaque version : <https://github.com/RaphaelGrj/microduck-brain/releases>. Mode d'emploi :
+`ordinateur/README.md`.
+
 **Appli Android** (`android/`) : un APK de 180 Ko qui trouve le canard tout seul sur le Wi-Fi et ouvre l'interface
 en plein écran, plus un **mode démo** pour l'essayer sans le robot. Il ne contient aucune logique : l'interface reste
 servie par le canard, donc une mise à jour du cerveau met l'appli à jour. Construction sans Android Studio :

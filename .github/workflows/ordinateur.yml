@@ -1,0 +1,66 @@
+# Application Microduck pour ordinateur (ordinateur/, Electron) : construite sur Windows, macOS et Linux par GitHub,
+# publiee dans la release « ordinateur-v<version> » des que la version de ordinateur/package.json change.
+# Se lance aussi a la main (onglet Actions -> Ordinateur -> Run workflow).
+# Non signee (pas de certificat Apple ni Microsoft) : premier lancement a autoriser, voir ordinateur/README.md.
+name: Ordinateur
+on:
+  push:
+    branches: ["main"]
+    paths: ["ordinateur/package.json"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  construire:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            cible: --linux AppImage deb
+          - os: windows-latest
+            cible: --win
+          - os: macos-latest
+            cible: --mac
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: ordinateur
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx electron-builder ${{ matrix.cible }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: microduck-${{ matrix.os }}
+          path: |
+            ordinateur/sortie/*.exe
+            ordinateur/sortie/*.dmg
+            ordinateur/sortie/*.AppImage
+            ordinateur/sortie/*.deb
+  publier:
+    needs: construire
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: paquets
+          merge-multiple: true
+      - name: Release ordinateur-v<version>
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(python3 -c 'import json; print(json.load(open("ordinateur/package.json"))["version"])')
+          if gh release view "ordinateur-v$VERSION" >/dev/null 2>&1; then
+            echo "ordinateur-v$VERSION deja publiee (monter la version de ordinateur/package.json pour publier)"; exit 0
+          fi
+          # --latest=false : « latest » reste la release de l'APK (l'appli Android y lit version.json)
+          gh release create "ordinateur-v$VERSION" paquets/* --target "$GITHUB_SHA" --latest=false \
+            --title "Microduck pour ordinateur $VERSION" \
+            --notes "Windows : Microduck-$VERSION-windows-installation.exe (ou la version portable). Mac : le .dmg (arm64 = puces Apple M, x64 = Intel). Linux : .AppImage ou .deb. Premier lancement : voir ordinateur/README.md (appli non signée)."

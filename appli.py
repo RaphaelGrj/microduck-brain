@@ -204,7 +204,7 @@ SECTIONS_A_REDEMARRER = {"home_assistant", "habitant", "imprimante_directe", "ap
 
 
 COULEUR = re.compile(r"^#[0-9a-fA-F]{6}$")
-DESIGN_VIDE = {"filaments": [], "schemas": [], "actif": None}
+DESIGN_VIDE = {"filaments": [], "couleurs": [], "schemas": [], "actif": None}
 
 
 def valider_design(d):
@@ -216,6 +216,8 @@ def valider_design(d):
         return v or None
     filaments = [{"nom": nom(f.get("nom")), "couleur": f.get("couleur")} for f in (d.get("filaments") or [])[:50]
                  if isinstance(f, dict) and nom(f.get("nom")) and COULEUR.match(str(f.get("couleur")))]
+    couleurs_perso = [{"nom": nom(f.get("nom")) or f.get("couleur"), "couleur": f.get("couleur").lower()}
+                      for f in (d.get("couleurs") or [])[:50] if isinstance(f, dict) and COULEUR.match(str(f.get("couleur")))]
     schemas = []
     for sc in (d.get("schemas") or [])[:50]:
         if not isinstance(sc, dict) or not nom(sc.get("nom")) or not isinstance(sc.get("couleurs"), dict):
@@ -223,7 +225,8 @@ def valider_design(d):
         couleurs = {str(k)[:40]: v for k, v in list(sc["couleurs"].items())[:60] if COULEUR.match(str(v))}
         schemas.append({"nom": nom(sc["nom"]), "couleurs": couleurs})
     actif = nom(d.get("actif"))
-    return {"filaments": filaments, "schemas": schemas, "actif": actif if any(sc["nom"] == actif for sc in schemas) else None}
+    return {"filaments": filaments, "couleurs": couleurs_perso, "schemas": schemas,
+            "actif": actif if any(sc["nom"] == actif for sc in schemas) else None}
 
 
 def fichiers_sauvegardes(appli):
