@@ -364,3 +364,10 @@ body.enfant [data-parent] { display: none !important; }
 .ajouts button { flex: 1 1 auto; min-height: 40px; padding: 6px 10px; }
 button:disabled { opacity: .45; cursor: not-allowed; }
 .curseur span:last-child { text-align: right; }
+
+/* Aide */
+.faq details { border-bottom: 1px solid var(--bord); padding: 10px 0; }
+.faq details:last-child { border-bottom: 0; }
+.faq summary { cursor: pointer; font-weight: 600; }
+.faq p { margin: 8px 0 0; color: var(--discret); }
+.glossaire dd { text-align: left; }

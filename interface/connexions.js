@@ -167,3 +167,44 @@
     impressions();
   };
 })();
+
+// ---------- mises a jour du cerveau, rapport, aide ----------
+(function () {
+  const $ = (s) => document.querySelector(s);
+  const BRANCHE = "ccr-4c5851c0-mdd2p8";                 // (a passer sur main une fois la branche fusionnee)
+  const DEPOT = "RaphaelGrj/microduck-brain";
+  $("#maj-chercher").addEventListener("click", async () => {
+    $("#maj-etat").textContent = "…";
+    try {
+      // c'est le telephone qui regarde GitHub ; le canard ne telechargera que si tu choisis d'installer
+      const r = await fetch(`https://api.github.com/repos/${DEPOT}/commits/${BRANCHE}`).then((x) => x.json());
+      const sha = String(r.sha || "").slice(0, 7), date = (r.commit && r.commit.committer.date || "").slice(0, 10);
+      const actuelle = String($("#maj-version").textContent).split(" ")[0];
+      const nouvelle = sha && !sha.startsWith(actuelle) && actuelle !== sha;
+      $("#maj-etat").textContent = !sha ? "GitHub ne répond pas." : nouvelle
+        ? `Nouvelle version ${sha} du ${date} : ${(r.commit.message || "").split("\n")[0]}` : "Il est à jour.";
+      $("#maj-installer").hidden = !nouvelle;
+    } catch (x) { $("#maj-etat").textContent = "Pas d'accès à Internet depuis le téléphone."; }
+  });
+  async function majCanard(action, texte) {
+    if (!confirm(texte)) return;
+    try {
+      await window.api("/api/mise-a-jour", { action, branche: BRANCHE });
+      window.toast("Il redémarre (une à deux minutes)…");
+    } catch (x) { window.toast(x.message); }
+  }
+  $("#maj-installer").addEventListener("click", () => majCanard("installer",
+    "Installer la nouvelle version ? Il redémarre, et la version actuelle est gardée pour revenir en arrière."));
+  $("#maj-revenir").addEventListener("click", () => majCanard("revenir", "Revenir à la version précédente ? Il redémarre."));
+  $("#rapport").addEventListener("click", async () => {
+    try {
+      const r = await window.api("/api/rapport");
+      window.enregistrerFichier(`microduck-rapport-${new Date().toISOString().slice(0, 10)}.json`, "application/json", JSON.stringify(r, null, 1));
+    } catch (x) { window.toast(x.message); }
+  });
+  $("#ouvrir-aide").addEventListener("click", () => {
+    $("#aide").hidden = false; $("#aide").scrollTo(0, 0); history.pushState({ ecran: "aide" }, "");
+    const libelles = [...new Set(Object.values(window.ETATS_LIBELLES || {}))].sort((a, b) => a.localeCompare(b, "fr"));
+    $("#glossaire").replaceChildren(...libelles.map((v) => Object.assign(document.createElement("li"), { textContent: v })));
+  });
+})();

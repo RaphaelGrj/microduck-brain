@@ -49,12 +49,19 @@ def lire_heure(v):
 
 
 def version_du_cerveau():
-    """Le commit du cerveau (affiche dans l'application, section Maintenance)."""
+    """Le commit du cerveau (affiche dans l'application, section Maintenance) : git, sinon le fichier VERSION ecrit
+    par deploy/robot/mettre_a_jour.sh."""
     import subprocess
     try:
-        return subprocess.run(["git", "-C", str(Path(__file__).parent), "log", "-1", "--format=%h %cs"],
-                              capture_output=True, text=True, timeout=3).stdout.strip() or None
+        v = subprocess.run(["git", "-C", str(Path(__file__).parent), "log", "-1", "--format=%h %cs"],
+                           capture_output=True, text=True, timeout=3).stdout.strip()
+        if v:
+            return v
     except (OSError, subprocess.SubprocessError):
+        pass
+    try:
+        return (Path(__file__).parent / "VERSION").read_text().strip() or None
+    except OSError:
         return None
 
 

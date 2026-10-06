@@ -20,6 +20,7 @@ const ETATS = {
   regard_guide: "Il regarde (télécommande)", retrait: "Trop de bruit, il s'éloigne", jour_special: "Jour spécial !",
   fier: "Il est fier", ou_es_tu: "Je suis là !", choregraphie: "Il fait son tour", baillement: "Il bâille", baillement_contagieux: "Il bâille", fausse_chute: "Fausse chute !",
 };
+window.ETATS_LIBELLES = ETATS;
 const JOUR = { promenades: ["promenade", "promenades"], siestes: ["sieste", "siestes"], jeux: ["jeu", "jeux"],
   danses: ["danse", "danses"], caresses: ["caresse", "caresses"], accueils: ["accueil", "accueils"],
   folles_courses: ["folle course", "folles courses"], blagues: ["blague", "blagues"] };
@@ -148,6 +149,7 @@ function afficher(e) {
   dl("#chutes", [["Sur 7 jours", ch.sept_jours], ["Activité risquée", ETATS[ch.activite_risquee] || ch.activite_risquee],
     ["Endroits à risque", ch.lieux_a_risque]]);
   texte("#version", e.version ? "Cerveau " + e.version : "");
+  texte("#maj-version", e.version || "—");
 
   barres("#traits", e.caractere.traits || {}, TRAITS);
   const sons = e.caractere.sons || {};

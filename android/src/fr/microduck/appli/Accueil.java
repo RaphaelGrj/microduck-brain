@@ -31,7 +31,6 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 
 /** Premier ecran : trouver le canard sur le Wi-Fi (ou taper son adresse), ou essayer en demo. */
 public class Accueil extends Activity {
@@ -44,6 +43,7 @@ public class Accueil extends Activity {
     private Button chercher;
     private SharedPreferences prefs;
     private Button majBouton;
+    private LinearLayout mesCanards;
 
     // derniere version publiee de l'APK (android/version.json, ecrit par construire.sh) et l'APK lui-meme
     static final String DEPOT = "https://raw.githubusercontent.com/RaphaelGrj/microduck-brain/ccr-4c5851c0-mdd2p8/android/";
@@ -85,6 +85,9 @@ public class Accueil extends Activity {
         intro.setGravity(Gravity.CENTER);
         col.addView(intro);
 
+        mesCanards = new LinearLayout(this);             // les canards deja connus (plusieurs canards : un bouton chacun)
+        mesCanards.setOrientation(LinearLayout.VERTICAL);
+        col.addView(mesCanards, largeur(dp(8)));
         majBouton = bouton("", true);                       // « Mise a jour x.y disponible » (cache tant qu'il n'y en a pas)
         majBouton.setVisibility(View.GONE);
         col.addView(majBouton, largeur(dp(16)));
@@ -182,6 +185,69 @@ public class Accueil extends Activity {
         }).start();
     }
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        dessinerCanards();
+    }
+
+    /** Les canards connus : [{"adresse", "nom"}] dans les preferences ; le dernier ouvert en premier. */
+    private org.json.JSONArray canards() {
+        try { return new org.json.JSONArray(prefs.getString("canards", "[]")); } catch (Exception e) { return new org.json.JSONArray(); }
+    }
+
+    private void retenirCanard(String adresse, String nom) {
+        org.json.JSONArray avant = canards(), apres = new org.json.JSONArray();
+        String ancienNom = null;
+        for (int i = 0; i < avant.length(); i++) {
+            org.json.JSONObject c = avant.optJSONObject(i);
+            if (c == null) continue;
+            if (adresse.equals(c.optString("adresse"))) ancienNom = c.optString("nom", null);
+            else apres.put(c);
+        }
+        try {
+            org.json.JSONObject c = new org.json.JSONObject().put("adresse", adresse)
+                    .put("nom", nom != null ? nom : ancienNom != null ? ancienNom : adresse);
+            org.json.JSONArray tout = new org.json.JSONArray().put(c);
+            for (int i = 0; i < apres.length() && i < 9; i++) tout.put(apres.get(i));
+            prefs.edit().putString("canards", tout.toString()).apply();
+        } catch (Exception e) { /* rien */ }
+    }
+
+    private void dessinerCanards() {
+        if (mesCanards == null) return;
+        mesCanards.removeAllViews();
+        final org.json.JSONArray liste = canards();
+        for (int i = 0; i < liste.length(); i++) {
+            final org.json.JSONObject c = liste.optJSONObject(i);
+            if (c == null) continue;
+            LinearLayout ligne = new LinearLayout(this);
+            ligne.setOrientation(LinearLayout.HORIZONTAL);
+            Button b = bouton("🦆 " + c.optString("nom") + "  ·  " + c.optString("adresse"), i == 0);
+            b.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) { adresse.setText(c.optString("adresse")); ouvrir(); }
+            });
+            Button x = bouton("✕", false);
+            x.setContentDescription("Oublier ce canard");
+            x.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    org.json.JSONArray garde = new org.json.JSONArray();
+                    org.json.JSONArray tout = canards();
+                    for (int k = 0; k < tout.length(); k++)
+                        if (!c.optString("adresse").equals(tout.optJSONObject(k).optString("adresse"))) garde.put(tout.optJSONObject(k));
+                    prefs.edit().putString("canards", garde.toString()).apply();
+                    dessinerCanards();
+                }
+            });
+            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+            ligne.addView(b, p);
+            LinearLayout.LayoutParams px = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            px.leftMargin = dp(6);
+            ligne.addView(x, px);
+            mesCanards.addView(ligne, largeur(dp(8)));
+        }
+    }
+
     /** Ouvre l'interface du canard a l'adresse tapee (ip, ip:port ou http://...). */
     private void ouvrir() {
         String a = adresse.getText().toString().trim();
@@ -192,6 +258,7 @@ public class Accueil extends Activity {
             if (u.getHost().isEmpty()) throw new Exception();
             String url = u.getProtocol() + "://" + u.getHost() + ":" + (u.getPort() > 0 ? u.getPort() : PORT) + "/";
             prefs.edit().putString("adresse", adresse.getText().toString().trim()).apply();
+            retenirCanard(u.getHost() + (u.getPort() > 0 && u.getPort() != PORT ? ":" + u.getPort() : ""), null);
             message.setText("");
             startActivity(new Intent(this, Canard.class).putExtra("url", url));
         } catch (Exception e) {
@@ -207,29 +274,35 @@ public class Accueil extends Activity {
         message.setText("Recherche…");
         new Thread(new Runnable() {
             public void run() {
-                final AtomicReference<String> trouve = new AtomicReference<String>();
+                final java.util.concurrent.ConcurrentHashMap<String, String> trouves = new java.util.concurrent.ConcurrentHashMap<String, String>();
                 ExecutorService pool = Executors.newFixedThreadPool(48);
                 for (String base : bases) {
                     for (int i = 1; i < 255; i++) {
                         final String ip = base + i;
                         pool.execute(new Runnable() {
                             public void run() {
-                                if (trouve.get() == null && estUnCanard(ip)) trouve.compareAndSet(null, ip);
+                                String nom = nomDuCanard(ip);
+                                if (nom != null) trouves.put(ip, nom);
                             }
                         });
                     }
                 }
                 pool.shutdown();
                 try { pool.awaitTermination(30, TimeUnit.SECONDS); } catch (InterruptedException e) { /* fin */ }
-                final String ip = trouve.get();
                 runOnUiThread(new Runnable() {
                     public void run() {
                         chercher.setEnabled(true);
-                        if (ip == null) {
-                            message.setText("Aucun canard trouvé. Est-il allumé, avec l'appli activée ([appli] dans ha.toml) ?");
-                        } else {
-                            adresse.setText(ip);
+                        if (trouves.isEmpty()) {
+                            message.setText("Aucun canard trouvé. Est-il allumé, et sur ce Wi-Fi ?");
+                            return;
+                        }
+                        for (java.util.Map.Entry<String, String> t : trouves.entrySet()) retenirCanard(t.getKey(), t.getValue());
+                        if (trouves.size() == 1) {
+                            adresse.setText(trouves.keySet().iterator().next());
                             ouvrir();
+                        } else {
+                            message.setText(trouves.size() + " canards trouvés : choisis.");
+                            dessinerCanards();
                         }
                     }
                 });
@@ -237,21 +310,24 @@ public class Accueil extends Activity {
         }).start();
     }
 
-    static boolean estUnCanard(String ip) {
+    /** Le nom du canard qui repond a cette adresse (/api/sante), ou null si ce n'est pas un Microduck. */
+    static String nomDuCanard(String ip) {
         HttpURLConnection c = null;
         try {
             c = (HttpURLConnection) new URL("http://" + ip + ":" + PORT + "/api/sante").openConnection();
             c.setConnectTimeout(700);
             c.setReadTimeout(1000);
-            if (c.getResponseCode() != 200) return false;
+            if (c.getResponseCode() != 200) return null;
             InputStream in = c.getInputStream();
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             byte[] tampon = new byte[512];
             int n;
             while ((n = in.read(tampon)) > 0 && out.size() < 4096) out.write(tampon, 0, n);
-            return out.toString("UTF-8").contains("\"microduck\"");
+            org.json.JSONObject s = new org.json.JSONObject(out.toString("UTF-8"));
+            if (!"microduck".equals(s.optString("appli"))) return null;
+            return s.optString("nom", "Microduck");
         } catch (Exception e) {
-            return false;
+            return null;
         } finally {
             if (c != null) c.disconnect();
         }

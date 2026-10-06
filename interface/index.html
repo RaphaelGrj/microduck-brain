@@ -219,6 +219,20 @@
           <h2>Chutes</h2>
           <dl class="valeurs" id="chutes"></dl>
         </div>
+        <div class="carte" data-parent>
+          <h2>Mises à jour et rapport</h2>
+          <dl class="valeurs"><dt>Cerveau</dt><dd id="maj-version">—</dd></dl>
+          <p id="maj-etat" class="discret petit"></p>
+          <div class="boutons">
+            <button id="maj-chercher">Chercher une mise à jour</button>
+            <button id="maj-installer" class="principal" hidden>Installer</button>
+          </div>
+          <button id="maj-revenir" class="large">Revenir à la version précédente</button>
+          <button id="rapport" class="large">Exporter un rapport de diagnostic</button>
+          <p class="discret petit">Le rapport sert à demander de l'aide (Pollen, communauté) : versions, santé, alertes.
+            Aucun prénom, lieu, réseau ni journal de la maison. Le logiciel du robot lui-même se met à jour par l'appli
+            officielle de Pollen.</p>
+        </div>
         <p class="discret centre" id="version"></p>
       </div>
 
@@ -259,6 +273,11 @@
             <button data-cmd="stop_taquinerie">Couper</button></div>
           <div class="reglage"><div><b>Sa carte</b><p class="discret">L'effacer (meubles déplacés, nouvel endroit). Elle repart aussi de zéro à chaque démarrage.</p></div>
             <button id="oublier-carte">Effacer</button></div>
+        </div>
+        <div class="carte">
+          <h2>Aide</h2>
+          <p class="discret petit">Questions fréquentes, et ce que veut dire chacun de ses états.</p>
+          <button id="ouvrir-aide" class="large">Ouvrir l'aide</button>
         </div>
         <div class="carte" data-parent>
           <h2>Connexions et configuration</h2>
@@ -416,6 +435,48 @@
       <ul id="pieces" class="pieces"></ul>
       <p class="discret petit centre">Le téléchargement se fait sur Printables ou Cults. Le catalogue est lu par le
         téléphone ; le canard n'envoie rien.</p>
+    </main>
+  </section>
+
+  <!-- Aide -->
+  <section id="aide" class="ecran plein" hidden>
+    <header class="entete">
+      <button class="icone-bouton retour" data-fermer aria-label="Retour">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="titre-plein"><h1>Aide</h1><p class="discret">Microduck au quotidien</p></div>
+    </header>
+    <main>
+      <div class="carte faq">
+        <h2>Questions fréquentes</h2>
+        <details><summary>Il ne marche pas, il reste sur place</summary><p>Il ne marche jamais sans son capteur de
+          distance, ni vers un obstacle ou un vide. Les tout petits pas ne le font pas avancer : c'est normal (la marche
+          démarre au-delà d'une certaine vitesse). Vérifie le capteur dans Santé → Diagnostic.</p></details>
+        <details><summary>Il tombe souvent</summary><p>Santé → Chutes montre l'activité et les endroits à risque ; il
+          apprend lui-même à éviter les zones où il est tombé. Un sol glissant ou un bord de tapis sont les causes
+          habituelles. Lance un diagnostic pour vérifier les servos.</p></details>
+        <details><summary>L'appli ne le trouve pas</summary><p>Le téléphone doit être sur le même Wi-Fi que lui. Dans
+          l'appli Android, « Chercher le canard » interroge tout le réseau ; sinon tape son adresse. S'il vient d'être
+          rallumé, laisse-lui une minute.</p></details>
+        <details><summary>Le mettre en silence</summary><p>Réglages → Mode calme (assis, silencieux), ou des heures
+          calmes chaque nuit (Réglages → Sa journée).</p></details>
+        <details><summary>Les batteries</summary><p>Numérote-les 1, 2, 3 au feutre. Après un échange, il te demande
+          laquelle est mise (Santé → Ses batteries) et suit la santé de chacune.</p></details>
+        <details><summary>Home Assistant est-il obligatoire ?</summary><p>Non. Sans lui, il vit, joue, surveille ses
+          imprimantes (Réglages → Connexions) et t'accueille grâce à ton téléphone. Home Assistant ajoute la maison :
+          sonnette, machines, alarme, scènes.</p></details>
+        <details><summary>Les notifications arrivent en retard</summary><p>Appli fermée, Android ne laisse vérifier que
+          toutes les 15 minutes environ. Appli ouverte, elles arrivent tout de suite.</p></details>
+        <details><summary>Un enfant veut jouer avec</summary><p>Réglages → Connexions → Code enfant : avec ce code,
+          l'appli ne montre que les jeux, le regard et « Où es-tu ? ».</p></details>
+        <details><summary>Où sont mes données ?</summary><p>Sur le canard, et nulle part ailleurs : ce qu'il voit et
+          entend est analysé par lui seul. Home Assistant ne reçoit que des états. Une sauvegarde (Réglages) est un
+          fichier que tu gardes sur ton téléphone.</p></details>
+      </div>
+      <div class="carte">
+        <h2>Ce qu'il peut être en train de faire</h2>
+        <p class="discret petit">Tout ce que l'accueil peut afficher dans « En ce moment ».</p>
+        <ul id="glossaire" class="pastilles"></ul>
+      </div>
     </main>
   </section>
 

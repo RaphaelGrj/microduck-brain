@@ -27,6 +27,8 @@ API :
   GET  /api/choregraphies   le studio ; POST {"liste": [...]} pour les garder, {"jouer": nom} pour en jouer une
   GET  /api/comportements   politiques installees (robotd) ; POST /api/comportement chercher / installer / essayer
   POST /api/regard          {"lacet", "tangage"} : regard a une position (pave tactile), borne par le cerveau
+  POST /api/mise-a-jour     {"action": "installer", "branche": ...} ou {"action": "revenir"} : au prochain demarrage
+  GET  /api/rapport         rapport de diagnostic a partager (versions, sante, alertes) ; aucune donnee personnelle
   GET  /api/sante           test de vie, sans code (pour savoir si le canard repond)
 Le code se passe dans l'en-tete `X-Microduck-Code` (ou `?code=` pour le flux).
 """
@@ -239,6 +241,8 @@ class Appli:
         self.brut = {}                          # configuration (ha.toml + configuration.json), page Connexions
         self.imprimantes = None
         self.redemarrage_demande = False
+        self.fichier_mise_a_jour = Path.home() / ".local/share/microduck/mise_a_jour"
+        self.t_demarrage = time.time()
         self.choregraphies = {}                 # nom -> etapes, partage avec le cerveau (extras["choregraphies"])
         self.robotd = None                      # fabrique d'un client robotd a part (page Comportements)
         self.evenements = queue.Queue()
@@ -348,6 +352,33 @@ class Appli:
                 c.sock.close()
             except Exception:
                 pass
+
+    def rapport(self):
+        """Pour demander de l'aide (Pollen, communaute) : l'etat technique du canard, SANS donnee personnelle (ni noms,
+        ni lieux, ni reseaux, ni journal de la maison, ni texte des alertes)."""
+        e = dict(self.etat or {})
+        m = e.get("maintenance") or {}
+        bt = dict(m.get("batterie") or {})
+        brut = self.brut or {}
+        with self._verrou_alertes:
+            alertes = [{"t": a["t"], "type": a["type"]} for a in self.alertes]
+        return {
+            "format": "microduck-rapport", "version": 1, "date": time.time(), "cerveau": self.version,
+            "demarre_depuis_s": round(time.time() - self.t_demarrage), "etat": e.get("etat"),
+            "tombe": e.get("tombe"), "assis": e.get("assis"), "batterie": e.get("batterie"),
+            "temperatures": e.get("temperatures"), "diagnostic": m.get("diagnostic"),
+            "batteries": {k: v for k, v in bt.items() if k != "actuelle"},
+            "servos": m.get("servos"), "chutes": {k: v for k, v in (m.get("chutes") or {}).items() if k != "dernieres"},
+            "modes": {k: e.get("modes", {}).get(k) for k in ("calme", "garde", "discret", "vacarme")},
+            "configuration": {"home_assistant": bool((brut.get("home_assistant") or {}).get("url") or brut.get("url")),
+                              "habitants": len(brut.get("habitant") or []),
+                              "imprimantes": sorted({i.get("type") for i in brut.get("imprimante_directe") or []}),
+                              "appareils": sorted({a.get("type") for a in brut.get("appareil") or []}),
+                              "code_enfant": bool(self.code_enfant)},
+            "imprimantes": [{"type": i.get("type"), "etat": i.get("etat"), "joignable": i.get("joignable")}
+                            for i in (self.imprimantes.etat() if self.imprimantes is not None else [])],
+            "alertes": alertes,
+        }
 
     def alertes_depuis(self, t):
         with self._verrou_alertes:
@@ -464,6 +495,10 @@ class Appli:
                             depuis = 0.0
                         self._json(200, {"maintenant": time.time(), "alertes": appli.alertes_depuis(depuis)})
                     return
+                if url.path == "/api/rapport":
+                    if self._autorise():
+                        self._json(200, appli.rapport())
+                    return
                 if url.path == "/api/sauvegarde":
                     if self._autorise():
                         fichiers = {}
@@ -521,7 +556,7 @@ class Appli:
                 if chemin not in ("/api/commande", "/api/lieu", "/api/design", "/api/reglages", "/api/presence",
                                   "/api/restauration", "/api/installation", "/api/configuration", "/api/tester-ha",
                                   "/api/tester-imprimante", "/api/redemarrer", "/api/choregraphies", "/api/comportement",
-                                  "/api/regard"):
+                                  "/api/regard", "/api/mise-a-jour"):
                     return self._json(404, {"erreur": "inconnu"})
                 if chemin == "/api/installation":
                     return self._installation()
@@ -602,6 +637,17 @@ class Appli:
                     if lacet != lacet or tangage != tangage:
                         return self._json(400, {"erreur": "nombres attendus"})
                     appli.evenements.put(f"regard:abs|{lacet:.3f}|{tangage:.3f}")
+                    return self._json(200, {"ok": True})
+                if chemin == "/api/mise-a-jour":
+                    action, branche = corps.get("action"), str(corps.get("branche") or "main")
+                    if action not in ("installer", "revenir") or not re.fullmatch(r"[A-Za-z0-9._/-]{1,80}", branche):
+                        return self._json(400, {"erreur": "action ou branche invalide"})
+                    try:
+                        appli.fichier_mise_a_jour.parent.mkdir(parents=True, exist_ok=True)
+                        appli.fichier_mise_a_jour.write_text(f"{action} {branche}\n")
+                    except OSError:
+                        return self._json(500, {"erreur": "enregistrement impossible"})
+                    appli.redemarrage_demande = True            # systemd lance mettre_a_jour.sh puis le cerveau
                     return self._json(200, {"ok": True})
                 if chemin == "/api/redemarrer":
                     appli.redemarrage_demande = True            # canard.py sort proprement, systemd le relance

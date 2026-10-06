@@ -13,6 +13,8 @@ Environment=TOFD_SOCK=/run/tofd/tof.sock
 Environment=MICRODUCK_FRAME_URL=http://127.0.0.1:8080/frame
 Environment=MICRODUCK_MICRO=micro_partage
 Environment=PYTHONUNBUFFERED=1
+# mise a jour demandee depuis l'appli (installer / revenir) : avant le cerveau, sans jamais l'empecher de demarrer
+ExecStartPre=-/opt/microduck-cerveau/mettre_a_jour.sh
 ExecStart=/opt/microduck-cerveau/venv/bin/python canard.py ha.toml --micro
 # SIGTERM (defaut) : canard.py se releve s'il est assis et sauve sa memoire avant de sortir
 TimeoutStopSec=15

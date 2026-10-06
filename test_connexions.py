@@ -125,3 +125,31 @@ def test_tester_home_assistant_refuse_une_adresse_fausse():
     assert pont_ha.tester("pas-une-url", "x")[0] is False
     ok, message = pont_ha.tester("http://127.0.0.1:9", "x", delai=1.0)
     assert ok is False and "injoignable" in message
+
+
+def test_rapport_sans_donnees_personnelles_et_mise_a_jour(tmp_path):
+    from test_vie_maison import cerveau, vivre
+    a = appli.Appli("canard-42", port=0, log=lambda m: None, version="abc1234 2026-10-06")
+    a.brut = {"habitant": [{"nom": "Raphaël"}], "home_assistant": {"url": "http://ha:8123", "token": "SECRET-T"},
+              "imprimante_directe": [{"nom": "MK4S du salon", "type": "prusalink", "adresse": "192.168.1.30"}]}
+    a.fichier_mise_a_jour = tmp_path / "mise_a_jour"
+    b, _, _ = cerveau()
+    vivre(b, 1)
+    b.presents = {"Raphaël"}
+    a.photographier(b, {"battery": {"percent": 70.0}})
+    a.sur_evenement("impression_finie:MK4S du salon")
+    a.demarrer()
+    try:
+        statut, corps = requete(a.port, "/api/rapport", code="canard-42")
+        texte = corps.decode()
+        r = json.loads(texte)
+        assert statut == 200 and r["cerveau"] == "abc1234 2026-10-06" and r["configuration"]["habitants"] == 1
+        for prive in ("Raphaël", "Raphael", "MK4S", "salon", "192.168", "SECRET-T", "ha:8123"):
+            assert prive not in texte, prive
+        assert r["alertes"] == [{"t": r["alertes"][0]["t"], "type": "impression_finie"}]
+        assert requete(a.port, "/api/mise-a-jour", code="canard-42", corps={"action": "installer", "branche": "x;rm -rf"})[0] == 400
+        time.sleep(1.1)
+        assert requete(a.port, "/api/mise-a-jour", code="canard-42", corps={"action": "installer", "branche": "main"})[0] == 200
+        assert (tmp_path / "mise_a_jour").read_text() == "installer main\n" and a.redemarrage_demande
+    finally:
+        a.arreter()

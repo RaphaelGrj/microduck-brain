@@ -32,7 +32,7 @@ def fermeture(depart="canard"):
 def a_copier(depart="canard"):
     """Les modules, plus les dossiers de donnees qu'ils servent (l'interface de l'application Microduck)."""
     fichiers = fermeture(depart)
-    return fichiers + (["interface/"] if "appli.py" in fichiers else [])
+    return fichiers + (["interface/"] if "appli.py" in fichiers else []) + ["deploy/robot/mettre_a_jour.sh"]
 
 
 if __name__ == "__main__":

@@ -26,6 +26,8 @@ sudo -u microduck-cerveau /opt/microduck-cerveau/venv/bin/pip install -r require
 # commandes vocales : modele francais Vosk, telecharge UNE fois ici puis tout est hors ligne :
 #   https://alphacephei.com/vosk/models/vosk-model-small-fr-0.22.zip -> /opt/microduck-cerveau/modeles/ ;
 #   [cerveau] nom = "..." et modele_vosk = "/opt/microduck-cerveau/modeles/vosk-model-small-fr-0.22" dans ha.toml
+# mises a jour depuis l'appli : le script lance par systemd avant le cerveau (ExecStartPre)
+sudo install -m 755 -o microduck-cerveau mettre_a_jour.sh /opt/microduck-cerveau/mettre_a_jour.sh
 sudo cp microduck-cerveau.service /etc/systemd/system/ && sudo systemctl daemon-reload
 sudo systemctl enable --now microduck-cerveau && journalctl -u microduck-cerveau -f
 ```

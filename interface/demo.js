@@ -242,7 +242,8 @@
     }
     if (chemin === "/api/tester-ha") return { ok: false, message: "démo : pas de Home Assistant ici" };
     if (chemin === "/api/tester-imprimante") return { ok: true, etat: "en_cours", progression: 64 };
-    if (chemin === "/api/redemarrer") return { ok: true };
+    if (chemin === "/api/redemarrer" || chemin === "/api/mise-a-jour") return { ok: true };
+    if (chemin === "/api/rapport") return { format: "microduck-rapport", version: 1, cerveau: "démo", etat, batterie: { pourcent: 82 } };
     if (chemin === "/api/sauvegarde") return { format: "microduck-sauvegarde", version: 1, date: Date.now() / 1000,
       cerveau: "démo", fichiers: { "design.json": DESIGN, "reglages.json": reglagesDemo } };
     if (chemin === "/api/restauration") return { ok: true, redemarrer: true };
