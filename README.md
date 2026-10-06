@@ -190,3 +190,5 @@ La mémoire du canard (habitants, habitudes, personnalité) reste dans un fichie
 - Projet et feuille de route : [microduck-project](https://github.com/RaphaelGrj/microduck-project)
 - Entraînement (fork) : [microduck_rl](https://github.com/RaphaelGrj/microduck_rl)
 - Logiciel officiel du robot : [pollen-robotics/microduck](https://github.com/pollen-robotics/microduck)
+
+Support me : https://buymeacoffee.com/raphaelgrj
