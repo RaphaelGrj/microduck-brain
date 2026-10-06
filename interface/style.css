@@ -401,3 +401,13 @@ button[aria-pressed=true] { background: var(--orange-fonce); color: var(--accent
 #usure-servo { width: 100%; min-height: 44px; border-radius: 10px; border: 1px solid var(--bord); background: var(--carte);
   color: var(--texte); font: inherit; padding: 0 10px; }
 .legende i.ligne { display: inline-block; width: 14px; height: 3px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+
+/* Design : code couleur saisissable, couleurs gardees */
+.code-couleur { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+.code-couleur .pipette { flex: 0 0 auto; width: 52px; padding: 0; justify-content: center; }
+.code-couleur .pipette input[type=color] { width: 34px; height: 34px; border: 0; padding: 0; background: none; }
+.code-couleur #couleur-hex { flex: 1; min-width: 0; min-height: 44px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--bord);
+  background: var(--carte); color: var(--texte); font: 600 1rem ui-monospace, monospace; text-transform: lowercase; }
+.code-couleur #couleur-hex[aria-invalid=true] { border-color: var(--danger); }
+.code-couleur button { flex: 0 0 auto; }
+.liste-choix code { font: .85rem ui-monospace, monospace; color: var(--discret); }

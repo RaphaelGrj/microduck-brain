@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Microduck</title>
+  <link rel="stylesheet" href="accueil.css">
+</head>
+<body>
+  <main>
+    <img src="icone.png" alt="" width="104" height="104" class="icone">
+    <h1>Micro<span>duck</span></h1>
+    <p class="discret" id="sous-titre">Trouve ton canard sur le Wi-Fi de la maison.</p>
+    <ul id="canards" class="canards"></ul>
+    <button id="chercher" class="principal">Chercher mon canard</button>
+    <p class="discret petit" id="ou">ou son adresse</p>
+    <form id="form"><input id="adresse" placeholder="192.168.1.42" autocomplete="off" spellcheck="false" aria-label="Adresse du canard">
+      <button type="submit">Se connecter</button></form>
+    <p id="message" class="message" role="status"></p>
+    <button id="demo">Essayer en démo (sans le canard)</button>
+    <p id="maj" class="maj" hidden></p>
+    <p class="discret petit note">Rien ne sort de la maison : l'appli ne parle qu'au canard, sur le réseau local.</p>
+  </main>
+  <script src="accueil.js"></script>
+</body>
+</html>

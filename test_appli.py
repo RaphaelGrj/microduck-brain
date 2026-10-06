@@ -246,7 +246,7 @@ def test_design_valide_et_garde(serveur, tmp_path):
              "actif": "Noir et orange", "pirate": "<script>"}
     assert requete(serveur.port, "/api/design", corps=envoi)[0] == 200
     relu = json.loads(requete(serveur.port, "/api/design")[1])
-    assert relu == {"filaments": [{"nom": "PLA orange", "couleur": "#f26a1b"}],
+    assert relu == {"filaments": [{"nom": "PLA orange", "couleur": "#f26a1b"}], "couleurs": [],
                     "schemas": [{"nom": "Noir et orange", "couleurs": {"coques": "#222222"}}], "actif": "Noir et orange"}
     assert requete(serveur.port, "/api/design", corps=[1, 2])[0] == 400
     assert appli.valider_design({"schemas": [], "actif": "absent"})["actif"] is None
@@ -386,3 +386,10 @@ def test_presence_sauvegarde_restauration(serveur, tmp_path, monkeypatch):
     assert "Chat" in json.loads((tmp_path / "memoire.json").read_text())["etres"]
     assert not (tmp_path / "memoire.json.restaurer").exists()
     time.sleep(1.1)
+
+
+def test_design_garde_mes_couleurs():
+    d = appli.valider_design({"couleurs": [{"nom": "Vert sapin", "couleur": "#33AA77"}, {"couleur": "#123456"},
+                                           {"nom": "faux", "couleur": "vert"}], "schemas": [], "filaments": []})
+    assert d["couleurs"] == [{"nom": "Vert sapin", "couleur": "#33aa77"}, {"nom": "#123456", "couleur": "#123456"}]
+    assert appli.valider_design({})["couleurs"] == []

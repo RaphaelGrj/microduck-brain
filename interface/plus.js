@@ -317,6 +317,17 @@
     $("#vue-qr").showModal();
   }
 
+  window.montrerQR = montrerQR;
+  // ---------- sur un autre appareil : iPhone (appli web installee par Safari), ordinateur ----------
+  const RELEASES = "https://github.com/RaphaelGrj/microduck-brain/releases";
+  $("#qr-iphone").addEventListener("click", () => {
+    if (demo() || !/^https?:$/.test(location.protocol)) { window.toast("Depuis l'appli connectée au canard (pas en démo)"); return; }
+    montrerQR("Sur un iPhone", location.origin + "/", "Appareil photo → ouvrir dans Safari → Partager → « Sur l'écran d'accueil ». Puis entre le code du canard.");
+  });
+  $("#lien-ordinateur").addEventListener("click", () => {
+    const a = document.createElement("a"); a.href = RELEASES; a.target = "_blank"; a.rel = "noopener"; a.click();
+  });                   // (design.js : partager un schema de couleurs)
+
   // ---------- invites ----------
   const lienInvite = (c) => `${location.origin}/#code=${c}`;
   async function chargerInvites() {

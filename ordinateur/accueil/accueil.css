@@ -1,0 +1,19 @@
+:root { --orange: #f26a1b; --orange-fonce: #c24a08; --fond: #ffffff; --texte: #23252b; --discret: #6b6e75; --bord: #e7e4df; --barre: #f5f4f2; }
+@media (prefers-color-scheme: dark) { :root { --fond: #16171a; --texte: #f3f2f0; --discret: #a3a6ad; --bord: #33353b; --barre: #212226; --orange-fonce: #f26a1b; } }
+* { box-sizing: border-box; }
+body { margin: 0; font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--fond); color: var(--texte); }
+main { max-width: 380px; margin: 0 auto; padding: 48px 20px 32px; text-align: center; display: flex; flex-direction: column; gap: 10px; }
+.icone { align-self: center; border-radius: 24px; }
+h1 { margin: 6px 0 0; font-size: 2rem; } h1 span { color: var(--orange); }
+.discret { color: var(--discret); margin: 0; } .petit { font-size: .85rem; } .note { margin-top: 18px; }
+button, input { font: inherit; min-height: 46px; border-radius: 12px; border: 1px solid var(--bord); background: var(--barre); color: var(--texte); padding: 0 14px; cursor: pointer; }
+button.principal { background: var(--orange-fonce); color: #fff; border-color: transparent; font-weight: 600; }
+button:disabled { opacity: .6; cursor: wait; }
+form { display: flex; gap: 8px; } form input { flex: 1; min-width: 0; text-align: center; cursor: text; background: var(--fond); }
+.message { color: var(--orange-fonce); min-height: 1.4em; margin: 0; }
+.canards { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 8px; }
+.canards li { display: flex; gap: 8px; }
+.canards li button:first-child { flex: 1; text-align: left; display: flex; flex-direction: column; justify-content: center; padding: 8px 14px; }
+.canards small { color: var(--discret); }
+.maj { background: var(--barre); border-radius: 12px; padding: 10px; margin: 6px 0 0; }
+.maj a { color: var(--orange-fonce); font-weight: 600; cursor: pointer; }

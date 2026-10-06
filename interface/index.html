@@ -6,6 +6,8 @@
   <meta name="theme-color" content="#f26a1b">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Microduck">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="mobile-web-app-capable" content="yes">
   <title>Microduck</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icone.png" type="image/png">
@@ -407,13 +409,6 @@
           </div>
           <ul id="invites" class="liste-choix"></ul>
         </div>
-        <dialog id="vue-qr" class="vue-qr">
-          <h2 id="vue-qr-titre"></h2>
-          <div id="vue-qr-image" class="qr"></div>
-          <p id="vue-qr-texte" class="discret petit"></p>
-          <div class="boutons"><button id="vue-qr-copier">Copier</button><button id="vue-qr-partager">Partager</button></div>
-          <form method="dialog"><button class="large">Fermer</button></form>
-        </dialog>
         <div class="carte">
           <h2>Ce téléphone</h2>
           <div id="presence-tel" hidden>
@@ -429,6 +424,15 @@
             <select id="langue" class="choix-langue" aria-label="Langue / Language">
               <option value="">Auto</option><option value="fr">Français</option><option value="en">English</option></select></div>
           <button id="oublier" class="large">Oublier le code</button>
+        </div>
+        <div class="carte">
+          <h2>Sur un autre appareil</h2>
+          <div class="reglage"><div><b>iPhone, iPad</b><p class="discret">Scanne le QR avec l'appareil photo (même Wi-Fi),
+            ouvre dans <b>Safari</b>, puis Partager → « Sur l'écran d'accueil » : l'appli s'installe comme les autres.</p></div>
+            <button id="qr-iphone">QR</button></div>
+          <div class="reglage"><div><b>Ordinateur</b><p class="discret">Windows, Mac, Linux : l'appli Microduck pour
+            ordinateur trouve le canard toute seule.</p></div>
+            <button id="lien-ordinateur">Télécharger</button></div>
         </div>
         <div class="carte">
           <h2>Sauvegarde</h2>
@@ -497,8 +501,12 @@
       <div class="carte">
         <div class="ligne-titre"><h2 id="groupe-nom">Touche une pièce</h2><span id="groupe-info" class="discret"></span></div>
         <div id="nuancier" class="nuancier" aria-label="Couleurs"></div>
+        <div class="code-couleur">
+          <label class="bouton-like pipette" aria-label="Choisir une couleur"><input id="couleur-libre" type="color" value="#f26a1b"></label>
+          <input id="couleur-hex" maxlength="7" spellcheck="false" autocomplete="off" placeholder="#f26a1b" aria-label="Code couleur (#rrggbb)">
+          <button id="couleur-garder" aria-label="Garder cette couleur">Garder</button>
+        </div>
         <div class="boutons">
-          <label class="bouton-like">Autre couleur<input id="couleur-libre" type="color" value="#f26a1b"></label>
           <button id="groupe-origine">Couleur d'origine</button>
         </div>
         <div class="boutons">
@@ -519,6 +527,22 @@
           <button id="fiche-impression">Fiche d'impression</button>
           <button id="design-photo">Photo</button>
         </div>
+        <div class="boutons">
+          <button id="schemas-exporter">Exporter mes schémas</button>
+          <label class="bouton-like">Importer<input id="schemas-importer" type="file" accept=".json,application/json" hidden></label>
+        </div>
+        <button id="schemas-coller" class="large">Coller un schéma (texte ou QR)</button>
+      </div>
+      <div class="carte">
+        <h2>Schémas du catalogue</h2>
+        <p class="discret petit">Partagés par la communauté (dossier « schemas » de microduck-catalogue). « Voir » les essaie
+          sans rien changer ; « Ajouter » les garde.</p>
+        <ul id="schemas-catalogue" class="liste-choix"><li class="discret">Chargement…</li></ul>
+      </div>
+      <div class="carte">
+        <h2>Mes couleurs</h2>
+        <p class="discret petit">Les couleurs que tu as gardées (bouton « Garder »), avec leur code.</p>
+        <ul id="couleurs-perso" class="liste-choix"></ul>
       </div>
       <div class="carte">
         <h2>Mes filaments</h2>
@@ -717,6 +741,13 @@
     <form method="dialog"><button class="large">Fermer</button></form>
   </dialog>
 
+  <dialog id="vue-qr" class="vue-qr">
+          <h2 id="vue-qr-titre"></h2>
+          <div id="vue-qr-image" class="qr"></div>
+          <p id="vue-qr-texte" class="discret petit"></p>
+          <div class="boutons"><button id="vue-qr-copier">Copier</button><button id="vue-qr-partager">Partager</button></div>
+          <form method="dialog"><button class="large">Fermer</button></form>
+        </dialog>
   <script src="/i18n.js"></script>
   <script src="/demo.js"></script>
   <script src="/app.js"></script>

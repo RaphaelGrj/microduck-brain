@@ -1,0 +1,90 @@
+{
+  "name": "microduck",
+  "productName": "Microduck",
+  "version": "1.1.0",
+  "description": "Application Microduck pour ordinateur : trouve ton canard sur le Wi-Fi et ouvre son interface.",
+  "author": "RaphaelGrj",
+  "license": "Apache-2.0",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "fr.microduck.appli",
+    "productName": "Microduck",
+    "directories": {
+      "output": "sortie",
+      "buildResources": "ressources"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "accueil/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../interface",
+        "to": "interface"
+      }
+    ],
+    "icon": "../interface/icone.png",
+    "artifactName": "Microduck-${version}-${os}-${arch}.${ext}",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "Microduck-${version}-windows-installation.${ext}"
+    },
+    "portable": {
+      "artifactName": "Microduck-${version}-windows-portable.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.utilities",
+      "identity": null
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility",
+      "maintainer": "RaphaelGrj"
+    },
+    "publish": null
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RaphaelGrj/microduck-brain.git"
+  }
+}
