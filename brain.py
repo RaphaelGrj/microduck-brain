@@ -197,6 +197,7 @@ class Brain:
             "timide": Timide(),                                                    # visiteur inconnu
             "apprivoise": Sequence("apprivoise", [("curieux", "inquire")]),        # la timidite s'est dissipee
             "coup_oeil": CoupOeil(),
+            "compris": Sequence("compris", [("oui", "chirp")]),                 # commande domotique transmise
             "penaud": Sequence("penaud", [("gene", None), ("fatigue", None)]),   # gronde : tete basse, sans un son
             "cajole": Sequence("cajole", [("content", "coo")]),                   # appele tendrement
             "mefiant": Sequence("mefiant", [("surpris", "inquire"), ("gene", None)]),   # l'aspirateur, les 1res fois
@@ -270,6 +271,9 @@ class Brain:
         self.tombe = False
         self.presents = set()                   # habitants actuellement a la maison (presence HA, retour/depart)
         self.derniere_interaction = 0.0         # dernier evenement externe notable (hors bascule calme/ecoute)
+        # Qui veut savoir ce que vit le canard (pont_ha : actions domotiques) : f("etat:<nom>") a chaque entree dans un
+        # etat, f(<evenement>) a chaque evenement recu. Doit rendre la main tout de suite (le tick ne bloque jamais).
+        self.ecouteurs = []
         self.discret = False                    # quelqu'un telephone (audio.py) : ni son ni initiative bruyante
         self.vacarme = False                    # ambiance tres bruyante (audio.py) : il reste a l'ecart, assis
         self._t_vacarme = 0.0
@@ -288,6 +292,8 @@ class Brain:
     # -- evenements externes (plus tard : micro, camera, HA...) --
     def evenement(self, nom):
         self.evenements.append(nom)
+        for f in self.ecouteurs:
+            f(nom)
 
     def _traite_evenements(self):
         while self.evenements:
@@ -342,6 +348,12 @@ class Brain:
                 continue
             if base in ("vacarme", "vacarme_fin"):
                 self._sur_vacarme(base == "vacarme")   # meme pendant la sieste : la fin du vacarme doit etre vue
+                continue
+            if base == "maison":
+                # commande domotique dite a la voix (commandes.py) : pont_ha appelle le service HA configure ; le
+                # canard, lui, accuse reception d'un petit signe - en son de canard, jamais en mots
+                if not self.mode_calme and self.courant.nom in ("chill", "look", "wander", "jeu_solitaire"):
+                    self._bascule("compris")
                 continue
             if base == "ton":
                 # Le ton sur lequel on dit son nom (commandes.py), sans comprendre les mots : grondé -> penaud, tete
@@ -889,6 +901,8 @@ class Brain:
         if experience:
             self.perso.vit(experience)
         self.courant = self.etats[nom]
+        for f in self.ecouteurs:
+            f(f"etat:{nom}")
         self._sons_etat = set()
         self.courant.entre(self)
         self.t_etat = 0.0

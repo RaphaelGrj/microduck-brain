@@ -669,3 +669,96 @@ etat = "off"
 def test_le_modele_de_configuration_se_lit():
     cfg = pont_ha.lire_config(Path(__file__).parent / "ha.exemple.toml")
     assert cfg["surveillance"] == [] and "visiteur" in cfg["ignorees"], "tout est A_REMPLIR : rien de surveille"
+
+
+ACTIONS_TOML = """
+[home_assistant]
+url = "http://127.0.0.1:1"
+[[action]]
+quand = "accueil"
+service = "light.turn_on"
+entite = "light.entree"
+donnees = { brightness_pct = 60 }
+[[action]]
+voix = "lumiere du salon"
+service = "light.toggle"
+entite = "light.salon"
+delai_min_s = 2
+[[action]]
+quand = "nap"
+service = "scene.turn_on"
+entite = "scene.nuit"
+heures = [22, 6]
+[[action]]
+quand = "sonnette"
+service = "notify.notify"
+donnees = { message = "on sonne" }
+[[action]]
+service = "light.toggle"
+"""
+
+
+def test_actions_lues_et_concernees():
+    with tempfile.TemporaryDirectory() as d:
+        (Path(d) / "ha.toml").write_text(ACTIONS_TOML)
+        cfg = pont_ha.lire_config(Path(d) / "ha.toml")
+    a = cfg["actions"]
+    assert len(a) == 4 and cfg["ignorees"] == ["action"], "une action sans quand ni voix est ignoree"
+    assert a[0]["donnees"] == {"brightness_pct": 60, "entity_id": "light.entree"}
+    assert a[1]["quand"] == "maison:lumiere_du_salon" and a[1]["voix"] == "lumiere du salon"
+    assert pont_ha.action_concernee(a[0], "etat:accueil") and not pont_ha.action_concernee(a[0], "etat:chill")
+    assert pont_ha.action_concernee(a[3], "sonnette:Entree")     # l'evenement de HA (puis l'etat : delai_min_s)
+    assert not pont_ha.action_concernee(a[1], "maison:autre")
+    assert pont_ha.slug("Allume l'entrée !") == "allume_l_entree"
+    modele = pont_ha.lire_config(Path(__file__).parent / "ha.exemple.toml")
+    assert modele["actions"] == [], "le modele (A_REMPLIR) ne doit declencher aucune action sans cible"
+
+
+def test_le_canard_declenche_des_scenes_dans_ha():
+    """De bout en bout contre le faux HA : la voix (reconnue sur le canard) et l'accueil appellent des services."""
+    from commandes import Commandes
+    from test_commandes import FauxVosk
+    from test_brain import FauxClient
+    ha = mock_ha.MockHA(JETON)
+    with tempfile.TemporaryDirectory() as d:
+        (Path(d) / "ha.toml").write_text(ACTIONS_TOML.replace("http://127.0.0.1:1", ha.url))
+        cfg = pont_ha.lire_config(Path(d) / "ha.toml")
+    cfg["url_ws"] = ha.url_ws
+    pont = pont_ha.PontHA(cfg, JETON, log=lambda m: None)
+    pont.demarrer()
+    try:
+        maison = {a["voix"]: a["quand"] for a in cfg["actions"] if a["voix"]}
+        cmd = Commandes(lambda g: FauxVosk(g), nom="daffy", maison=maison)
+        assert "daffy lumiere du salon" in cmd.reco.grammaire
+        b = brain.Brain(FauxClient(), brain.Humeur(energie=0.9), seed=4)
+        for k in range(10):
+            pont.photographier(b, faux_etat())
+            b.tick({"t": k * 0.02, "safety": {"fallen": False}, "policy": "stand"}, 0.02)
+        cmd.reco.file.append(("daffy lumiere du salon", 0.95))
+        for e in cmd.bloc_brut(b"\0" * 640):
+            b.evenement(e)
+        b.evenement("retour:Raphael|3600")
+        for k in range(10, 60):
+            b.tick({"t": k * 0.02, "safety": {"fallen": False}, "policy": "stand"}, 0.02)
+        attendu = [("light", "toggle", {"entity_id": "light.salon"}),
+                   ("light", "turn_on", {"brightness_pct": 60, "entity_id": "light.entree"})]
+        assert attendre(lambda: sorted(ha.appels) == sorted(attendu), 5.0), ha.appels
+        assert "compris" in [e[1] for e in b.journal], "il accuse reception d'un petit son de canard"
+        cmd.reco.file.append(("daffy lumiere du salon", 0.95))   # redit tout de suite : pas deux fois en 2 s
+        for e in cmd.bloc_brut(b"\0" * 640):
+            b.evenement(e)
+        time.sleep(0.5)
+        assert len([x for x in ha.appels if x[1] == "toggle"]) == 1
+    finally:
+        pont.stop()
+        ha.arreter()
+
+
+def test_action_hors_de_sa_plage_horaire():
+    a = pont_ha.lire_action({"quand": "nap", "service": "scene.turn_on", "entite": "scene.nuit", "heures": [22, 6]})
+    pont = pont_ha.PontHA.__new__(pont_ha.PontHA)
+    pont.cfg, pont.horloge = {"actions": [a]}, time.monotonic
+    pont._actions, pont._derniere_action = __import__("queue").Queue(), {}
+    pont._sur_canard("etat:nap")
+    h = time.localtime().tm_hour
+    assert pont._actions.qsize() == (1 if (h >= 22 or h < 6) else 0)

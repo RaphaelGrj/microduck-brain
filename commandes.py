@@ -68,12 +68,17 @@ CONFIANCE_MIN = 0.6             # confiance moyenne des mots (Vosk) en dessous d
 
 
 class Commandes:
-    def __init__(self, fabrique_reconnaisseur, nom="canard", horloge=time.monotonic):
-        """`fabrique_reconnaisseur(grammaire_json)` -> objet facon vosk.KaldiRecognizer (AcceptWaveform, Result)."""
+    def __init__(self, fabrique_reconnaisseur, nom="canard", horloge=time.monotonic, maison=None):
+        """`fabrique_reconnaisseur(grammaire_json)` -> objet facon vosk.KaldiRecognizer (AcceptWaveform, Result).
+        `maison` : phrases domotiques de ha.toml ([[action]] voix = ...) -> evenement "maison:<id>" (pont_ha appelle
+        le service HA ; seule la COMMANDE reconnue sort du canard, jamais le son)."""
         self.nom = nom.lower()
         self.horloge = horloge
+        self.vocabulaire = dict(VOCABULAIRE)
+        for phrase, evt in (maison or {}).items():
+            self.vocabulaire.setdefault(phrase, evt)    # les commandes du canard gardent la priorite
         # le nom seul, nom + commande, et la commande seule (dite juste apres le nom, apres une pause)
-        phrases = sorted({f"{self.nom} {p}" for p in VOCABULAIRE} | set(VOCABULAIRE) | {self.nom})
+        phrases = sorted({f"{self.nom} {p}" for p in self.vocabulaire} | set(self.vocabulaire) | {self.nom})
         self.reco = fabrique_reconnaisseur(json.dumps(phrases + ["[unk]"], ensure_ascii=False))
         self.attente_nom = None            # instant ou le nom seul a ete dit : la commande peut suivre (3 s)
         self.tampon = np.zeros(0, dtype=np.int16)     # dernier son recu (TAMPON_S), pour le ton du nom
@@ -126,9 +131,9 @@ class Commandes:
             return []                       # sans son nom : ce n'est pas a lui qu'on parle
         self.attente_nom = None
         # pas de "ton:" avec une commande : le geste du ton (penaud, cajole) ecraserait la commande qu'il accompagne
-        if confiance < CONFIANCE_MIN or reste not in VOCABULAIRE:
+        if confiance < CONFIANCE_MIN or reste not in self.vocabulaire:
             return ["commande:pas_compris"]
-        return [VOCABULAIRE[reste]]
+        return [self.vocabulaire[reste]]
 
 
 def fabrique_vosk(chemin_modele):

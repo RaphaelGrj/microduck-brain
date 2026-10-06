@@ -140,9 +140,56 @@ def lire_config(chemin):
         else:
             s["reactions"] = app.get("reactions") or REACTIONS_PAR_TYPE.get(app.get("type", ""), {})
         cfg["surveillance"].append(s)
+    cfg["actions"] = []
+    for act in brut.get("action", []):          # canard -> maison : scenes et services HA declenches par le canard
+        a = lire_action(act)
+        if a is None:
+            cfg["ignorees"].append(act.get("nom") or act.get("quand") or act.get("voix") or "action")
+        else:
+            cfg["actions"].append(a)
     if est_vide(cfg["url"]):
         cfg["url"] = None
     return cfg
+
+
+def slug(texte):
+    """"Allume l'entrée" -> "allume_l_entree" (identifiant d'evenement)."""
+    import unicodedata
+    t = unicodedata.normalize("NFKD", str(texte)).encode("ascii", "ignore").decode().lower()
+    return "_".join("".join(c if c.isalnum() else " " for c in t).split())
+
+
+def lire_action(act):
+    """[[action]] de ha.toml -> dict, ou None si incomplete. `quand` : un etat du canard ("accueil", "nap", "bonjour",
+    "alarme"...) ou un evenement ("sonnette", "petarades", "maison:<id>"...) ; `voix` : phrase dite apres son nom
+    ("canard, lumiere") qui declenche l'action (reconnue SUR le canard, commandes.py) ; `service` : "domaine.service"
+    de HA ; `entite`, `donnees` : facultatifs ; `heures` : [debut, fin] (plage horaire, peut franchir minuit) ;
+    `delai_min_s` : pas plus d'une fois par (60 s par defaut)."""
+    service = act.get("service")
+    voix = None if est_vide(act.get("voix")) else " ".join(str(act["voix"]).lower().replace("'", " ").split())
+    quand = None if est_vide(act.get("quand")) else str(act["quand"])
+    if est_vide(service) or "." not in str(service) or (quand is None and voix is None):
+        return None
+    if "entite" in act and est_vide(act["entite"]):
+        return None     # entite pas encore remplie : SURTOUT pas d'appel sans cible (light.turn_on allumerait TOUT)
+    if quand is None:
+        quand = f"maison:{slug(voix)}"
+    donnees = dict(act.get("donnees") or {})
+    if not est_vide(act.get("entite")):
+        donnees.setdefault("entity_id", act["entite"])
+    heures = act.get("heures")
+    heures = tuple(heures) if isinstance(heures, (list, tuple)) and len(heures) == 2 else None
+    domaine, _, nom_service = str(service).partition(".")
+    return {"quand": quand, "voix": voix, "domaine": domaine, "service": nom_service, "donnees": donnees,
+            "heures": heures, "delai_min_s": float(act.get("delai_min_s", 60.0))}
+
+
+def action_concernee(action, evenement):
+    """L'evenement du canard ("etat:accueil", "sonnette:Entree", "maison:lumiere") declenche-t-il cette action ?"""
+    q = action["quand"]
+    if evenement.startswith("etat:"):
+        return q in (evenement, evenement[5:])
+    return q == evenement or (":" not in q and evenement.partition(":")[0] == q)
 
 
 def options_cerveau(cfg):
@@ -388,6 +435,8 @@ class PontHA:
         self._threads = []
         self.mqtt = None                        # PublieurMQTT si [mqtt] actif = true (sinon publication REST)
         self._derniere_vue_chat = None           # time.time() de la derniere fois ou la veille camera l'a vu
+        self._actions = queue.Queue()            # actions domotiques a executer (fil _executer_actions)
+        self._derniere_action = {}               # index de l'action -> instant du dernier declenchement
 
     # evenements maison -> cerveau
     def _sur_changement(self, entite, ancien, nouveau, duree_ancien=None):
@@ -477,6 +526,35 @@ class PontHA:
                     self.log(f"[HA] {nom} : cycle termine ({duree / 60:.0f} min)")
                     self.evenements.put(f"machine_finie:{nom}")
 
+    # canard -> maison : actions (scenes, services) ------------------------------------------------------------------
+    def _sur_canard(self, evenement):
+        """Ecouteur du cerveau (Brain.ecouteurs) : appele dans le fil du tick, il ne fait que mettre en file."""
+        now = self.horloge()
+        heure = time.localtime().tm_hour
+        for i, a in enumerate(self.cfg.get("actions") or ()):
+            if not action_concernee(a, evenement):
+                continue
+            if a["heures"] is not None:
+                debut, fin = a["heures"]
+                if not ((heure >= debut or heure < fin) if debut > fin else (debut <= heure < fin)):
+                    continue
+            if now - self._derniere_action.get(i, -1e9) < a["delai_min_s"]:
+                continue
+            self._derniere_action[i] = now
+            self._actions.put((a["domaine"], a["service"], a["donnees"], evenement))
+
+    def _executer_actions(self):
+        while not self.arret.is_set():
+            try:
+                domaine, service, donnees, pourquoi = self._actions.get(timeout=1.0)
+            except queue.Empty:
+                continue
+            try:
+                self.client.appeler_service(domaine, service, donnees)
+                self.log(f"[HA] {pourquoi} -> {domaine}.{service} {donnees.get('entity_id', '')}")
+            except Exception as e:                  # HA injoignable : le canard continue sa vie
+                self.log(f"[HA] {domaine}.{service} impossible ({type(e).__name__})")
+
     def lire_presence_initiale(self):
         """Au demarrage, qui est DEJA a la maison (person.*) : "presence:Nom|home" ou "presence:Nom|absent", sans
         accueil ni rituel. Sans cela, "personne a la maison" (lumiere oubliee...) n'aurait pas de sens."""
@@ -518,6 +596,9 @@ class PontHA:
     # canard -> maison
     def photographier(self, brain, state):
         """A passer a brain.run(a_chaque_tick=...) : memorise l'etat courant (rapide, sans reseau)."""
+        if (getattr(self, "cfg", None) or {}).get("actions") and \
+                self._sur_canard not in getattr(brain, "ecouteurs", [self._sur_canard]):
+            brain.ecouteurs.append(self._sur_canard)        # a la premiere trame : actions domotiques du canard
         # veille camera du chat (chat.py, extras du cerveau) : optionnelle, absente dans les tests qui n'en ont pas besoin.
         chat = (getattr(brain, "ctx", None) and (brain.ctx.extras or {}).get("chat"))
         chat_visible = bool(chat is not None and getattr(getattr(chat, "suivi", None), "visible", False))
@@ -658,6 +739,8 @@ class PontHA:
             self.mqtt = PublieurMQTT(mq, self.log, sur_evenement=self.evenements.put)
         self.lire_calme_initial()
         self.lire_presence_initiale()
+        if self.cfg.get("actions"):
+            threading.Thread(target=self._executer_actions, daemon=True).start()
         entites = set(self.surveillance)
         for cible in (lambda: self.client.ecouter(entites, self._sur_changement, self.arret), self._publier):
             t = threading.Thread(target=cible, daemon=True)

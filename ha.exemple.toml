@@ -157,6 +157,34 @@ evenement = "compagnie_fin"
 entite = "A_REMPLIR"                # la même entité
 etat = "off"
 
+# ---- 6 bis. Le canard declenche des scenes et des services dans la maison --------------------------
+# `quand`  : un etat du canard - "accueil" (quelqu'un rentre), "bonjour" (routine du matin), "nap" (sieste),
+#            "rituel_depart", "alarme", "danse", "balle"... - ou un evenement - "sonnette", "petarades", "vacarme"...
+# `voix`   : OU une phrase dite apres son nom ("canard, lumiere du salon") : reconnue SUR le canard (Vosk, avec --micro),
+#            seule la commande part vers HA, jamais le son ; il repond d'un petit "chirp" et d'un oui de la tete.
+# `service`: "domaine.service" de HA (light.turn_on, light.toggle, scene.turn_on, cover.open_cover, notify.notify...)
+# `entite`, `donnees` : facultatifs ; `heures = [22, 6]` : seulement dans cette plage ; `delai_min_s` (60 par defaut).
+[[action]]
+quand = "accueil"
+service = "light.turn_on"
+entite = "A_REMPLIR"                # ex. "light.entree"
+
+[[action]]
+quand = "bonjour"
+service = "cover.open_cover"
+entite = "A_REMPLIR"                # ex. "cover.volet_salon"
+
+[[action]]
+quand = "nap"
+heures = [22, 6]                    # sa sieste du soir lance la scene "nuit"
+service = "scene.turn_on"
+entite = "A_REMPLIR"                # ex. "scene.nuit"
+
+[[action]]
+voix = "lumiere du salon"           # "canard, lumiere du salon"
+service = "light.toggle"
+entite = "A_REMPLIR"                # ex. "light.salon"
+
 # ---- 7. Le cerveau (facultatif ; lu meme sans Home Assistant) ---------------------------------------
 [cerveau]
 # heures_calmes = [23, 7]           # de 23h a 7h : assis, silencieux, comme l'interrupteur calme
