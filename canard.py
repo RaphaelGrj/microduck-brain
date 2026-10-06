@@ -71,6 +71,7 @@ def assembler(client, args, log=print, cfg=None, cerveau=None):
         veille_balle = balle.VeilleBalle(vision.grab_frame)
         extras["mouvement"], extras["balle"] = veille_mvt, veille_balle
         extras["camera_test"] = lambda: vision.grab_frame(timeout=2.0) is not None    # auto-test : une image arrive
+        extras["luminosite"] = lambda: vision.luminosite(vision.grab_frame(timeout=2.0))   # lumiere oubliee
         fils += [veille_mvt, veille_balle]
         crochets.append(veille_balle.etat_robot_hook)
         log(f"camera : {vision.FRAME_URL} (mouvement pendant les jeux ; balle 2 fois par seconde)")

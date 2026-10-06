@@ -494,6 +494,8 @@ class PontHA:
             "traits": dict(brain.perso.d["traits"]) if hasattr(brain, "perso") else None,
             "blagues": brain.malice.compte() if hasattr(brain, "malice") else None,
             "diagnostic": brain.diagnostic.resume() if hasattr(brain, "diagnostic") else None,
+            "objets_au_sol": list(getattr(brain, "objets_au_sol", None) or []),
+            "lumiere_oubliee": getattr(brain, "lumiere_oubliee", False), "lumiere": getattr(brain, "lumiere", None),
             "derniere_blague": (brain.malice.historique[-1][1] if getattr(getattr(brain, "malice", None), "historique", None)
                                 else None),
         }
@@ -566,6 +568,14 @@ class PontHA:
                 ent["binary_sensor.microduck_autotest"] = ("off" if dg["autotest_ok"] else "on", {
                     "friendly_name": "Microduck - auto-test du matin", "device_class": "problem",
                     "echecs": ", ".join(dg["autotest_echecs"]) or None})
+        objets = [o for o in (i.get("objets_au_sol") or []) if time.time() - o[0] <= 86400]
+        ent["sensor.microduck_objets_au_sol"] = (len(objets), {
+            "friendly_name": "Microduck - objets nouveaux au sol (24 h)", "icon": "mdi:shoe-sneaker",
+            "dernier_il_y_a_min": round((time.time() - objets[-1][0]) / 60) if objets else None,
+            "dernier_position_odom": f"{objets[-1][1]:.2f},{objets[-1][2]:.2f}" if objets else None})
+        ent["binary_sensor.microduck_lumiere_oubliee"] = ("on" if i.get("lumiere_oubliee") else "off", {
+            "friendly_name": "Microduck - lumiere allumee sans personne", "icon": "mdi:lightbulb-alert",
+            "luminosite": round(i["lumiere"], 2) if i.get("lumiere") is not None else None})
         attrs_chat = {"friendly_name": "Microduck - chat vu", "icon": "mdi:cat"}
         if self._derniere_vue_chat is not None:
             attrs_chat["derniere_vue_il_y_a_s"] = round(time.time() - self._derniere_vue_chat, 1)

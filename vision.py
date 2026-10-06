@@ -59,6 +59,12 @@ class Detection:
     touche_bord: bool = False  # coupe par le bord de l'image : centre/rayon sont approximatifs
 
 
+def luminosite(img) -> float:
+    """Luminosite moyenne de l'image, 0 (noir) a 1 (blanc) : lumiere allumee ou eteinte dans la piece."""
+    gris = img if img.ndim == 2 else cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    return float(gris.mean()) / 255.0
+
+
 def grab_frame(url: str = FRAME_URL, timeout: float = 5.0) -> np.ndarray:
     # Regle du projet : la camera du canard est lue et analysee SUR le canard - jamais une camera distante.
     from urllib.parse import urlparse

@@ -243,3 +243,49 @@ def test_pas_de_compagnie_sans_lieu_appris():
     b, _, _ = cerveau(tof=Tof())
     vivre(b, 3, evenements=[(0.5, "compagnie")])
     assert "va_compagnie" not in [e[1] for e in b.journal] and "compagnie" not in [e[1] for e in b.journal]
+
+
+# -- capteurs maison par la camera --------------------------------------------------------------------------------
+def test_lumiere_oubliee_la_nuit_quand_la_maison_est_vide():
+    lum = [0.6]
+    b, _, h = cerveau(heure=23, luminosite=lambda: lum[0], luminosite_synchrone=True)
+    vivre(b, 5, evenements=[(0.5, "retour:Raphael|3600")])
+    vivre(b, 700)
+    assert not b.lumiere_oubliee, "quelqu'un est a la maison"
+    vivre(b, 700, evenements=[(0.5, "depart:Raphael")])
+    assert b.lumiere_oubliee and b.lumiere == 0.6
+    lum[0] = 0.05
+    vivre(b, 700)
+    assert not b.lumiere_oubliee, "eteinte"
+    lum[0], h.heure = 0.6, 15
+    vivre(b, 700)
+    assert not b.lumiere_oubliee, "le jour, la piece est eclairee par le soleil"
+
+
+def test_lumiere_rien_sans_suivi_de_presence():
+    b, _, _ = cerveau(heure=23, luminosite=lambda: 0.9, luminosite_synchrone=True)
+    vivre(b, 700)
+    assert not b.lumiere_oubliee, "sans presence HA, 'personne a la maison' n'a pas de sens"
+
+
+def test_objets_au_sol_et_lumiere_publies_dans_home_assistant():
+    import time
+    import pont_ha
+    b, _, _ = cerveau()
+    b.objets_au_sol = [(time.time() - 120, 1.2, 0.4)]
+    b.lumiere_oubliee, b.lumiere = True, 0.42
+    pont = pont_ha.PontHA.__new__(pont_ha.PontHA)
+    pont._derniere_vue_chat = None
+    pont.photographier(b, {})
+    ent = pont.entites_du_canard()
+    assert ent["sensor.microduck_objets_au_sol"][0] == 1
+    assert ent["sensor.microduck_objets_au_sol"][1]["dernier_position_odom"] == "1.20,0.40"
+    assert ent["binary_sensor.microduck_lumiere_oubliee"] == ("on", {
+        "friendly_name": "Microduck - lumiere allumee sans personne", "icon": "mdi:lightbulb-alert", "luminosite": 0.42})
+
+
+def test_luminosite_d_une_image():
+    import numpy as np
+    from vision import luminosite
+    assert luminosite(np.zeros((64, 36, 3), np.uint8)) == 0.0
+    assert abs(luminosite(np.full((64, 36, 3), 255, np.uint8)) - 1.0) < 1e-9

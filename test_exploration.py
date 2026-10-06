@@ -82,3 +82,4 @@ def test_le_cerveau_remarque_l_objet_nouveau():
     noms = [e[1] for e in b.journal]
     assert "remarque" in noms, noms
     assert any(m == "robot.sound" and p == {"tag": "inquire"} for m, p in c.appels)
+    assert len(b.objets_au_sol) == 1 and b.objets_au_sol[0][1:] == (0.6, 0.0), "signale a Home Assistant"

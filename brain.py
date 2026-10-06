@@ -16,6 +16,7 @@ Usage : python3 brain.py [duree_s] [--energy 0.2] [--events bruit@20,chat@40]
 import math
 import random
 import sys
+import threading
 import time
 
 from exploration import Exploration
@@ -218,6 +219,11 @@ class Brain:
         self.derniere_sante = None              # derniere reponse de robot.health
         self._jour_autotest = None
         self.objet_nouveau = None               # distance (m) devant de l'objet nouvellement remarque
+        self.objets_au_sol = []                 # (heure murale, x, y odom) des objets nouveaux remarques : vers HA
+        self.presence_suivie = False            # au moins un retour/depart HA vu : "personne a la maison" a un sens
+        self.lumiere = None                     # derniere luminosite mesuree la nuit, maison vide (0..1)
+        self.lumiere_oubliee = False
+        self._t_lumiere = -1e9
         self.surchauffe = False                 # servos trop chauds (robot.health.motors.max_c)
         self.cpu_chaud = False                  # carte trop chaude (robot.health.cpu_temp_c) : camera en pause
         self.temperatures = {}                  # derniere lecture : {"moteurs": max_c, "cpu": c}
@@ -335,6 +341,7 @@ class Brain:
                 self.differes.append(nom)       # ni son ni geste pendant que quelqu'un parle au canard
                 continue
             if base in ("retour", "depart"):
+                self.presence_suivie = True
                 # presence d'un habitant (person.* dans HA) : "retour:Nom|absence_s", "depart:Nom"
                 qui, _, absence = detail.partition("|")
                 mem = self.ctx.extras.get("memoire")
@@ -1017,6 +1024,39 @@ class Brain:
             if veille is not None:
                 veille.desarmer()
 
+    LUMIERE_PERIODE_S = 600.0
+    LUMIERE_SEUIL = 0.25                # luminosite moyenne au-dessus : piece eclairee (camera, a etalonner)
+    NUIT = (21, 7)                      # heures ou une piece eclairee sans personne est une lumiere oubliee
+
+    def _verifie_lumiere(self):
+        """Lumiere oubliee (ROADMAP "Capteurs d'etat par vision") : la nuit, maison vide d'apres HA, la piece ou il se
+        trouve est-elle eclairee ? Mesure dans un fil (requete HTTP de la camera locale), toutes les 10 min, publiee
+        dans HA (binary_sensor.microduck_lumiere_oubliee) - a HA de decider quoi en faire. Rien ne quitte le canard
+        qu'un oui/non et un nombre."""
+        mesure = self.ctx.extras.get("luminosite")
+        if mesure is None or self.t_global - self._t_lumiere < self.LUMIERE_PERIODE_S:
+            return
+        self._t_lumiere = self.t_global
+        h = self.horloge().tm_hour
+        nuit = h >= self.NUIT[0] or h < self.NUIT[1]
+        if not (nuit and self.presence_suivie and not self.presents):
+            self.lumiere_oubliee = False
+            return
+
+        def lire():
+            try:
+                self.lumiere = float(mesure())
+            except Exception:
+                return
+            oubliee = self.lumiere >= self.LUMIERE_SEUIL
+            if oubliee and not self.lumiere_oubliee:
+                print(f"[{self.t_global:6.1f}s] lumiere allumee, personne a la maison ({self.lumiere:.2f})", flush=True)
+            self.lumiere_oubliee = oubliee
+        if self.ctx.extras.get("luminosite_synchrone"):
+            lire()                              # tests
+        else:
+            threading.Thread(target=lire, daemon=True).start()
+
     # Rythme circadien reel (ROADMAP "Pistes supplementaires") : vivacite selon l'heure LOCALE - endormi la nuit, creux
     # apres le dejeuner, plus vif en fin d'apres-midi, qui se calme seul le soir sans mode calme. Opt-in
     # (extras["circadien"], active par canard.py) : sans lui, vivacite = 1 et rien ne change.
@@ -1248,6 +1288,7 @@ class Brain:
             self._discretion(False)
         self._babille(dt)
         self._surveille_peripherie()
+        self._verifie_lumiere()
         self.t_etat += dt
         self.courant.pas(self, self.t_etat)
         if self.t_etat >= self.fin_etat:
