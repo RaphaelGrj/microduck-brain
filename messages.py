@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Messages laisses au canard dans l'application : « dis a Lea qu'il y a des crepes ».
+"""Messages laisses au canard dans l'application : « dis a Clemence qu'il y a des crepes ».
 
 Le canard ne dit pas de mots (regle d'identite) : quand la personne est la (retour a la maison, ou deja presente), il
 le lui SIGNALE en sons de canard (« il y a du nouveau ») et l'application lui montre le texte. L'expediteur est prevenu

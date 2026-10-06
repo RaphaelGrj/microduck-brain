@@ -20,11 +20,11 @@ def test_arrivee_par_le_telephone_accueille_sauf_deja_present():
     b, _, _ = cerveau()
     vu = []
     b.ecouteurs.append(vu.append)
-    vivre(b, 1, evenements=[(0.1, "arrivee:Léa")])
-    assert "etat:accueil" in vu and "Léa" in b.presents
+    vivre(b, 1, evenements=[(0.1, "arrivee:Clémence")])
+    assert "etat:accueil" in vu and "Clémence" in b.presents
     vu.clear()
     vivre(b, 6)
-    vivre(b, 1, evenements=[(0.1, "arrivee:Léa")])
+    vivre(b, 1, evenements=[(0.1, "arrivee:Clémence")])
     assert "etat:accueil" not in vu, "deja compte present (Home Assistant) : pas de second accueil"
 
 
@@ -32,14 +32,14 @@ def test_message_signale_au_retour_puis_tout_de_suite_si_present():
     b, _, _ = cerveau()
     vu = []
     b.ecouteurs.append(vu.append)
-    vivre(b, 1, evenements=[(0.1, "message:m1|Léa"), (0.2, "message:m2|Paul")])
+    vivre(b, 1, evenements=[(0.1, "message:m1|Clémence"), (0.2, "message:m2|Paul")])
     assert not [v for v in vu if v.startswith("message_transmis")]
-    vivre(b, 1, evenements=[(0.1, "retour:Léa|7200")])
+    vivre(b, 1, evenements=[(0.1, "retour:Clémence|7200")])
     assert "message_transmis:m1" in vu and "message_transmis:m2" not in vu
     assert b.etats["accueil"].messages == ["message_perso"], "l'accueil ajoute « il y a du nouveau »"
     vivre(b, 8)
     vu.clear()
-    vivre(b, 1, evenements=[(0.1, "message:m3|Léa")])          # elle est la : il le signale aussitot
+    vivre(b, 1, evenements=[(0.1, "message:m3|Clémence")])          # elle est la : il le signale aussitot
     assert "message_transmis:m3" in vu and "etat:messager" in vu
     vivre(b, 1, evenements=[(0.1, "message_annule:m2")])
     assert b.messages_perso == []
@@ -116,7 +116,7 @@ def test_api_photos_et_messages(tmp_path):
         assert json.loads(requete(a.port, "/api/photos")[1])["liste"] == []
 
         statut, corps = requete(a.port, "/api/message", code="petit-canard",
-                                corps={"pour": "Papa", "texte": "Il y a des crêpes", "de": "Léa"})
+                                corps={"pour": "Papa", "texte": "Il y a des crêpes", "de": "Clémence"})
         m = json.loads(corps)["message"]
         assert statut == 200 and a.source() == [f"message:{m['id']}|Papa"]
         assert requete(a.port, "/api/message", corps={"pour": "", "texte": "x"})[0] == 400
@@ -130,11 +130,11 @@ def test_api_photos_et_messages(tmp_path):
 
 def test_messages_redonnes_au_cerveau_apres_redemarrage():
     a = appli.Appli(CODE, port=0, log=lambda m: None)
-    m = a.messages.ajouter("Léa", "Rappelle-moi")
+    m = a.messages.ajouter("Clémence", "Rappelle-moi")
     a2 = appli.Appli(CODE, port=0, log=lambda m: None)              # (le canard a redemarre)
     b, _, _ = cerveau()
     a2.photographier(b, {})
-    assert a2.source() == [f"message:{m['id']}|Léa"]
+    assert a2.source() == [f"message:{m['id']}|Clémence"]
 
 
 def test_resume_quotidien_des_vacances():

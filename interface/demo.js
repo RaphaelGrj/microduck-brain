@@ -33,7 +33,7 @@
   let i = 0, finEtat = 0, force = null, tete = null, assis = false, calme = false, garde = false, vacances = false;
   // lots 5 a 8 : messages, photos, parcours, carnet, invites (imaginaires, dans ce telephone)
   const H = Date.now() / 1000;
-  const messagesDemo = [{ id: "m1", pour: "Léa", texte: "Il reste des crêpes dans le frigo !", de: "Raphaël", t: H - 5400, transmis: H - 3000 }];
+  const messagesDemo = [{ id: "m1", pour: "Clémence", texte: "Il reste des crêpes dans le frigo !", de: "Raphaël", t: H - 5400, transmis: H - 3000 }];
   const photosDemo = [
     { id: "d3", t: H - 1800, motif: "chat", src: "/microduck/debout-gauche.webp" },
     { id: "d2", t: H - 7200, motif: "impression", src: "/microduck/debout-tete-basse.webp" },

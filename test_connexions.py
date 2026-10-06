@@ -29,8 +29,8 @@ def test_configuration_valide_et_secrets(config):
     configuration.ecrire("home_assistant", {"url": "http://ha.local:8123", "token": configuration.SECRET})
     assert configuration.lire()["home_assistant"]["token"] == "JETON-SECRET"      # « •••• » ne l'efface pas
     configuration.ecrire("habitant", [{"nom": "Raphaël", "entite": "person.raphael"}, {"nom": "raphaël"}, {"nom": ""},
-                                      {"nom": "Léa", "entite": "rm -rf /"}])
-    assert configuration.lire()["habitant"] == [{"nom": "Raphaël", "entite": "person.raphael"}, {"nom": "Léa"}]
+                                      {"nom": "Clémence", "entite": "rm -rf /"}])
+    assert configuration.lire()["habitant"] == [{"nom": "Raphaël", "entite": "person.raphael"}, {"nom": "Clémence"}]
     configuration.ecrire("imprimante_directe", [{"nom": "MK4S", "type": "prusalink", "adresse": "192.168.1.30", "cle_api": "K"},
                                                 {"nom": "Cloud", "type": "prusalink", "adresse": "connect.prusa3d.com"},
                                                 {"nom": "Saturn", "type": "sdcp", "adresse": "192.168.1.31"}])
@@ -57,12 +57,12 @@ def test_installation_puis_profil_enfant(config):
         assert requete(a.port, "/api/etat", code="nimporte")[0] == 401
         assert requete(a.port, "/api/installation", code=None, corps={"code": "123"})[0] == 400
         assert requete(a.port, "/api/installation", code=None,
-                       corps={"code": "canard-42", "nom": "Riri", "habitants": ["Raphaël", "Léa"]})[0] == 200
+                       corps={"code": "canard-42", "nom": "Riri", "habitants": ["Raphaël", "Clémence"]})[0] == 200
         assert requete(a.port, "/api/installation", code=None, corps={"code": "pirate-99"})[0] == 403   # une fois
         assert configuration.lire()["cerveau"]["nom"] == "Riri" and a.code == "canard-42"
         time.sleep(1.1)
         statut, corps = requete(a.port, "/api/configuration", code="canard-42")
-        assert statut == 200 and [h["nom"] for h in json.loads(corps)["habitant"]] == ["Raphaël", "Léa"]
+        assert statut == 200 and [h["nom"] for h in json.loads(corps)["habitant"]] == ["Raphaël", "Clémence"]
         r = json.loads(requete(a.port, "/api/configuration", code="canard-42",
                                corps={"section": "appli", "valeur": {"code": "canard-42", "code_enfant": "petit-canard"}})[1])
         assert r["ok"] and a.code_enfant == "petit-canard"
