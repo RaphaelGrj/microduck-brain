@@ -196,6 +196,8 @@ class Brain:
             "timide": Timide(),                                                    # visiteur inconnu
             "apprivoise": Sequence("apprivoise", [("curieux", "inquire")]),        # la timidite s'est dissipee
             "coup_oeil": CoupOeil(),
+            "penaud": Sequence("penaud", [("gene", None), ("fatigue", None)]),   # gronde : tete basse, sans un son
+            "cajole": Sequence("cajole", [("content", "coo")]),                   # appele tendrement
             "mefiant": Sequence("mefiant", [("surpris", "inquire"), ("gene", None)]),   # l'aspirateur, les 1res fois
             "bips": Sequence("bips", [("curieux", "inquire")]),                    # bips d'un appareil
             "retrait": Sequence("retrait", [("gene", None)]),                      # trop de bruit : il s'en va                                               # mouvement a la peripherie
@@ -312,7 +314,7 @@ class Brain:
                 self._discretion(base == "telephone")
                 continue
             if base in ("visiteur", "visiteur_fin"):
-                self._sur_visiteur(base == "visiteur")
+                self._sur_visiteur(base == "visiteur", detail or None)
                 continue
             if base in ("voix", "intonation", "silence_conversation", "discussion_longue"):
                 self._apprend_repas()
@@ -332,6 +334,20 @@ class Brain:
                 continue
             if base in ("vacarme", "vacarme_fin"):
                 self._sur_vacarme(base == "vacarme")   # meme pendant la sieste : la fin du vacarme doit etre vue
+                continue
+            if base == "ton":
+                # Le ton sur lequel on dit son nom (commandes.py), sans comprendre les mots : grondé -> penaud, tete
+                # basse, plus de blague un moment ; cajole -> content, il roucoule. Jamais en mode calme ni la nuit.
+                if self.mode_calme or self.courant.nom in ("nap", "alarme", "porte", "ecoute"):
+                    continue
+                if detail == "gronde":
+                    self.perso.vit("gronde")
+                    self.malice.stop(self)
+                    self.suivant_force = None
+                    self._bascule("penaud")
+                elif detail == "calin":
+                    self.perso.vit("calin")
+                    self._bascule("cajole")
                 continue
             if base == "baillement_entendu":
                 if (self.courant.nom in ("chill", "look", "wander") and not self.mode_calme
@@ -968,18 +984,33 @@ class Brain:
         if on and self.courant.nom not in ("chill", "look", "nap", "alarme", "porte", "compagnie"):
             self._bascule("chill")
 
-    def _sur_visiteur(self, arrive):
-        if arrive and (self.visite is None or self.t_global - self.visite > self.TIMIDE_S):
-            self.visite, self._apprivoise = self.t_global, False
-            print(f"[{self.t_global:6.1f}s] un visiteur inconnu : timide", flush=True)
-        elif not arrive:
+    def _sur_visiteur(self, arrive, qui=None):
+        """Un visiteur : inconnu (sonnette puis voix, sans nom) -> pleinement timide ; nomme par HA (declencheur
+        "visiteur", ex. la personne qui fait le menage, un grand-parent) -> sa familiarite (memoire.py) grandit a chaque
+        visite et la timidite de depart baisse d'autant : ni inconnu, ni habitant (ROADMAP "Visiteur recurrent")."""
+        if not arrive:
             self.visite, self._apprivoise = None, True
+            return
+        if self.visite is not None and self.t_global - self.visite <= self.TIMIDE_S:
+            return
+        mem = self.ctx.extras.get("memoire")
+        fam = 0.0
+        if qui and mem is not None and hasattr(mem, "familiarite"):
+            fam = mem.familiarite(qui)
+            if hasattr(mem, "rencontre"):
+                mem.rencontre(qui)
+        self.timidite_depart = max(0.0, 1.0 - fam)
+        if self.timidite_depart < 0.15:
+            print(f"[{self.t_global:6.1f}s] {qui} : un visiteur bien connu, pas de timidite", flush=True)
+            return
+        self.visite, self._apprivoise = self.t_global, self.timidite_depart < 0.4
+        print(f"[{self.t_global:6.1f}s] visiteur {qui or 'inconnu'} : timide ({self.timidite_depart:.1f})", flush=True)
 
     def timidite(self):
-        """1 a l'arrivee d'un visiteur inconnu, 0 au bout de TIMIDE_S."""
+        """timidite_depart (1 pour un inconnu) a l'arrivee du visiteur, 0 au bout de TIMIDE_S."""
         if self.visite is None:
             return 0.0
-        return max(0.0, 1.0 - (self.t_global - self.visite) / self.TIMIDE_S)
+        return max(0.0, getattr(self, "timidite_depart", 1.0) - (self.t_global - self.visite) / self.TIMIDE_S)
 
     def _jour_special_aujourdhui(self):
         return self.jour_special is not None and self.jour_special[0] == getattr(self.horloge(), "tm_yday", None)

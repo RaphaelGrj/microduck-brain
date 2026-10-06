@@ -328,3 +328,26 @@ def test_aspirateur_mefiance_puis_curiosite_puis_indifference():
         vivre(b, 6, evenements=[(0.5, "aspirateur_on"), (5.0, "aspirateur_off")])
         reactions.append(b.journal[n][1] if len(b.journal) > n else None)
     assert reactions[0] == "mefiant" and "curious" in reactions and reactions[-1] is None, reactions
+
+
+def test_visiteur_recurrent_de_moins_en_moins_timide():
+    class Mem:
+        def __init__(self):
+            self.n = {}
+
+        def familiarite(self, qui):
+            return 1 - 0.7 ** self.n.get(qui, 0)
+
+        def rencontre(self, qui):
+            self.n[qui] = self.n.get(qui, 0) + 1
+    m = Mem()
+    b, _, _ = cerveau(memoire=m)
+    departs = []
+    for semaine in range(8):
+        vivre(b, 2, evenements=[(0.5, "visiteur:Josiane")])
+        departs.append(b.timidite())
+        vivre(b, 2, evenements=[(0.5, "visiteur_fin:Josiane")])
+    assert departs[0] > 0.95 and departs == sorted(departs, reverse=True), departs
+    assert departs[-1] == 0.0, "bien connue : plus de timidite"
+    vivre(b, 2, evenements=[(0.5, "visiteur")])
+    assert b.timidite() > 0.95, "un inconnu reste un inconnu"

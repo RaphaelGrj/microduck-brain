@@ -29,6 +29,8 @@ EXPERIENCES = {
     "chute": {"prudence": +0.03},
     "sursaut": {"prudence": +0.004},
     "jeu": {"espieglerie": +0.01, "sociabilite": +0.01},
+    "gronde": {"espieglerie": -0.03, "sociabilite": -0.005},     # son nom dit sur un ton fache
+    "calin": {"sociabilite": +0.01},                              # son nom dit sur un ton doux / chantonne
 }
 
 

@@ -3,6 +3,8 @@
 obligatoire, confiance, et reponses UNIQUEMENT en sons de canard."""
 import json
 
+import numpy as np
+
 from brain import SONS_CANARD, Brain, Humeur
 from commandes import VOCABULAIRE, Commandes
 from test_brain import FauxClient, simule
@@ -87,3 +89,50 @@ def test_commandes_dans_le_cerveau():
     assert b.courant.nom == "nap", "en mode calme, seul 'reveille-toi' compte"
     simule(b, 3, evenements=[(0.5, "commande:reveil")])
     assert not b.mode_calme
+
+
+def voix_nom(f0_debut, f0_fin, amplitude, duree=0.5):
+    t = np.arange(int(duree * 16000)) / 16000
+    f0 = f0_debut + (f0_fin - f0_debut) * t / duree
+    ph = 2 * np.pi * np.cumsum(f0) / 16000
+    env = np.minimum(1.0, np.minimum(t, duree - t) / 0.03)
+    return (amplitude * env * (np.sin(ph) + 0.5 * np.sin(2 * ph)) * 32767).astype(np.int16)
+
+
+def appelle(c, son, t0):
+    """Le nom dit pendant `son`, dans un flux de silence ; Vosk le reconnait a la fin avec ses instants."""
+    silence = np.zeros(1600, dtype=np.int16)
+    debut = c.lus / 16000 + 0.1
+    flux = np.concatenate([silence, son, silence])
+    c.reco.file.append(("daffy", 0.95))
+    c.reco.mots = [{"word": "daffy", "conf": 0.95, "start": debut, "end": debut + len(son) / 16000}]
+    return c.bloc_brut(flux.tobytes())
+
+
+class FauxVoskInstants(FauxVosk):
+    def Result(self):
+        texte, conf = self.file.pop(0)
+        return json.dumps({"text": texte, "result": self.mots})
+
+
+def test_ton_du_nom_gronde_ou_calin():
+    c = Commandes(lambda g: FauxVoskInstants(g), nom="daffy")
+    for k in range(4):                                    # sa facon habituelle de l'appeler
+        assert appelle(c, voix_nom(200, 190, 0.05), k) == ["commande:ecoute"]
+    assert appelle(c, voix_nom(210, 180, 0.2), 5) == ["commande:ecoute", "ton:gronde"]     # fort, qui descend
+    assert appelle(c, voix_nom(190, 260, 0.05), 6) == ["commande:ecoute", "ton:calin"]     # chantonne, qui monte
+    assert appelle(c, voix_nom(200, 190, 0.05), 7) == ["commande:ecoute"]
+
+
+def test_penaud_quand_on_le_gronde_cajole_quand_on_le_cajole():
+    cl = FauxClient()
+    b = Brain(cl, Humeur(energie=0.9), seed=5)
+    simule(b, 1.05, evenements=[(1.0, "commande:ecoute")])
+    n = len(cl.appels)
+    simule(b, 4, evenements=[(0.05, "ton:gronde")])
+    assert b.journal[-1][1] == "penaud" or "penaud" in [e[1] for e in b.journal]
+    assert not any(m == "robot.sound" for m, _ in cl.appels[n:]), "penaud : pas un son"
+    assert b.malice.stop_jusqua > b.t_global, "plus de blague apres une gronderie"
+    assert b.perso.trait("espieglerie") < 0.5
+    simule(b, 5, evenements=[(1.0, "ton:calin")])
+    assert "cajole" in [e[1] for e in b.journal] and ("robot.sound", {"tag": "coo"}) in cl.appels
