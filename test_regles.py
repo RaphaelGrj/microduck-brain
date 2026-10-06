@@ -20,6 +20,7 @@ from test_brain import FauxClient, simule
 RACINE = Path(__file__).parent
 MODULES = subprocess.run([sys.executable, str(RACINE / "deploy/robot/modules.py")], capture_output=True, text=True,
                          check=True).stdout.split()
+MODULES = [m for m in MODULES if m.endswith(".py")]    # (la liste comprend aussi le dossier interface/ de l'appli)
 
 
 def test_sons_de_la_banque_officielle_seulement():
@@ -93,9 +94,17 @@ def test_rien_que_des_etats_vers_home_assistant():
 
 def test_seul_pont_ha_parle_au_reseau():
     """Hors du pont Home Assistant, aucun module embarque n'ouvre de connexion reseau autre que locale."""
-    reseau = re.compile(r"urlopen|websockets|paho|requests\.|socket\.AF_INET|http\.client")
+    reseau = re.compile(r"urlopen|websockets|paho|requests\.|socket\.AF_INET|http\.client|http\.server")
     for nom in MODULES:
-        if nom in ("pont_ha.py", "vision.py"):
-            continue                    # vision : la camera en local seulement (canard.verifier_local)
+        if nom in ("pont_ha.py", "vision.py", "appli.py"):
+            # vision : la camera en local seulement (canard.verifier_local) ; appli : serveur du RESEAU LOCAL seulement,
+            # qui n'envoie que des etats (test_appli.test_reseau_local_seulement, et aucun appel sortant ci-dessous)
+            continue
         code = (RACINE / nom).read_text()
         assert not reseau.search(code), f"{nom} ouvre une connexion reseau"
+
+
+def test_l_application_ne_fait_aucun_appel_sortant():
+    """appli.py repond au telephone ; il n'ouvre lui-meme aucune connexion vers l'exterieur."""
+    code = (RACINE / "appli.py").read_text()
+    assert not re.search(r"urlopen|websockets|paho|requests\.|http\.client|socket\.AF_INET", code)
