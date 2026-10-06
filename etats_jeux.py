@@ -367,6 +367,18 @@ class JeuBalle(Etat):
         self.resultat = resultat
         self.phase = "fin"
         brain.fin_etat = t
+        mem = brain.ctx.extras.get("memoire")             # statistiques du jeu de balle (application, page Jouer)
+        if mem is not None and hasattr(mem, "donnees") and resultat in ("reussi", "rate"):
+            st = mem.donnees.setdefault("balle", {"parties": 0, "reussies": 0, "tirs": 0, "serie": 0, "record": 0})
+            st["parties"] += 1
+            st["tirs"] += max(1, getattr(self, "manche", 1))
+            if resultat == "reussi":
+                st["reussies"] += 1
+                st["serie"] += 1
+                st["record"] = max(st["record"], st["serie"])
+            else:
+                st["serie"] = 0
+            st["derniere"] = resultat
 
     def sort(self, brain):
         self._arreter_vision()

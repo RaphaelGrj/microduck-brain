@@ -58,6 +58,12 @@ def version_du_cerveau():
         return None
 
 
+def robotd_neuf():
+    """Une connexion robotd a part (page Comportements de l'appli) : la boucle du cerveau garde la sienne."""
+    from poc_robotd_client import SOCK_PATH, RobotdClient
+    return RobotdClient(SOCK_PATH)
+
+
 def assembler(client, args, log=print, cfg=None, cerveau=None, appli_cfg=None, brut=None):
     """-> dict(extras, sources, crochets, options, pont, fils) ; `cfg` = config HA deja lue (ou None), `cerveau` =
     section [cerveau] du fichier de config (lue meme sans Home Assistant : le canard vit sans lui)."""
@@ -70,6 +76,8 @@ def assembler(client, args, log=print, cfg=None, cerveau=None, appli_cfg=None, b
                                        appli_mod.Appli.fichier_design_defaut()], log=log)
     cerveau = {**cerveau, **reglages.lire()}           # reglages changes dans l'appli : prennent le dessus sur ha.toml
     extras, sources, crochets, fils = {"memoire": memoire.Memoire(ecriture_differee=True)}, [], [], []
+    import choregraphies
+    extras["choregraphies"] = {c["nom"]: c["etapes"] for c in choregraphies.lire()}
     extras["autotest"] = cerveau.get("autotest", True)     # auto-test au premier reveil de la journee (diagnostic.py)
     extras["circadien"] = cerveau.get("circadien", True)   # vivacite selon l'heure du jour (Brain.vivacite)
     extras["garde"] = bool(cerveau.get("garde", False))    # maison vide + voix/choc -> evenement HA (opt-in)
@@ -140,6 +148,8 @@ def assembler(client, args, log=print, cfg=None, cerveau=None, appli_cfg=None, b
             appli.cerveau = dict(cerveau)
             appli._reglages_a_appliquer = dict(cerveau)     # routines programmees : actives des le demarrage
             appli.brut = brut if brut is not None else {}
+            appli.choregraphies = extras["choregraphies"]       # le meme dict : une choregraphie gardee se joue aussitot
+            appli.robotd = robotd_neuf
         except ValueError as e:
             log(f"application Microduck desactivee : {e}")
     lieux = None

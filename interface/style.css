@@ -338,3 +338,29 @@ input {
 .barre-impression { height: 6px; border-radius: 3px; background: var(--barre); overflow: hidden; margin-top: 4px; }
 .barre-impression i { display: block; height: 100%; background: var(--orange); }
 body.enfant [data-parent] { display: none !important; }
+
+/* Lot 2 : defi, studio, pave du regard, curseurs */
+.defi { margin-top: 10px; }
+.defi summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+.defi li.tour .nom { color: var(--orange-fonce); font-weight: 700; }
+.pave { position: relative; height: 180px; margin-top: 8px; border-radius: 16px; touch-action: none;
+  background: radial-gradient(circle, var(--carte) 0, var(--barre) 100%); border: 1px solid var(--bord); }
+.pave i { position: absolute; width: 28px; height: 28px; margin: -14px 0 0 -14px; border-radius: 50%; left: 50%; top: 50%;
+  background: var(--orange); box-shadow: 0 0 0 6px color-mix(in srgb, var(--orange) 25%, transparent); pointer-events: none; }
+.curseur { display: grid; grid-template-columns: 72px 1fr 72px; align-items: center; gap: 8px; margin: 14px 0;
+  font-size: .8rem; color: var(--discret); }
+.curseur:last-of-type { margin-bottom: 4px; }
+.curseur input { width: 100%; accent-color: var(--orange-fonce); }
+.etapes { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; counter-reset: etape; }
+.etapes li { border: 1px solid var(--bord); border-radius: 12px; padding: 8px 10px; counter-increment: etape; }
+.etapes li header { display: flex; align-items: center; gap: 6px; }
+.etapes li header b { flex: 1; }
+.etapes li header b::before { content: counter(etape) ". "; color: var(--discret); }
+.etapes li header button { min-height: 32px; padding: 2px 8px; }
+.etapes li label { display: grid; grid-template-columns: 100px 1fr 42px; align-items: center; gap: 6px; font-size: .85rem; }
+.etapes li select { font: inherit; width: 100%; min-height: 40px; border-radius: 10px; border: 1px solid var(--bord);
+  background: var(--carte); color: var(--texte); }
+.ajouts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.ajouts button { flex: 1 1 auto; min-height: 40px; padding: 6px 10px; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+.curseur span:last-child { text-align: right; }

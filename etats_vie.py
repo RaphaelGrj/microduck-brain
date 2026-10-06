@@ -655,6 +655,14 @@ class RegardGuide(Etat):
         self.lacet, self.tangage = 0.0, 0.0
 
     def oriente(self, sens):
+        if str(sens).startswith("abs|"):        # pave tactile de l'appli : position directe, toujours bornee
+            try:
+                _, lacet, tangage = str(sens).split("|")
+                self.lacet = max(-0.8, min(0.8, float(lacet)))
+                self.tangage = max(-0.4, min(0.5, float(tangage)))
+            except ValueError:
+                pass
+            return
         if sens == "centre":
             self.lacet = self.tangage = 0.0
         elif sens in ("gauche", "droite"):

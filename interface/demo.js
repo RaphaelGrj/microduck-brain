@@ -17,6 +17,9 @@
 
   let carteDepuis = -1e6;
   let batterieDedans = "2", batterieANommer = true;
+  let choregraphiesDemo = [{ nom: "Coucou", etapes: [{ type: "son", son: "greet" }, { type: "tete", cou: 0, tangage: -0.2, lacet: 0.6, roulis: 0.2, duree: 1 },
+    { type: "geste", geste: "oui" }, { type: "son", son: "wheee" }] }];
+  const balle = { parties: 7, reussies: 5, tirs: 11, serie: 2, record: 3, derniere: "reussi" };
   const SEMAINE = [{ promenades: 4, siestes: 2, jeux: 1 }, { promenades: 2, siestes: 3, caresses: 3 },
     { promenades: 5, jeux: 3, danses: 1 }, { siestes: 2, caresses: 1 }, { promenades: 6, jeux: 2, accueils: 2 },
     { promenades: 3, siestes: 2, jeux: 4, danses: 2 }, null];
@@ -46,6 +49,12 @@
       if (force === "autotest") force = null;
     }
     if (t < finEtat) return;
+    if (etat === "balle") {                     // fin d'une partie imaginaire : reussie 2 fois sur 3
+      const ok = Math.random() < 0.67;
+      Object.assign(balle, { parties: balle.parties + 1, reussies: balle.reussies + (ok ? 1 : 0), tirs: balle.tirs + 1 + (ok ? 0 : 1),
+        serie: ok ? balle.serie + 1 : 0, derniere: ok ? "reussi" : "rate" });
+      balle.record = Math.max(balle.record, balle.serie);
+    }
     tete = null;
     if (force) { force = null; }
     if (calme) { changer("nap", 30); return; }
@@ -64,7 +73,7 @@
       tete: tete || TETES[etat] || [0, 0, 0, 0],
       modes: { calme, garde, discret: false, vacarme: false, timidite: 0, taquineries_coupees: false },
       presents: garde ? [] : ["Raphaël"],
-      du_jour: duJour,
+      du_jour: duJour, balle: { ...balle },
       semaine: SEMAINE.map((compte, k) => ({ date: new Date(Date.now() - (6 - k) * 86400000).toISOString().slice(0, 10),
         compte: k === 6 ? duJour : compte })),
       journal: journal.slice(),
@@ -213,6 +222,15 @@
       return { maintenant: Date.now() / 1000, alertes: alertes.filter((a) => a.t > depuis) };
     }
     if (chemin === "/api/role") return { role: "parent" };
+    if (chemin === "/api/choregraphies") {
+      if (corps && corps.jouer) { changer("choregraphie", 6); return { ok: true }; }
+      if (corps && corps.liste) { choregraphiesDemo = corps.liste.filter((c) => c.nom && c.etapes.length); return { ok: true, liste: choregraphiesDemo }; }
+      return { liste: choregraphiesDemo, gestes: [], bornes: { cou: [-0.3, 0.4], tangage: [-0.5, 0.6], lacet: [-0.9, 0.9], roulis: [-0.4, 0.4] } };
+    }
+    if (chemin === "/api/comportements") return { ok: true, politiques: ["walk", "stand", "sit"], skills: ["roulade", "kick_left", "ground_pick", "sit_toggle"] };
+    if (chemin === "/api/comportement") return corps.action === "chercher"
+      ? { ok: true, resultat: [{ repo: "pollen-robotics/microduck-salto" }, { repo: "communaute/microduck-moonwalk" }] } : { ok: true };
+    if (chemin === "/api/regard") { tete = [0, corps.tangage, corps.lacet, 0]; changer("regard_guide", 6); return { ok: true }; }
     if (chemin === "/api/imprimantes") {
       const t = (Date.now() / 1000 - debut) / 600;
       return [{ nom: "MK4S", type: "prusalink", etat: "en_cours", joignable: true, progression: Math.min(99, 64 + t * 10), reste_s: 2700 },

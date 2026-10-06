@@ -24,6 +24,9 @@ API :
   POST /api/presence        {"nom": ...} : le telephone de quelqu'un vient d'arriver sur le Wi-Fi de la maison
   GET  /api/sauvegarde      sa memoire (apprentissages, lieux, design, reglages ; jamais ha.toml ni jeton)
   POST /api/restauration    une sauvegarde, appliquee au prochain demarrage du canard
+  GET  /api/choregraphies   le studio ; POST {"liste": [...]} pour les garder, {"jouer": nom} pour en jouer une
+  GET  /api/comportements   politiques installees (robotd) ; POST /api/comportement chercher / installer / essayer
+  POST /api/regard          {"lacet", "tangage"} : regard a une position (pave tactile), borne par le cerveau
   GET  /api/sante           test de vie, sans code (pour savoir si le canard repond)
 Le code se passe dans l'en-tete `X-Microduck-Code` (ou `?code=` pour le flux).
 """
@@ -120,6 +123,7 @@ def instantane(brain, state, version=None):
                        "lieux_a_risque": dg.get("lieux_a_risque"),
                        "dernieres": list((chutes.d.get("chutes") or [])[-5:]) if chutes else []},
         },
+        "balle": dict((mem.donnees.get("balle") or {})) if mem is not None and hasattr(mem, "donnees") else {},
         "caractere": {
             "traits": {k: round(v, 2) for k, v in (perso.d.get("traits") or {}).items()} if perso else {},
             "sons": {k: round(v, 2) for k, v in (perso.d.get("sons") or {}).items()} if perso else {},
@@ -235,6 +239,8 @@ class Appli:
         self.brut = {}                          # configuration (ha.toml + configuration.json), page Connexions
         self.imprimantes = None
         self.redemarrage_demande = False
+        self.choregraphies = {}                 # nom -> etapes, partage avec le cerveau (extras["choregraphies"])
+        self.robotd = None                      # fabrique d'un client robotd a part (page Comportements)
         self.evenements = queue.Queue()
         self.etat = {}
         self.carte = {}
@@ -315,6 +321,33 @@ class Appli:
             self.alerter("batterie_echange", "Batterie changée", "Laquelle as-tu mise ? Réponds dans Santé.", False)
 
     _batterie_signalee = False
+
+    def comportements(self, action, texte=""):
+        """Page Comportements : le catalogue des politiques, par robotd (sa propre connexion, jamais celle du cerveau).
+        Les noms exacts des requetes (robot.policies, policy.search, policy.install) sont ceux de la doc officielle,
+        A VALIDER sur le robot."""
+        if self.robotd is None:
+            return {"ok": False, "message": "robotd injoignable ici"}
+        try:
+            c = self.robotd()
+        except Exception as e:
+            return {"ok": False, "message": f"robotd injoignable ({e})"}
+        try:
+            if action == "liste":
+                pol, sk = c.request("robot.policies"), c.request("robot.skills")
+                return {"ok": True, "politiques": pol.get("result", pol.get("error")), "skills": sk.get("result", sk.get("error"))}
+            if action == "chercher":
+                r = c.request("policy.search", {"query": texte}, timeout_s=20.0)
+            else:
+                r = c.request("policy.install", {"repo": texte}, timeout_s=120.0)
+            return {"ok": "error" not in r, "resultat": r.get("result", r.get("error"))}
+        except Exception as e:
+            return {"ok": False, "message": str(e)[:160]}
+        finally:
+            try:
+                c.sock.close()
+            except Exception:
+                pass
 
     def alertes_depuis(self, t):
         with self._verrou_alertes:
@@ -409,6 +442,16 @@ class Appli:
                         import configuration
                         self._json(200, configuration.pour_appli(appli.brut))
                     return
+                if url.path == "/api/choregraphies":
+                    if self._autorise():
+                        import choregraphies
+                        self._json(200, {"liste": [{"nom": n, "etapes": e} for n, e in appli.choregraphies.items()],
+                                         "gestes": choregraphies.GESTES, "bornes": choregraphies.BORNES})
+                    return
+                if url.path == "/api/comportements":
+                    if self._autorise():
+                        self._json(200, appli.comportements("liste"))
+                    return
                 if url.path == "/api/imprimantes":
                     if self._autorise():
                         self._json(200, appli.imprimantes.etat() if appli.imprimantes is not None else [])
@@ -477,7 +520,8 @@ class Appli:
                     return self._json(403, {"erreur": "reseau local seulement"})
                 if chemin not in ("/api/commande", "/api/lieu", "/api/design", "/api/reglages", "/api/presence",
                                   "/api/restauration", "/api/installation", "/api/configuration", "/api/tester-ha",
-                                  "/api/tester-imprimante", "/api/redemarrer", "/api/choregraphies", "/api/comportement"):
+                                  "/api/tester-imprimante", "/api/redemarrer", "/api/choregraphies", "/api/comportement",
+                                  "/api/regard"):
                     return self._json(404, {"erreur": "inconnu"})
                 if chemin == "/api/installation":
                     return self._installation()
@@ -528,6 +572,37 @@ class Appli:
                         return self._json(200, {"ok": True, "etat": lu["etat"], "progression": lu.get("progression")})
                     except Exception as e:
                         return self._json(200, {"ok": False, "message": str(e)[:120]})
+                if chemin == "/api/choregraphies":
+                    import choregraphies
+                    if isinstance(corps.get("jouer"), str):
+                        if corps["jouer"] not in appli.choregraphies:
+                            return self._json(404, {"erreur": "choregraphie inconnue"})
+                        appli.evenements.put(f"choregraphie:{corps['jouer']}")
+                        return self._json(200, {"ok": True})
+                    try:
+                        propre = choregraphies.ecrire(corps.get("liste"))
+                    except OSError:
+                        return self._json(500, {"erreur": "enregistrement impossible"})
+                    appli.choregraphies.clear()
+                    appli.choregraphies.update({c["nom"]: c["etapes"] for c in propre})
+                    return self._json(200, {"ok": True, "liste": propre})
+                if chemin == "/api/comportement":
+                    action = corps.get("action")
+                    if action == "essayer" and isinstance(corps.get("nom"), str) and 0 < len(corps["nom"]) <= 60:
+                        appli.evenements.put(f"skill_essai:{corps['nom']}")      # le cerveau decide si c'est le moment
+                        return self._json(200, {"ok": True})
+                    if action in ("chercher", "installer"):
+                        return self._json(200, appli.comportements(action, str(corps.get("texte") or "")[:120]))
+                    return self._json(400, {"erreur": "action inconnue"})
+                if chemin == "/api/regard":
+                    try:
+                        lacet, tangage = float(corps.get("lacet")), float(corps.get("tangage"))
+                    except (TypeError, ValueError):
+                        return self._json(400, {"erreur": "lacet et tangage attendus"})
+                    if lacet != lacet or tangage != tangage:
+                        return self._json(400, {"erreur": "nombres attendus"})
+                    appli.evenements.put(f"regard:abs|{lacet:.3f}|{tangage:.3f}")
+                    return self._json(200, {"ok": True})
                 if chemin == "/api/redemarrer":
                     appli.redemarrage_demande = True            # canard.py sort proprement, systemd le relance
                     return self._json(200, {"ok": True})

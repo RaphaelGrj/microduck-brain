@@ -99,12 +99,22 @@ class Personnalite:
         if self.sauver is not None:
             self.sauver()
 
+    # -- curseurs de l'application (reglages.py « caractere ») : 0,5 = tel qu'il est ; 0 = au minimum, 1 = au maximum --
+    reglage = {}
+
+    def curseur(self, nom):
+        v = self.reglage.get(nom, 0.5)
+        return 0.2 + 1.6 * v                     # 0,2 .. 1,8 (1 au milieu)
+
+    def bavardage(self):
+        return 2.0 * self.reglage.get("bavard", 0.5)        # 0 : plus aucun petit son gratuit
+
     # -- effets (multiplicateurs ~ 1 autour de 0,5) --------------------------------------------------------------------
     def envie_promenade(self):
-        return (0.5 + self.trait("curiosite")) * (1.5 - self.trait("prudence"))
+        return (0.5 + self.trait("curiosite")) * (1.5 - self.trait("prudence")) * self.curseur("joueur")
 
     def envie_taquiner(self):
-        return 0.5 + self.trait("espieglerie")
+        return (0.5 + self.trait("espieglerie")) * self.curseur("taquin")
 
     def patience_seul(self):
         """Multiplie le temps avant de s'ennuyer et d'aller chercher de la compagnie : un canard sociable y va plus tot."""

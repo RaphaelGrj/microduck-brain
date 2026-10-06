@@ -117,6 +117,30 @@
       <!-- Jouer -->
       <div class="page" data-page="jouer" hidden>
         <div class="carte">
+          <h2>Jeu de balle</h2>
+          <dl class="valeurs" id="stats-balle"></dl>
+          <details class="defi">
+            <summary>Défi à plusieurs</summary>
+            <p class="discret petit">Chacun son tour pose la balle devant lui et lance : un tir réussi rapporte un point.</p>
+            <div class="ajout-filament"><input id="defi-nom" placeholder="Prénom du joueur" maxlength="20" aria-label="Prénom du joueur">
+              <button id="defi-ajout">Ajouter</button></div>
+            <ul id="defi-joueurs" class="liste-choix"></ul>
+            <button id="defi-tour" class="principal large">Au tour de…</button>
+            <button id="defi-raz" class="large">Nouvelle partie</button>
+          </details>
+        </div>
+        <div class="carte">
+          <h2>Ses tours à lui</h2>
+          <p class="discret petit">Compose des chorégraphies : positions de tête, sons de canard, gestes, s'asseoir.</p>
+          <ul id="liste-tours" class="liste-choix"></ul>
+          <button id="ouvrir-studio" class="principal large" data-parent>Studio de chorégraphies</button>
+        </div>
+        <div class="carte" data-parent>
+          <h2>Comportements</h2>
+          <p class="discret petit">Les politiques apprises (Pollen et communauté) : installées, à essayer, à ajouter.</p>
+          <button id="ouvrir-comportements" class="large">Ouvrir</button>
+        </div>
+        <div class="carte">
           <h2>Jeux</h2>
           <div class="boutons">
             <button data-cmd="jouer_balle">⚽ Balle</button>
@@ -140,7 +164,7 @@
       <div class="page" data-page="commande" hidden>
         <div class="carte" data-parent>
           <h2>Marcher</h2>
-          <p class="discret">Petits pas guidés : il refuse d'avancer s'il y a un obstacle ou un vide. Pas de marche arrière (il ne voit pas derrière).</p>
+          <p class="discret">Garde le doigt appuyé pour continuer. Petits pas guidés : il refuse d'avancer s'il y a un obstacle ou un vide. Pas de marche arrière (il ne voit pas derrière).</p>
           <div class="croix">
             <span></span><button data-cmd="avance" aria-label="Avancer">▲</button><span></span>
             <button data-cmd="gauche" aria-label="Tourner à gauche">⟲</button>
@@ -157,6 +181,8 @@
             <button data-cmd="regard_droite" aria-label="Regarder à droite">→</button>
             <span></span><button data-cmd="regard_bas" aria-label="Regarder en bas">↓</button><span></span>
           </div>
+          <p class="discret petit">Ou fais glisser ton doigt : il regarde où tu pointes.</p>
+          <div id="pave-regard" class="pave" aria-label="Pavé du regard"><i></i></div>
         </div>
       </div>
 
@@ -198,6 +224,14 @@
 
       <!-- Caractère et mémoire -->
       <div class="page" data-page="caractere" hidden>
+        <div class="carte" data-parent>
+          <h2>Ses réglages</h2>
+          <p class="discret petit">Au milieu : tel qu'il est. Sa personnalité continue d'évoluer avec ce qu'il vit.</p>
+          <label class="curseur"><span>Plutôt calme</span><input type="range" id="k-joueur" min="0" max="1" step="0.05"><span>Plutôt joueur</span></label>
+          <label class="curseur"><span>Discret</span><input type="range" id="k-bavard" min="0" max="1" step="0.05"><span>Bavard</span></label>
+          <label class="curseur"><span>Sage</span><input type="range" id="k-taquin" min="0" max="1" step="0.05"><span>Taquin</span></label>
+          <button id="k-enregistrer" class="large">Enregistrer</button>
+        </div>
         <div class="carte">
           <h2>Personnalité</h2>
           <div id="traits"></div>
@@ -385,6 +419,51 @@
     </main>
   </section>
 
+  <!-- Studio de choregraphies (choregraphies.py) -->
+  <section id="studio" class="ecran plein" hidden>
+    <header class="entete">
+      <button class="icone-bouton retour" data-fermer aria-label="Retour">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="titre-plein"><h1>Studio</h1><p class="discret" id="studio-duree">Chorégraphies</p></div>
+    </header>
+    <main>
+      <div class="carte">
+        <label class="champ">Chorégraphie<select id="studio-choix"></select></label>
+        <div class="boutons"><button id="studio-nouveau">Nouvelle</button><button id="studio-supprimer" class="danger">Supprimer</button></div>
+        <label class="champ">Nom<input id="studio-nom" maxlength="40"></label>
+      </div>
+      <div class="carte">
+        <h2>Étapes</h2>
+        <ol id="studio-etapes" class="etapes"></ol>
+        <div class="ajouts">
+          <button data-etape="tete">+ Tête</button><button data-etape="son">+ Son</button>
+          <button data-etape="geste">+ Geste</button><button data-etape="assis">+ Assis/debout</button>
+          <button data-etape="pause">+ Pause</button>
+        </div>
+      </div>
+      <div class="boutons"><button id="studio-jouer">▶ Essayer</button><button id="studio-enregistrer" class="principal">Enregistrer</button></div>
+    </main>
+  </section>
+
+  <!-- Comportements : politiques de robotd (catalogue Pollen / communaute) -->
+  <section id="comportements" class="ecran plein" hidden>
+    <header class="entete">
+      <button class="icone-bouton retour" data-fermer aria-label="Retour">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="titre-plein"><h1>Comportements</h1><p class="discret">Ses politiques apprises</p></div>
+    </header>
+    <main>
+      <div class="carte"><h2>Installés</h2><p id="comp-etat" class="discret petit"></p><ul id="comp-installes" class="liste-choix"></ul></div>
+      <div class="carte">
+        <h2>En trouver d'autres</h2>
+        <div class="ajout-filament"><input id="comp-texte" placeholder="Ex. salto, danse…" aria-label="Rechercher"><button id="comp-chercher">Chercher</button></div>
+        <ul id="comp-resultats" class="liste-choix"></ul>
+        <p class="discret petit">Le catalogue officiel (uduck-registry, Hugging Face) : c'est le robot qui le consulte, comme
+          l'appli officielle de Pollen.</p>
+      </div>
+    </main>
+  </section>
+
   <!-- Connexions : la configuration du canard, sans editer ha.toml (configuration.py) -->
   <section id="connexions" class="ecran plein" hidden>
     <header class="entete">
@@ -456,5 +535,6 @@
   <script src="/app.js"></script>
   <script src="/boutique.js"></script>
   <script src="/connexions.js"></script>
+  <script src="/studio.js"></script>
 </body>
 </html>

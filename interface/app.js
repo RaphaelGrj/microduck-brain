@@ -18,7 +18,7 @@ const ETATS = {
   coup_oeil: "Un coup d'œil", compagnie: "Il te tient compagnie", va_compagnie: "Il vient te voir",
   penaud: "Penaud", cajole: "Content", compris: "Compris !", pas_guide: "Il marche (télécommande)",
   regard_guide: "Il regarde (télécommande)", retrait: "Trop de bruit, il s'éloigne", jour_special: "Jour spécial !",
-  fier: "Il est fier", ou_es_tu: "Je suis là !", baillement: "Il bâille", baillement_contagieux: "Il bâille", fausse_chute: "Fausse chute !",
+  fier: "Il est fier", ou_es_tu: "Je suis là !", choregraphie: "Il fait son tour", baillement: "Il bâille", baillement_contagieux: "Il bâille", fausse_chute: "Fausse chute !",
 };
 const JOUR = { promenades: ["promenade", "promenades"], siestes: ["sieste", "siestes"], jeux: ["jeu", "jeux"],
   danses: ["danse", "danses"], caresses: ["caresse", "caresses"], accueils: ["accueil", "accueils"],
@@ -139,6 +139,7 @@ function afficher(e) {
     ["Cycles mesurés", bt.cycles], ["À remplacer", bt.a_remplacer ? "oui" : "non"]]);
   batteries(bt);
   semaine(e.semaine || []);
+  if (window.majJouer) window.majJouer(e);
   const sv = e.maintenance.servos, t = e.temperatures || {};
   dl("#servos", [["Servo le plus chaud", t.moteurs != null ? Math.round(t.moteurs) + " °C" : null],
     ["Carte", t.cpu != null ? Math.round(t.cpu) + " °C" : null], ["Chauffe souvent", sv.plus_chaud_habituel],
@@ -665,6 +666,14 @@ async function entrer(c) {
   }
 }
 
+let repete = null;
+document.addEventListener("pointerdown", (ev) => {
+  const b = ev.target.closest("button[data-cmd]");
+  if (!b || !["avance", "gauche", "droite"].includes(b.dataset.cmd)) return;
+  clearInterval(repete);                           // doigt appuye : un pas toutes les 1,3 s (un pas guide dure 1,2 s)
+  repete = setInterval(() => commande(b.dataset.cmd, null), 1300);
+});
+for (const ev of ["pointerup", "pointercancel", "pointerleave"]) document.addEventListener(ev, () => { clearInterval(repete); repete = null; });
 document.addEventListener("click", (ev) => {
   const b = ev.target.closest("button");
   if (!b) return;
@@ -677,6 +686,8 @@ document.addEventListener("click", (ev) => {
     if (b.dataset.onglet === "accueil") rafraichirCarte();
     if (b.dataset.onglet === "reglages") { rafraichirLieux(); chargerJournee(); initPresence(); }
     if (b.dataset.onglet === "sante") miseEnRoute();
+    if (b.dataset.onglet === "jouer" && window.chargerTours) window.chargerTours();
+    if (b.dataset.onglet === "caractere" && window.chargerCurseurs) window.chargerCurseurs();
   }
 });
 $("#t-calme").addEventListener("click", () => commande(dernier && dernier.modes.calme ? "calme_off" : "calme_on"));

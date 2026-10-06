@@ -19,6 +19,7 @@ import sys
 import threading
 import time
 
+from choregraphies import Choregraphie
 from exploration import Exploration
 from habitudes import Habitudes
 from personnalite import Personnalite
@@ -161,6 +162,7 @@ class Brain:
             # reflexes sonores (audio.py)
             "appel": Sequence("appel", [("curieux", "inquire"), ("oui", "greet")]),   # deux claquements : "oui ?"
             # « Ou es-tu ? » de l'application : trois petits chirp pour qu'on le retrouve (sous un meuble...)
+            "choregraphie": Choregraphie(),                # studio de choregraphies de l'application
             "ou_es_tu": Sequence("ou_es_tu", [("curieux", "chirp"), ("oui", "chirp"), ("curieux", "chirp")]),
             "bravo": Sequence("bravo", [("content", "wheee")]),                       # applaudissements
             "danse": Danse(),                                                        # musique : hochements en rythme
@@ -347,6 +349,22 @@ class Brain:
                 # depuis l'application : il se signale. Pas en mode calme (silence promis), ni a terre ou dans les bras.
                 if not self.mode_calme and not self.tombe and self.courant.nom not in ("alarme", "porte"):
                     self._bascule("ou_es_tu")
+                continue
+            if base == "choregraphie":
+                # depuis l'application (ou une routine) : une choregraphie du studio, par son nom
+                etapes = (self.ctx.extras.get("choregraphies") or {}).get(detail)
+                if etapes and not self.mode_calme and not self.tombe and self.courant.nom not in ("alarme", "porte"):
+                    self.etats["choregraphie"].charger(detail, etapes)
+                    self._bascule("choregraphie")
+                continue
+            if base == "skill_essai":
+                # application, page Comportements : essayer une politique installee (robot.do), debout et au calme
+                if (detail and not self.mode_calme and not self.tombe and not self.ctx.sitting
+                        and self.courant.nom in ("chill", "look", "regard_guide")):
+                    try:
+                        self.ctx.client.request("robot.do", {"skill": detail})
+                    except Exception as e:
+                        print(f"  (essai de {detail} impossible : {e})", flush=True)
                 continue
             if base == "routine_compagnie":
                 # routine programmee dans l'application (« a 18 h, il vient me voir ») : comme son envie de compagnie
@@ -1316,7 +1334,7 @@ class Brain:
         if (self.courant.nom not in ("chill", "look", "wander") or getattr(self.ctx, "silence", False) or self.discret
                 or self.timidite() > 0.0 or self.t_global - self._t_babil < 180.0):
             return
-        if self._rng_babil.random() < dt * self.vivacite() / self.BABIL_MOYEN_S:
+        if self._rng_babil.random() < dt * self.vivacite() * self.perso.bavardage() / self.BABIL_MOYEN_S:
             self._t_babil = self.t_global
             self._dernier_babil = self.perso.choisit_son(self._rng_babil)
             self.ctx.sound(self._dernier_babil)
