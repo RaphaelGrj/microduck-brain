@@ -439,8 +439,24 @@ async function miseEnRoute() {
   }));
   $("#mer-liste").replaceChildren(...lignes);
   $("#mer-progres").textContent = `${faits} / ${MISE_EN_ROUTE.length}`;
-  if (faits < MISE_EN_ROUTE.length && !memoire("microduck-mise-en-route-vue")) { $("#mise-en-route").open = true; memoire("microduck-mise-en-route-vue", "1"); }
 }
+
+// Mise en route : une section des reglages, que l'on peut masquer (ce telephone) et reafficher dans « Ce telephone »
+function afficherMiseEnRoute() {
+  const masquee = memoire("microduck-mise-en-route-masquee") === "1";
+  $("#mise-en-route").hidden = masquee;
+  $("#mer-afficher").checked = !masquee;
+  if (!masquee) miseEnRoute();
+}
+$("#mer-masquer").addEventListener("click", () => {
+  memoire("microduck-mise-en-route-masquee", "1");
+  afficherMiseEnRoute();
+  toast("Masquée : Réglages → Ce téléphone pour la retrouver");
+});
+$("#mer-afficher").addEventListener("change", (e) => {
+  memoire("microduck-mise-en-route-masquee", e.target.checked ? null : "1");
+  afficherMiseEnRoute();
+});
 
 // Sauvegarde de sa memoire, et restauration (appliquee au prochain demarrage du canard)
 $("#sauvegarder").addEventListener("click", async () => {
@@ -695,8 +711,7 @@ document.addEventListener("click", (ev) => {
     document.querySelectorAll(".page").forEach((p) => { p.hidden = p.dataset.page !== b.dataset.onglet; });
     window.scrollTo(0, 0);
     if (b.dataset.onglet === "accueil") rafraichirCarte();
-    if (b.dataset.onglet === "reglages") { rafraichirLieux(); chargerJournee(); initPresence(); }
-    if (b.dataset.onglet === "sante") miseEnRoute();
+    if (b.dataset.onglet === "reglages") { rafraichirLieux(); chargerJournee(); initPresence(); afficherMiseEnRoute(); }
     if (b.dataset.onglet === "jouer" && window.chargerTours) window.chargerTours();
     if (b.dataset.onglet === "caractere" && window.chargerCurseurs) window.chargerCurseurs();
   }

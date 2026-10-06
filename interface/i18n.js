@@ -220,6 +220,8 @@
     "valider_sim.py, en premier": "valider_sim.py, first", "Français": "Français", "son": "sound",
     "Mises à jour": "Updates", "Rapport": "Report", "démo": "demo", "auto": "auto", "C'est noté": "Noted", "Fait": "Done", "Wi-Fi lié": "Wi-Fi linked",
     "Archivé": "Archived", "Restauré": "Restored", "Supprimé": "Deleted", "Renommé": "Renamed",
+    "Masquer cette section": "Hide this section", "Afficher la liste de la livraison dans les réglages.": "Show the delivery checklist in the settings.",
+    "Masquée : Réglages → Ce téléphone pour la retrouver": "Hidden: Settings → This phone to bring it back",
     // --- lots 5 a 8 : messages, vus, jeux sur la carte, photos, usure, carnet, invites, partage ---
     "Où l'a-t-il vu ?": "Where did he see it?", "Rien de remarqué depuis son démarrage.": "Nothing noticed since he started.",
     "🐱 Le chat": "🐱 The cat", "⚽ La balle": "⚽ The ball", "📦 Un objet au sol": "📦 Something on the floor",

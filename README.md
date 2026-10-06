@@ -82,7 +82,8 @@ fois par `bash android/creer_cle.sh`, hors du dépôt : voir `android/CLE_DE_SIG
   carte des pièces rendus par `outils/rendu_microduck.py`).
 - **Design → Fiche d'impression** (quoi imprimer, dans quelle couleur, avec les liens des STL d'origine) et
   **Photo** (image 4:3 du Microduck 3D, pour partager ou illustrer une fiche du catalogue).
-- **Santé → Mise en route** : la liste du jour de la livraison, cochée toute seule quand le canard peut vérifier.
+- **Réglages → Mise en route** : la liste du jour de la livraison, cochée toute seule quand le canard peut vérifier ;
+  repliée, et masquable (Réglages → Ce téléphone pour la réafficher).
 - **Réglages → Routines** : « à 18 h 30 en semaine, il vient me voir », « le dimanche, il danse ».
 - **Réglages → Sauvegarde** : ce qu'il a appris, ses lieux, tes schémas et ses réglages, dans un fichier sur le
   téléphone (jamais `ha.toml`) ; une restauration s'applique au prochain démarrage du canard.
