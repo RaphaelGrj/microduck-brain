@@ -15,6 +15,14 @@
     return e;
   }
 
+  function libelleLien(site, url) {
+    if (site !== "autre") return SITES[site] || site;
+    try {                                                // « autre » : le nom du site (GitHub, Thingiverse...)
+      const h = new URL(url).hostname.replace(/^www\./, "").split(".")[0];
+      return h === "github" ? "GitHub" : h.charAt(0).toUpperCase() + h.slice(1);
+    } catch (e) { return SITES.autre; }
+  }
+
   function carte(p) {
     const photos = el("div", { className: "photos" },
       ...(p.photos.length ? p.photos.map((src) => el("img", { src, alt: p.nom, loading: "lazy",
@@ -28,7 +36,7 @@
     const details = [imp.materiau, imp.temps, imp.filament_g ? imp.filament_g + " g" : null,
       imp.supports === true ? "avec supports" : imp.supports === false ? "sans support" : null].filter(Boolean).join(" · ");
     const liens = Object.entries(p.liens || {}).map(([site, url], i) =>
-      el("a", { href: url, target: "_blank", rel: "noopener", className: i ? "secondaire" : "", textContent: SITES[site] || site }));
+      el("a", { href: url, target: "_blank", rel: "noopener", className: i ? "secondaire" : "", textContent: libelleLien(site, url) }));
     const corps = el("div", { className: "corps-piece" },
       el("h3", { textContent: p.nom }), meta,
       p.description ? el("p", { textContent: p.description }) : null,
@@ -69,7 +77,9 @@
     $("#boutique-etat").hidden = false;
     $("#boutique-etat").textContent = "Chargement du catalogue…";
     try {
-      const r = await fetch(CATALOGUE, { cache: "no-cache" });
+      const arret = new AbortController();
+      const minuteur = setTimeout(() => arret.abort(), 10000);     // reseau qui ne repond pas : pas d'attente sans fin
+      const r = await fetch(CATALOGUE, { cache: "no-cache", signal: arret.signal }).finally(() => clearTimeout(minuteur));
       if (!r.ok) throw new Error(r.status);
       pieces = (await r.json()).pieces || [];
     } catch (e) {
