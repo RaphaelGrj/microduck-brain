@@ -50,7 +50,7 @@ class VeilleBalle(threading.Thread):
             t0 = time.monotonic()
             try:
                 etat = self.etat_robot
-                if not self.pause and etat is not None and etat.get("frames", {}).get("camera"):
+                if not self.pause and etat is not None and (etat.get("frames") or {}).get("camera"):
                     dets = vision.detect(self.grab(), couleurs=(self.couleur,))
                     p = estimer(dets[0], etat) if dets else None
                     if p is not None:

@@ -10,6 +10,15 @@ from etats_base import Etat, Sequence, TETE_PROMENADE, _regarder
 from navigation import AllerVers
 
 
+def regarde_chat(brain, veille, s):
+    """Angles de tete (robot.look, calcules par robotd) pour regarder le chat vu par `veille` (chat.py), ou None : pas
+    de cible, pas d'odometrie (hauteur du tronc inconnue), ou robotd qui ne repond pas."""
+    odom = (s or {}).get("odom") or {}
+    pos = odom.get("position")
+    cible = veille.cible_regard(pos[2]) if pos and len(pos) > 2 else None
+    return _regarder(brain, *cible, None) if cible else None
+
+
 class RegardeChat(Etat):
     """Le chat vient d'apparaitre : petit son interrogatif, puis on le suit des yeux quelques secondes. La position du
     chat vient de la veille (chat.py) ; c'est robotd qui calcule l'orientation de la tete (`robot.look`), on renvoie
@@ -52,13 +61,10 @@ class RegardeChat(Etat):
             e = veille.estimation
             if e is not None and e[0] != self.t_vise:
                 self.t_vise = e[0]
-                cible = veille.cible_regard(s["odom"]["position"][2])
-                if cible:
-                    r = brain.ctx.client.request("robot.look", {"x": float(cible[0]), "y": float(cible[1]), "z": float(cible[2])})
-                    h = (r.get("result") or {}).get("head") if isinstance(r, dict) else None
-                    if h:
-                        self.tete = (h["neck_pitch"], h["head_pitch"], h["head_yaw"], h["head_roll"])
-                        self.n_look += 1
+                tete = regarde_chat(brain, veille, s)
+                if tete:
+                    self.tete = tete
+                    self.n_look += 1
                 distance = math.hypot(e[1], e[2])
                 if self._dist_prec is not None and e[0] > self._t_dist_prec:
                     vitesse_approche = (self._dist_prec - distance) / (e[0] - self._t_dist_prec)
@@ -106,11 +112,7 @@ class MainTendue(Etat):
         m = det.main
         if m[0] != self.t_vise and s is not None and s.get("odom"):
             self.t_vise = m[0]
-            r = brain.ctx.client.request("robot.look", {"x": float(m[1]), "y": float(m[2]),
-                                                        "z": float(m[3] - s["odom"]["position"][2])})
-            h = (r.get("result") or {}).get("head") if isinstance(r, dict) else None
-            if h:
-                self.tete = (h["neck_pitch"], h["head_pitch"], h["head_yaw"], h["head_roll"])
+            self.tete = _regarder(brain, m[1], m[2], m[3] - s["odom"]["position"][2], self.tete)
         tete = list(self.tete)
         if t >= 1.0:                             # une seconde a la regarder, puis les coups de bec
             phase = (t - 1.0) % self.PERIODE_PICORE
@@ -401,13 +403,10 @@ class RechercheAttention(Etat):
                 e = veille.estimation
                 if e is not None and e[0] != self.t_vise:
                     self.t_vise = e[0]
-                    cible = veille.cible_regard(s["odom"]["position"][2])
-                    if cible:
-                        r = brain.ctx.client.request("robot.look", {"x": float(cible[0]), "y": float(cible[1]), "z": float(cible[2])})
-                        h = (r.get("result") or {}).get("head") if isinstance(r, dict) else None
-                        if h:
-                            brain.ctx.head((h["neck_pitch"], h["head_pitch"], h["head_yaw"], h["head_roll"]))
-                            return
+                    tete = regarde_chat(brain, veille, s)
+                    if tete:
+                        brain.ctx.head(tete)
+                        return
             brain.ctx.head((0.0, 0.0, 0.0, 0.0))
             return
         yaw = 0.5 * math.sin(2 * math.pi * t / 4.0)       # pas de position connue : un regard qui balaie, pas une marche

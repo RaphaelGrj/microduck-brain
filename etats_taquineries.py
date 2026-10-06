@@ -16,7 +16,7 @@ class FeinteBec(Etat):
 
     def entre(self, brain):
         m = brain.detecteur_main.main
-        h = (brain.ctx.state or {}).get("odom", {}).get("position", [0, 0, 0.1])[2]
+        h = ((brain.ctx.state or {}).get("odom") or {}).get("position", [0, 0, 0.1])[2]
         self.vise = _regarder(brain, m[1], m[2], m[3] - h, (0.0, 0.25, 0.0, 0.0)) if m else (0.0, 0.25, 0.0, 0.0)
         self.cote = 1.0 if brain.rng.random() < 0.5 else -1.0
 

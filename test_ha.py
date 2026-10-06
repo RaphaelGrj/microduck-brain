@@ -4,7 +4,9 @@
 Verifie : transitions d'etat -> evenements du cerveau (et seulement elles), etats ignores, jeton refuse,
 publication des entites du canard, reconnexion apres coupure. Usage : bash ~/run-brain.sh test_ha.py
 """
+import tempfile
 import time
+from pathlib import Path
 
 import brain
 import mock_ha
@@ -636,3 +638,34 @@ if __name__ == "__main__":
     test_reconnexion()
     test_cerveau()
     print("TOUS LES TESTS OK")
+
+
+def test_deux_declencheurs_sur_la_meme_entite():
+    """visiteur (on) et visiteur_fin (off) sur le meme input_boolean : les deux reactions doivent rester."""
+    toml = """
+[home_assistant]
+url = "http://ha.local:8123"
+[[declencheur]]
+evenement = "visiteur"
+nom = "Josiane"
+entite = "input_boolean.josiane_est_la"
+etat = "on"
+[[declencheur]]
+evenement = "visiteur_fin"
+nom = "Josiane"
+entite = "input_boolean.josiane_est_la"
+etat = "off"
+"""
+    with tempfile.TemporaryDirectory() as d:
+        chemin = Path(d) / "ha.toml"
+        chemin.write_text(toml)
+        cfg = pont_ha.lire_config(chemin)
+    pont = pont_ha.PontHA(cfg, JETON, log=lambda m: None)
+    pont._sur_changement("input_boolean.josiane_est_la", "off", "on")
+    pont._sur_changement("input_boolean.josiane_est_la", "on", "off")
+    assert pont.source() == ["visiteur:Josiane", "visiteur_fin:Josiane"]
+
+
+def test_le_modele_de_configuration_se_lit():
+    cfg = pont_ha.lire_config(Path(__file__).parent / "ha.exemple.toml")
+    assert cfg["surveillance"] == [] and "visiteur" in cfg["ignorees"], "tout est A_REMPLIR : rien de surveille"

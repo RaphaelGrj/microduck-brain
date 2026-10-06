@@ -13,9 +13,9 @@ token = "A_REMPLIR"                 # Jeton d'accès longue durée : HA -> ton p
                                     # -> Jetons d'accès longue durée -> Créer. Il ne s'affiche qu'UNE fois : copie-le ici.
 interrupteur_calme = "input_boolean.microduck_calme"   # regle de vie : a creer dans HA (Entrees -> Interrupteur) ;
                                     # actif = le canard s'assoit, se tait et ne bouge plus (nuit, visite, film...)
-satellite_vocal = "A_REMPLIR"       # plus tard, quand quacksat (mode wyoming) tournera sur le canard : son entité
-                                    # assist_satellite.* (--verifier la liste). Pendant une conversation, le cerveau se
-                                    # tait et ne bouge plus (quacksat pilote alors la tête et la marche).
+satellite_vocal = "A_REMPLIR"       # FACULTATIF, laisse A_REMPLIR : quacksat est ecarte (le son quitterait le canard).
+                                    # Les commandes vocales sont locales (section 7, modele_vosk). Ne sert que si un
+                                    # satellite Assist de HA parle au canard un jour (il se tait pendant la conversation).
 publier_toutes_les_s = 30           # rafraîchissement des entités sensor.microduck_* (inutile de descendre sous 10)
 
 # ---- 2. MQTT (facultatif : add-on "Mosquitto broker" de HA OS) -------------------------------------
@@ -31,9 +31,8 @@ mot_de_passe = "A_REMPLIR"
 
 # ---- 3. Réseau : où tourne quoi (pour que je règle l'architecture) ---------------------------------
 [reseau]
-cerveau_sur = "A_REMPLIR"           # "pc", "pi" (autre Raspberry Pi), "telephone" ou "robot"
-cerveau_ip = "A_REMPLIR"            # IP de la machine qui fera tourner le cerveau (si ce n'est pas le PC)
-cerveau_modele = "A_REMPLIR"        # ex. "Raspberry Pi 4 2 Go", "Pi Zero 2 W", "S24+"
+cerveau_sur = "robot"               # regle du projet : le cerveau tourne SUR le canard (deploy/robot/), rien d'autre
+                                    # n'analyse ses images ni ses sons ; "pc" seulement pour les essais avec duck-sim
 robot_ip = "A_REMPLIR"              # IP du Microduck quand il sera livré
 robot_utilisateur_ssh = "A_REMPLIR"
 etat_hz = 25                        # trames d'état du robot par seconde (10 à 50). Moins = moins de CPU/réseau sur un petit Pi
@@ -81,6 +80,11 @@ entite = "A_REMPLIR"                # ex. "person.raphael"
 #   "aspirateur"     : robot aspirateur (entité vacuum.*) : curiosité à son départ, taquinerie / écart quand il approche
 #   "puissance"      : appareil « bête » sur une prise connectée qui mesure la puissance (W) ; réglages facultatifs :
 #                      seuil_w = 5, fin_apres_s = 180 (sous le seuil aussi longtemps = fini), marche_min_s = 300
+#   "calendrier"     : entité calendar.* (anniversaires, fêtes...) : un signe « jour spécial » quand un événement
+#                      commence (pas avant 8 h), puis à chaque habitant qui rentre ce jour-là. Mets le nom de
+#                      l'événement dans `nom` (ex. "Anniversaire").
+#   "temperature"    : capteur de température EXTÉRIEURE (sensor.*, °C) : sa personnalité suit la saison (l'été plus
+#                      vif le matin, l'hiver siestes plus longues). Sans lui, il se fie au mois.
 #   ou écris `reactions = { etat = "machine_finie" }` toi-même (comme pour la Saturn).
 [[appareil]]
 nom = "Sonnette"
@@ -107,14 +111,51 @@ nom = "Lave-linge"
 type = "puissance"
 entite = "A_REMPLIR"                # ex. "sensor.prise_lave_linge_puissance"
 
+[[appareil]]
+nom = "Anniversaires"
+type = "calendrier"
+entite = "A_REMPLIR"                # ex. "calendar.anniversaires"
+
+[[appareil]]
+nom = "Dehors"
+type = "temperature"
+entite = "A_REMPLIR"                # ex. "sensor.station_meteo_temperature" (ou l'attribut d'une météo exposé en sensor)
+
 # Déclencheurs : n'importe quelle entité HA -> un événement du cerveau. Avec MQTT, les boutons « jouer à 1-2-3 soleil »
 # et « fin du jeu » apparaissent tout seuls sur l'appareil Microduck ; sans MQTT, crée une Entrée « Bouton »
 # (input_button) dans HA et relie-la ici (chaque appui change son état : etat = "*").
-# Événements utiles : "jeu_soleil", "fin_jeu", "stop_taquinerie" (coupe toute taquinerie pendant 30 min), "caresse",
-# "bruit", "info".
+# Événements utiles : "jeu_soleil", "jeu_cache", "jeu_balle", "fin_jeu", "stop_taquinerie" (coupe toute taquinerie
+# pendant 30 min), "caresse", "bruit", "info", et :
+#   "visiteur" / "visiteur_fin" : quelqu'un qui n'habite pas là arrive / part. Mets son prénom dans `nom` : le canard
+#                       s'en souvient et sera un peu moins timide à chaque visite (sans `nom` : un inconnu, très timide).
+#                       Ex. un input_boolean « Josiane est là », ou le device_tracker de son téléphone (etat = "home").
+#   "compagnie" / "compagnie_fin" : quelqu'un est pris par une longue activité immobile (bureau occupé depuis 1 h,
+#                       PC allumé...) : il va s'asseoir en silence là où on le caresse le plus.
 [[declencheur]]
 evenement = "jeu_soleil"
 entite = "A_REMPLIR"                # ex. "input_button.microduck_soleil"
+
+[[declencheur]]
+evenement = "visiteur"
+nom = "A_REMPLIR"                   # le prénom du visiteur régulier (reste sur le canard, jamais envoyé ailleurs)
+entite = "A_REMPLIR"                # ex. "input_boolean.josiane_est_la"
+etat = "on"
+
+[[declencheur]]
+evenement = "visiteur_fin"
+nom = "A_REMPLIR"                   # le même prénom
+entite = "A_REMPLIR"                # la même entité
+etat = "off"
+
+[[declencheur]]
+evenement = "compagnie"
+entite = "A_REMPLIR"                # ex. "binary_sensor.bureau_occupe_depuis_1h" (un modèle HA)
+etat = "on"
+
+[[declencheur]]
+evenement = "compagnie_fin"
+entite = "A_REMPLIR"                # la même entité
+etat = "off"
 
 # ---- 7. Le cerveau (facultatif ; lu meme sans Home Assistant) ---------------------------------------
 [cerveau]
@@ -123,6 +164,11 @@ entite = "A_REMPLIR"                # ex. "input_button.microduck_soleil"
 # bonjour_weekend = "9:30"          # le samedi et le dimanche, a une autre heure
 # nom = "canard"                  # commandes vocales : on l'appelle par ce nom ("canard assis", "canard viens")
 # modele_vosk = "~/modeles/vosk-model-small-fr-0.22"   # reconnaissance HORS LIGNE sur le canard (lancer avec --micro)
+# repas = ["12:30", "19:30"]        # heures des repas : il apprend où l'on mange (là où l'on parle à ces heures) et
+                                    # vient y traîner, une fois par repas, si quelqu'un est là
+# autotest = false                  # auto-test au premier réveil du jour (actif par défaut) : robotd, ToF, caméra,
+                                    # tête ; résultat dans binary_sensor.microduck_autotest
+# circadien = false                 # vivacité selon l'heure et la saison (actif par défaut)
 
 # ---- 8. Tes notes (ignorées par le programme) ------------------------------------------------------
 [notes]

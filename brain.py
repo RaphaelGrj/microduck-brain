@@ -1373,12 +1373,12 @@ class Brain:
                 self.evenement("calme_on" if nuit else "calme_off")
         if state.get("odom"):
             self._derniere_position = (state["odom"]["position"][0], state["odom"]["position"][1])
-        pct = state.get("battery", {}).get("percent")
+        pct = (state.get("battery") or {}).get("percent")      # "battery": null tant que le bus n'a pas repondu
         if pct is not None:
             self._batterie_pct = pct
             if state.get("odom"):
                 self._apprend_chargeur(pct, state["odom"]["position"])
-        if state.get("safety", {}).get("fallen"):
+        if (state.get("safety") or {}).get("fallen"):
             if not self.tombe:
                 print(f"[{self.t_global:6.1f}s] CHUTE : cerveau en pause (robotd se charge du relevement)", flush=True)
                 if self._derniere_position is not None:

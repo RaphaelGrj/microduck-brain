@@ -280,3 +280,64 @@ def test_memoire_compacte_et_ecriture_differee():
                 break
             time.sleep(0.01)
         assert Memoire(Path(d) / "m.json").blagues() == {"pousse_balle": 1}
+
+
+# --- relecture de l'utilisateur (2026-10-07) ---------------------------------------------------------------------
+def test_u1_heures_calmes_de_ha_toml_jusqu_au_cerveau():
+    """La chaine complete : [cerveau] de ha.toml -> options_cerveau -> brain.run -> Brain. La nuit, il passe en calme."""
+    import brain
+    import pont_ha
+    from test_brain import FauxHorloge
+    for valeur in ([23, 7], "23-7"):
+        options = pont_ha.options_cerveau({"cerveau": {"heures_calmes": valeur}})
+        assert options == {"heures_calmes": (23, 7)}, valeur
+
+        class Client:
+            def __init__(self):
+                self.appels, self.t = [], 0.0
+
+            def notify(self, m, p=None):
+                self.appels.append((m, p))
+
+            def request(self, m, p=None, **kw):
+                self.appels.append((m, p))
+                return {"result": {"accepted": True}}
+
+            def read_state_frame(self):
+                self.t += 0.02
+                return {"t": self.t, "safety": {"fallen": False}, "policy": "stand"}
+        vus = []
+        brain.run(Client(), 0.3, a_chaque_tick=lambda b, s: vus.append(b.mode_calme), horloge=FauxHorloge(2), **options)
+        assert vus and vus[-1], "a 2 h du matin, les heures calmes 23-7 doivent mettre le canard en calme"
+    assert pont_ha.options_cerveau({"cerveau": {"heures_calmes": "nuit"}}) == {}
+
+
+def test_u2_champs_null_de_robotd_ne_plantent_pas_le_tick():
+    """robotd peut envoyer "battery": null (bus pas encore lu), "safety": null, "odom": null, "frames": null."""
+    from test_vie_maison import cerveau as cerveau_vie
+    b, _, _ = cerveau_vie()
+    b._bascule("regarde_chat")
+    for k in range(200):
+        b.tick({"t": k * 0.02, "battery": None, "safety": None, "odom": None, "frames": None, "joints": None,
+                "policy": "stand"}, 0.02)
+    import collections
+    import tof
+    t = tof.Tof.__new__(tof.Tof)
+    t.historique = collections.deque(maxlen=60)
+    for etat in ({"t_ns": 1, "frames": None}, {"t_ns": 2, "frames": {"tof": {"pos": [0, 0, 0]}}, "odom": None}, None):
+        t.noter_etat(etat)                      # trames incompletes : ignorees, sans exception
+    assert not t.historique
+
+
+def test_u3_regarder_le_chat_sans_odometrie_ne_plante_pas():
+    from etats_vie import regarde_chat
+    from test_vie_maison import cerveau as cerveau_vie
+    b, c, _ = cerveau_vie()
+
+    class Veille:
+        def cible_regard(self, h):
+            return (1.0, 0.0, 0.1)
+    assert regarde_chat(b, Veille(), {"odom": None}) is None
+    assert regarde_chat(b, Veille(), None) is None
+    regarde_chat(b, Veille(), {"odom": {"position": [0, 0, 0.11]}})
+    assert ("robot.look", {"x": 1.0, "y": 0.0, "z": 0.1}) in c.appels

@@ -115,6 +115,12 @@ def lire_config(chemin):
         if est_vide(dec.get("entite")) or est_vide(dec.get("evenement")):
             cfg["ignorees"].append(dec.get("evenement", "?"))
             continue
+        meme = next((s for s in cfg["surveillance"] if s["entite"] == dec["entite"] and "reactions" in s), None)
+        if meme is not None:
+            # plusieurs declencheurs sur la MEME entite (visiteur sur "on", visiteur_fin sur "off") : on fusionne,
+            # sinon le dernier ecraserait les autres (la surveillance est indexee par entite)
+            meme["reactions"][str(dec.get("etat", "*"))] = dec["evenement"]
+            continue
         cfg["surveillance"].append({"entite": dec["entite"], "nom": dec.get("nom", dec["entite"]),
                                     "reactions": {str(dec.get("etat", "*")): dec["evenement"]}})
     for app in brut.get("appareil", []):        # messager : sonnette, lave-linge, lave-vaisselle...
@@ -141,6 +147,9 @@ def options_cerveau(cfg):
     c = cfg.get("cerveau") or {}
     options = {}
     hc = c.get("heures_calmes")
+    if isinstance(hc, str) and "-" in hc:          # "23-7" aussi accepte, en plus de [23, 7]
+        debut, _, fin = hc.partition("-")
+        hc = [int(debut), int(fin)] if debut.strip().isdigit() and fin.strip().isdigit() else None
     if isinstance(hc, (list, tuple)) and len(hc) == 2 and all(isinstance(h, int) and 0 <= h < 24 for h in hc):
         options["heures_calmes"] = (hc[0], hc[1])
     for cle in ("bonjour", "bonjour_weekend"):
@@ -511,7 +520,7 @@ class PontHA:
             self._derniere_vue_chat = time.time()
         self.instantane = {
             "etat": brain.courant.nom, "energie": brain.humeur.energie, "eveil": brain.humeur.eveil,
-            "tombe": bool(state.get("safety", {}).get("fallen")), "politique": state.get("policy"),
+            "tombe": bool((state.get("safety") or {}).get("fallen")), "politique": state.get("policy"),
             "batterie": state.get("battery"), "odom": state.get("odom"), "chat_visible": chat_visible,
             "presents": sorted(getattr(brain, "presents", None) or []),
             "messages": list(getattr(brain, "messages", None) or []),
