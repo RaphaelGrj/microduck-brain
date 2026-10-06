@@ -3,7 +3,9 @@
 "use strict";
 
 (function () {
-  if (location.hostname !== "demo.microduck.local" && !/[?&]demo\b/.test(location.search)) return;
+  // demo : dans l'APK, avec ?demo, ou sur GitHub Pages (https://raphaelgrj.github.io/microduck-brain/, pour l'iPhone)
+  if (location.hostname !== "demo.microduck.local" && !/[?&]demo\b/.test(location.search)
+      && !location.hostname.endsWith(".github.io")) return;
 
   const debut = Date.now() / 1000;
   const VIE = [["chill", 14], ["look", 8], ["wander", 12], ["curious", 6], ["jeu_solitaire", 10], ["chill", 10],
@@ -35,9 +37,9 @@
   const H = Date.now() / 1000;
   const messagesDemo = [{ id: "m1", pour: "Clémence", texte: "Il reste des crêpes dans le frigo !", de: "Raphaël", t: H - 5400, transmis: H - 3000 }];
   const photosDemo = [
-    { id: "d3", t: H - 1800, motif: "chat", src: "/microduck/debout-gauche.webp" },
-    { id: "d2", t: H - 7200, motif: "impression", src: "/microduck/debout-tete-basse.webp" },
-    { id: "d1", t: H - 86400, motif: "retour", src: "/microduck/debout.webp" }];
+    { id: "d3", t: H - 1800, motif: "chat", src: "microduck/debout-gauche.webp" },
+    { id: "d2", t: H - 7200, motif: "impression", src: "microduck/debout-tete-basse.webp" },
+    { id: "d1", t: H - 86400, motif: "retour", src: "microduck/debout.webp" }];
   let photosActif = true;
   const jeuxDemo = { records: { 3: 38.6, 4: 51.2 }, historique: [{ t: H - 4000, issue: "reussi", duree: 38.6, atteints: 3, total: 3 }] };
   const carnetDemo = [{ id: "c1", type: "impression", texte: "Coque de tête noire, PLA Galaxy Black", date: "2026-10-02", piece: "coque-superieure-origine" },
@@ -286,7 +288,7 @@
       else {
         if (corps.pose) { changer("pose_photo", 4); tete = { fier: [0, -0.25, 0, 0], curieux: [0, 0.1, 0, 0.3], content: [0, -0.1, 0.2, 0.1] }[corps.pose] || [0, 0, 0, 0]; }
         const p = { id: "d" + Date.now(), t: Date.now() / 1000, motif: corps.pose ? "pose" : "photo",
-          src: corps.pose === "curieux" ? "/microduck/debout-penche.webp" : corps.pose ? "/microduck/debout-tete-haute.webp" : "/microduck/debout.webp" };
+          src: corps.pose === "curieux" ? "microduck/debout-penche.webp" : corps.pose ? "microduck/debout-tete-haute.webp" : "microduck/debout.webp" };
         photosDemo.unshift(p);
         return { ok: true, ...p };
       }
@@ -343,11 +345,11 @@
       { id: "ex1", nom: "Coque de tête « Casque »", exemple: true, categorie: "tête", bientot: true, liens: {},
         description: "Exemple : ta pièce apparaîtra ainsi, avec ses photos et ses liens Printables et Cults.",
         impression: { materiau: "PLA", temps: "3 h 20", filament_g: 45, supports: false }, auteur: "RaphaelGrj",
-        licence: "CC BY-NC 4.0", photos: ["/microduck/debout-gauche.webp", "/microduck/debout.webp"],
+        licence: "CC BY-NC 4.0", photos: ["microduck/debout-gauche.webp", "microduck/debout.webp"],
         remplace_nom: "Dessus de la tête" },
       { id: "ex2", nom: "Semelles antidérapantes", exemple: true, categorie: "pieds", bientot: true, liens: {},
         description: "Exemple : semelles en TPU pour le carrelage.", impression: { materiau: "TPU 95A", temps: "1 h" },
-        photos: ["/microduck/marche.webp"] },
+        photos: ["microduck/marche.webp"] },
     ];
   }
 

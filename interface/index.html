@@ -9,16 +9,16 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Microduck</title>
-  <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="icon" href="/icone.png" type="image/png">
-  <link rel="apple-touch-icon" href="/icone.png">
-  <link rel="stylesheet" href="/style.css">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icone.png" type="image/png">
+  <link rel="apple-touch-icon" href="icone.png">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <!-- Appairage : le code de [appli] dans ha.toml, garde sur ce telephone -->
   <section id="appairage" class="ecran" hidden>
     <div class="carte appairage">
-      <img src="/icone.png" alt="" width="88" height="88" class="icone">
+      <img src="icone.png" alt="" width="88" height="88" class="icone">
       <h1>Micro<span>duck</span></h1>
       <p>Entre le code d'appairage de ton Microduck (choisi à son installation).</p>
       <form id="form-code">
@@ -33,7 +33,7 @@
   <!-- Installation : premier demarrage, sans code (30 min apres son allumage, reseau local) -->
   <section id="installation" class="ecran" hidden>
     <div class="carte appairage">
-      <img src="/icone.png" alt="" width="88" height="88" class="icone">
+      <img src="icone.png" alt="" width="88" height="88" class="icone">
       <h1>Bienvenue !</h1>
       <p>Ton Microduck est neuf. Trois choses et c'est parti.</p>
       <form id="form-installation">
@@ -75,7 +75,7 @@
           <!-- Le vrai Microduck, rendu depuis son modele 3D officiel (outils/rendu_microduck.py) : l'image suit sa posture
                et la position de sa tete. Une illustration, pas une image de la camera. -->
           <div id="microduck" class="microduck" role="img" aria-label="Microduck">
-            <img id="microduck-img" src="/microduck/debout.webp" alt="" width="120" height="138">
+            <img id="microduck-img" src="microduck/debout.webp" alt="" width="120" height="138">
             <span class="signe zzz" aria-hidden="true">z<small>z</small></span>
             <span class="signe exclamation" aria-hidden="true">!</span>
             <span class="signe coeur" aria-hidden="true">♥</span>
@@ -748,13 +748,13 @@
           <div class="boutons"><button id="vue-qr-copier">Copier</button><button id="vue-qr-partager">Partager</button></div>
           <form method="dialog"><button class="large">Fermer</button></form>
         </dialog>
-  <script src="/i18n.js"></script>
-  <script src="/demo.js"></script>
-  <script src="/app.js"></script>
-  <script src="/boutique.js"></script>
-  <script src="/connexions.js"></script>
-  <script src="/studio.js"></script>
-  <script src="/lib/qrcode.js"></script>
-  <script src="/plus.js"></script>
+  <script src="i18n.js"></script>
+  <script src="demo.js"></script>
+  <script src="app.js"></script>
+  <script src="boutique.js"></script>
+  <script src="connexions.js"></script>
+  <script src="studio.js"></script>
+  <script src="lib/qrcode.js"></script>
+  <script src="plus.js"></script>
 </body>
 </html>

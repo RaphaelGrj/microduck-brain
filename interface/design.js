@@ -25,8 +25,8 @@ let rendu, scene, camera, controles, racine, geometries = {}, originales = {}, m
 
 // ---------- chargement ----------
 async function charger() {
-  const [json, bin] = await Promise.all([fetch("/design/microduck.json").then((r) => r.json()),
-    fetch("/design/microduck.bin").then((r) => r.arrayBuffer())]);
+  const [json, bin] = await Promise.all([fetch("design/microduck.json").then((r) => r.json()),
+    fetch("design/microduck.bin").then((r) => r.arrayBuffer())]);
   modele = json;
   for (const g of modele.groupes) { groupes[g.id] = g; origine[g.id] = g.origine; }
   const normales0 = modele.octets_positions, indices0 = normales0 + (modele.octets_normales || 0);

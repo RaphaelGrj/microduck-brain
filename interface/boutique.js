@@ -48,7 +48,7 @@
       const b = el("button", { className: "essayer", textContent: "Essayer sur mon Microduck" });
       b.addEventListener("click", async () => {
         try {
-          if (!window.MicroduckDesign) await import("/design.js");
+          if (!window.MicroduckDesign) await import("./design.js");
           $("#boutique").hidden = true;                      // le design prend la place de la marketplace
           await window.MicroduckDesign.essayer(p.apercu, p.remplace, p.nom);
         } catch (e) { window.toast("Aperçu indisponible"); }

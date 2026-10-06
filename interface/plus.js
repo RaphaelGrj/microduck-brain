@@ -320,8 +320,12 @@
   window.montrerQR = montrerQR;
   // ---------- sur un autre appareil : iPhone (appli web installee par Safari), ordinateur ----------
   const RELEASES = "https://github.com/RaphaelGrj/microduck-brain/releases";
+  const DEMO_EN_LIGNE = "https://raphaelgrj.github.io/microduck-brain/?demo";
   $("#qr-iphone").addEventListener("click", () => {
-    if (demo() || !/^https?:$/.test(location.protocol)) { window.toast("Depuis l'appli connectée au canard (pas en démo)"); return; }
+    if (demo()) {                                 // en demo : la demo en ligne, a essayer sur l'iPhone avant la livraison
+      montrerQR("Démo sur iPhone", DEMO_EN_LIGNE, "Appareil photo → ouvrir dans Safari → Partager → « Sur l'écran d'accueil ». Une démo, sans le canard.");
+      return;
+    }
     montrerQR("Sur un iPhone", location.origin + "/", "Appareil photo → ouvrir dans Safari → Partager → « Sur l'écran d'accueil ». Puis entre le code du canard.");
   });
   $("#lien-ordinateur").addEventListener("click", () => {

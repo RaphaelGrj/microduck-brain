@@ -152,12 +152,14 @@ def test_garde_activee_depuis_l_appli():
 
 
 def test_demo_inerte_hors_mode_demo():
-    """demo.js (canard imaginaire de l'appli Android) ne s'active que sur l'hote de demo ou avec ?demo."""
+    """demo.js (canard imaginaire) ne s'active que sur l'hote de demo de l'APK, avec ?demo, ou sur GitHub Pages - jamais
+    sur le canard lui-meme (servi en http sur une adresse du reseau local)."""
     js = (appli.DOSSIER / "demo.js").read_text(encoding="utf-8")
     assert 'location.hostname !== "demo.microduck.local"' in js
     assert "fetch(" not in js and "XMLHttpRequest" not in js and "WebSocket" not in js   # rien ne sort du telephone
     html = (appli.DOSSIER / "index.html").read_text(encoding="utf-8")
-    assert html.index("/demo.js") < html.index("/app.js")
+    assert html.index('"demo.js"') < html.index('"app.js"')
+    assert 'endsWith(".github.io")' in js
 
 
 def test_manifeste_android():
