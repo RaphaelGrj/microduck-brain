@@ -137,6 +137,8 @@ function afficher(e) {
   dl("#batt", [["Niveau", pourcent(e.batterie.pourcent)], ["Tension", e.batterie.volts ? e.batterie.volts.toFixed(2) + " V" : null],
     ["Autonomie", bt.autonomie_h ? bt.autonomie_h.toFixed(1) + " h" : null], ["Santé", bt.sante_pct ? bt.sante_pct + " %" : null],
     ["Cycles mesurés", bt.cycles], ["À remplacer", bt.a_remplacer ? "oui" : "non"]]);
+  batteries(bt);
+  semaine(e.semaine || []);
   const sv = e.maintenance.servos, t = e.temperatures || {};
   dl("#servos", [["Servo le plus chaud", t.moteurs != null ? Math.round(t.moteurs) + " °C" : null],
     ["Carte", t.cpu != null ? Math.round(t.cpu) + " °C" : null], ["Chauffe souvent", sv.plus_chaud_habituel],
@@ -170,6 +172,129 @@ function afficher(e) {
     li.append(a, b); return li;
   }));
 }
+
+// Ses batteries (diagnostic.py) : laquelle est dans le canard, et la sante de chacune
+function batteries(bt) {
+  const liste = Object.entries(bt.batteries || {});
+  $("#carte-batteries").hidden = !liste.length;
+  if (!liste.length) return;
+  const q = $("#batterie-question");
+  q.hidden = !bt.a_nommer;
+  q.replaceChildren(Object.assign(document.createElement("span"), { textContent: "Batterie changée : laquelle viens-tu de mettre ?" }),
+    ...liste.map(([nom]) => Object.assign(document.createElement("button"), { className: "principal", textContent: nom,
+      onclick: () => commande("batterie_" + nom, `Batterie ${nom} notée`) })));
+  $("#batteries").replaceChildren(...liste.map(([nom, b]) => {
+    const li = document.createElement("li");
+    const n = document.createElement("div"); n.className = "nom";
+    const titre = document.createElement("b"); titre.textContent = `Batterie ${nom}` + (bt.actuelle === nom ? " · dans le canard" : "");
+    if (bt.actuelle === nom) titre.className = "actif";
+    const d = document.createElement("div"); d.className = "discret petit";
+    d.textContent = [b.cycles + " cycle" + (b.cycles > 1 ? "s" : ""), b.autonomie_h ? b.autonomie_h.toFixed(1) + " h" : null,
+      b.sante_pct != null ? "santé " + Math.round(b.sante_pct) + " %" : null, b.a_remplacer ? "à remplacer" : null].filter(Boolean).join(" · ");
+    n.append(titre, d);
+    li.append(n);
+    if (bt.actuelle !== nom) {
+      const x = document.createElement("button"); x.textContent = "Elle est dedans";
+      x.addEventListener("click", () => commande("batterie_" + nom, `Batterie ${nom} notée`));
+      li.append(x);
+    }
+    return li;
+  }));
+}
+
+// Sa semaine : une barre par jour (toutes activites), puis les totaux
+const JOURS = ["dim", "lun", "mar", "mer", "jeu", "ven", "sam"];
+function semaine(jours) {
+  const totaux = {};
+  const sommes = jours.map((j) => Object.entries(j.compte || {}).reduce((a, [k, v]) => { totaux[k] = (totaux[k] || 0) + v; return a + v; }, 0));
+  const max = Math.max(1, ...sommes);
+  $("#semaine").replaceChildren(...jours.map((j, i) => {
+    const d = document.createElement("div");
+    if (i === jours.length - 1) d.className = "aujourdhui";
+    const b = document.createElement("b"); b.textContent = sommes[i];
+    const barre = document.createElement("i"); barre.style.height = Math.round((sommes[i] / max) * 100) + "px";
+    const l = document.createElement("span");
+    l.textContent = i === jours.length - 1 ? "auj." : j.date ? JOURS[new Date(j.date + "T12:00").getDay()] : "—";
+    d.append(b, barre, l);
+    return d;
+  }));
+  const t = Object.entries(totaux).sort((a, b) => b[1] - a[1]);
+  $("#semaine-totaux").replaceChildren(...(t.length ? t : [["rien", 0]]).map(([k, v]) => {
+    const li = document.createElement("li");
+    if (k === "rien") { li.textContent = "Pas encore d'activité cette semaine"; return li; }
+    const b = document.createElement("b"); b.textContent = v; li.append(b, JOUR[k] ? JOUR[k][v > 1 ? 1 : 0] : k); return li;
+  }));
+}
+
+// Alertes : le canard les tient (appli.py) ; le telephone les affiche, et l'APK en fait des notifications
+let alerteDepuis = null;
+const alertesVues = [];
+async function verifierAlertes() {
+  if (!code) return;
+  try {
+    const premiere = alerteDepuis === null;
+    const r = await api("/api/alertes?depuis=" + (premiere ? Date.now() / 1000 - 86400 : alerteDepuis));
+    alerteDepuis = r.maintenant;
+    for (const a of r.alertes) {
+      alertesVues.push(a);
+      if (!premiere) toast(a.titre);
+    }
+    // APK : notifications Android (curseur partage avec la verification en arriere-plan : pas de doublon)
+    if (window.MicroduckAndroid && r.alertes.length) window.MicroduckAndroid.alertes(JSON.stringify(r.alertes));
+    alertesVues.splice(0, Math.max(0, alertesVues.length - 8));
+    $("#carte-alertes").hidden = !alertesVues.length;
+    $("#alertes-liste").replaceChildren(...alertesVues.slice().reverse().map((a) => {
+      const li = document.createElement("li"); if (a.importante) li.className = "importante";
+      const b = document.createElement("b"); b.textContent = a.titre;
+      const t = document.createElement("small");
+      t.textContent = [a.texte, new Date(a.t * 1000).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })].filter(Boolean).join(" · ");
+      li.append(b, t); return li;
+    }));
+  } catch (x) { /* la prochaine fois */ }
+}
+setInterval(verifierAlertes, 15000);
+
+// Sa journee (reglages.py) : heures calmes, bonjour, repas, auto-test, rythme
+const heureVersTexte = (v) => (v ? v.slice(0, 5) : null);
+function ligneRepas(v) {
+  const s = document.createElement("span");
+  const i = document.createElement("input"); i.type = "time"; i.value = v || "12:30"; i.setAttribute("aria-label", "Heure du repas");
+  const x = document.createElement("button"); x.textContent = "✕"; x.setAttribute("aria-label", "Retirer ce repas");
+  x.addEventListener("click", () => s.remove());
+  s.append(i, x);
+  return s;
+}
+async function chargerJournee() {
+  let r;
+  try { r = await api("/api/reglages"); } catch (x) { $("#carte-journee").hidden = true; return; }
+  $("#carte-journee").hidden = false;
+  for (const id of ["#r-calmes-debut", "#r-calmes-fin"]) {
+    if (!$(id).options.length) for (let h = 0; h < 24; h++) $(id).add(new Option(String(h), String(h)));
+  }
+  $("#r-calmes").checked = !!r.heures_calmes;
+  $("#r-calmes-debut").value = String((r.heures_calmes || [23, 7])[0]);
+  $("#r-calmes-fin").value = String((r.heures_calmes || [23, 7])[1]);
+  $("#r-calmes-heures").hidden = !r.heures_calmes;
+  $("#r-bonjour").value = r.bonjour || "";
+  $("#r-bonjour-we").value = r.bonjour_weekend || "";
+  $("#r-repas").replaceChildren(...(r.repas || []).map(ligneRepas));
+  $("#r-autotest").checked = !!r.autotest;
+  $("#r-circadien").checked = !!r.circadien;
+}
+$("#r-calmes").addEventListener("change", (e) => { $("#r-calmes-heures").hidden = !e.target.checked; });
+$("#r-repas-ajout").addEventListener("click", () => $("#r-repas").append(ligneRepas()));
+$("#r-enregistrer").addEventListener("click", async () => {
+  const calmes = $("#r-calmes").checked ? [+$("#r-calmes-debut").value, +$("#r-calmes-fin").value] : null;
+  if (calmes && calmes[0] === calmes[1]) { toast("Début et fin des heures calmes identiques"); return; }
+  try {
+    await api("/api/reglages", { heures_calmes: calmes, bonjour: heureVersTexte($("#r-bonjour").value),
+      bonjour_weekend: heureVersTexte($("#r-bonjour-we").value),
+      repas: [...document.querySelectorAll("#r-repas input")].map((i) => i.value).filter(Boolean),
+      autotest: $("#r-autotest").checked, circadien: $("#r-circadien").checked });
+    toast("Réglages enregistrés");
+    chargerJournee();
+  } catch (x) { toast(x.message === "code" ? "Code refusé" : "Microduck ne répond pas"); }
+});
 
 // Le Microduck de l'accueil : familles d'etats -> expression (signes par-dessus) ; image d'apres posture et tete.
 const FAMILLES = {
@@ -352,6 +477,9 @@ async function entrer(c) {
     if (e.etat) afficher(e);
     ecouter();
     rafraichirCarte();
+    verifierAlertes();
+    // APK : il retient l'adresse et le code pour verifier les alertes en arriere-plan (notifications, widget)
+    if (window.MicroduckAndroid && !window.MicroduckDemo) window.MicroduckAndroid.retenir(location.origin, c);
   } catch (x) {
     $("#appli").hidden = true; $("#appairage").hidden = false;
     texte("#erreur-code", x.message === "code" ? "Code refusé." : "Microduck ne répond pas (même Wi-Fi ?).");
@@ -368,7 +496,7 @@ document.addEventListener("click", (ev) => {
     document.querySelectorAll(".page").forEach((p) => { p.hidden = p.dataset.page !== b.dataset.onglet; });
     window.scrollTo(0, 0);
     if (b.dataset.onglet === "accueil") rafraichirCarte();
-    if (b.dataset.onglet === "reglages") rafraichirLieux();
+    if (b.dataset.onglet === "reglages") { rafraichirLieux(); chargerJournee(); }
   }
 });
 $("#t-calme").addEventListener("click", () => commande(dernier && dernier.modes.calme ? "calme_off" : "calme_on"));

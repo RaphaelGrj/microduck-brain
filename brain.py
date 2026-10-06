@@ -341,6 +341,11 @@ class Brain:
                 self.chargeur = None
                 print(f"[{self.t_global:6.1f}s] carte effacee", flush=True)
                 continue
+            if base == "batterie_mise":
+                # depuis l'application : quelle batterie du pack est dans le canard (statistiques par batterie)
+                if hasattr(self, "diagnostic"):
+                    self.diagnostic.batterie.mettre(detail)
+                continue
             if base == "lieu":
                 # lieux.py : il a change d'endroit (autre reseau Wi-Fi, ou choix dans l'application). La carte de la
                 # session ne vaut plus rien ici : il en recommence une. Un lieu inconnu le rend curieux ; un retour,
@@ -1068,9 +1073,16 @@ class Brain:
 
     def _change_de_jour(self):
         """Le journal du jour repart de zero a minuit (meme s'il dort) ; il est garde dans la memoire du canard."""
-        jour = getattr(self.horloge(), "tm_yday", None)
+        h = self.horloge()
+        jour = getattr(h, "tm_yday", None)
         mem = self.ctx.extras.get("memoire")
         d = mem.donnees.setdefault("journal_jour", {}) if mem is not None and hasattr(mem, "donnees") else None
+        if d and d.get("jour") is not None and d.get("jour") != jour and d.get("compte"):
+            # le jour d'avant part dans l'historique (bilan de la semaine dans l'application), 60 jours au plus
+            hist = mem.donnees.setdefault("historique_jours", [])
+            hist.append({"date": d.get("date"), "compte": dict(d["compte"])})
+            del hist[:-self.HISTORIQUE_JOURS]
+            d["compte"] = {}
         if getattr(self, "_jour_compte", None) is None and d and d.get("jour") == jour:
             self.du_jour = dict(d.get("compte", {}))      # redemarrage dans la journee : on reprend la matinee
         elif getattr(self, "_jour_compte", None) != jour:
@@ -1078,6 +1090,19 @@ class Brain:
         self._jour_compte = jour
         if d is not None:
             d["jour"], d["compte"] = jour, self.du_jour
+            try:
+                d["date"] = time.strftime("%Y-%m-%d", h)
+            except (TypeError, ValueError):
+                d["date"] = None
+
+    HISTORIQUE_JOURS = 60
+
+    def semaine(self):
+        """Les 6 jours precedents gardes en memoire, puis aujourd'hui : [{"date", "compte"}] (bilan de l'application)."""
+        mem = self.ctx.extras.get("memoire")
+        hist = list((mem.donnees.get("historique_jours") or [])[-6:]) if mem is not None and hasattr(mem, "donnees") else []
+        d = (mem.donnees.get("journal_jour") or {}) if mem is not None and hasattr(mem, "donnees") else {}
+        return hist + [{"date": d.get("date"), "compte": dict(getattr(self, "du_jour", {}) or {})}]
 
     def _compte_du_jour(self, nom):
         self._change_de_jour()

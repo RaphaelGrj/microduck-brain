@@ -15,7 +15,17 @@
   const TETES = { look: [0, 0, 0.5, 0], curious: [0, 0.1, 0, 0.25], regarde_chat: [0, 0.2, -0.45, 0],
     nap: [0.1, 0.5, 0, 0], jeu_solitaire: [0, 0.3, 0, 0] };
 
-  let carteDepuis = -1e6;                      // « Effacer sa carte » : il repart de zero ici
+  let carteDepuis = -1e6;
+  let batterieDedans = "2", batterieANommer = true;
+  const SEMAINE = [{ promenades: 4, siestes: 2, jeux: 1 }, { promenades: 2, siestes: 3, caresses: 3 },
+    { promenades: 5, jeux: 3, danses: 1 }, { siestes: 2, caresses: 1 }, { promenades: 6, jeux: 2, accueils: 2 },
+    { promenades: 3, siestes: 2, jeux: 4, danses: 2 }, null];
+  // alertes imaginaires : une impression finie apres 25 s, puis une alerte de garde si on active le mode garde
+  const alertes = [{ t: Date.now() / 1000 - 3600, type: "impression_finie", titre: "Impression finie", texte: "MK4S", importante: false }];
+  setTimeout(() => alertes.push({ t: Date.now() / 1000, type: "impression_finie", titre: "Impression finie",
+    texte: "Saturn 4 Ultra", importante: false }), 25000);
+  let reglagesDemo = { heures_calmes: [23, 7], bonjour: "07:30", bonjour_weekend: "09:30", repas: ["12:30", "19:30"],
+    autotest: true, circadien: true };                      // « Effacer sa carte » : il repart de zero ici
   let i = 0, finEtat = 0, force = null, tete = null, assis = false, calme = false, garde = false;
   let diag = { ok: true, le: "ce matin, 7 h 42", demande: false, finDemande: 0 };
   const journal = [], duJour = { promenades: 3, siestes: 1, jeux: 2, caresses: 4, accueils: 1 };
@@ -54,6 +64,8 @@
       modes: { calme, garde, discret: false, vacarme: false, timidite: 0, taquineries_coupees: false },
       presents: garde ? [] : ["Raphaël"],
       du_jour: duJour,
+      semaine: SEMAINE.map((compte, k) => ({ date: new Date(Date.now() - (6 - k) * 86400000).toISOString().slice(0, 10),
+        compte: k === 6 ? duJour : compte })),
       journal: journal.slice(),
       temperatures: { moteurs: 41, cpu: 52 },
       maintenance: {
@@ -62,7 +74,11 @@
           detail: diag.demande ? {} : { robotd: "OK", boucle: "OK 50 Hz", bus: "OK", imu: "OK", tof: "OK",
             camera: "OK", tete_lacet: "OK", tete_tangage: "OK", batterie: "OK 82 %" },
         },
-        batterie: { autonomie_h: 1.6, sante_pct: 97, a_remplacer: false, cycles: 12 },
+        batterie: { autonomie_h: 1.6, sante_pct: 97, a_remplacer: false, cycles: 12, actuelle: batterieDedans,
+          a_nommer: batterieANommer, batteries: {
+            1: { cycles: 6, autonomie_h: 1.7, sante_pct: null, a_remplacer: false },
+            2: { cycles: 4, autonomie_h: 1.6, sante_pct: null, a_remplacer: false },
+            3: { cycles: 2, autonomie_h: 1.5, sante_pct: null, a_remplacer: false } } },
         servos: { derives: [], plus_chaud_habituel: "genou droit", jours_mesures: 9 },
         chutes: { sept_jours: 1, activite_risquee: "wander", lieux_a_risque: 0, dernieres: [] },
       },
@@ -81,7 +97,12 @@
     else if (nom === "assis") { assis = !assis; changer("assis_demande", 3); }
     else if (nom === "stop" || nom === "fin_jeu") { assis = false; changer("chill", 10); }
     else if (nom === "calme_on" || nom === "calme_off") { calme = nom === "calme_on"; finEtat = 0; }
-    else if (nom === "garde_on" || nom === "garde_off") garde = nom === "garde_on";
+    else if (nom === "garde_on" || nom === "garde_off") {
+      garde = nom === "garde_on";
+      if (garde) setTimeout(() => alertes.push({ t: Date.now() / 1000, type: "garde", titre: "Alerte de garde",
+        texte: "Il a entendu une voix, alors que personne n'est à la maison.", importante: true }), 8000);
+    }
+    else if (nom.startsWith("batterie_")) { batterieDedans = nom.slice(9); batterieANommer = false; }
     else if (nom === "oublier_carte") carteDepuis = Math.floor((Date.now() / 1000 - debut) * 2);
     else if (nom === "diagnostic") {
       diag = { ok: null, le: diag.le, demande: true, finDemande: Date.now() / 1000 + 5 };
@@ -176,6 +197,11 @@
     if (chemin === "/api/commande") return commande(corps.commande);
     if (chemin === "/api/lieu") return actionLieu(corps);
     if (chemin === "/api/carte") return carte();
+    if (chemin.startsWith("/api/alertes")) {
+      const depuis = +new URLSearchParams(chemin.split("?")[1]).get("depuis") || 0;
+      return { maintenant: Date.now() / 1000, alertes: alertes.filter((a) => a.t > depuis) };
+    }
+    if (chemin === "/api/reglages") { if (corps) reglagesDemo = { ...reglagesDemo, ...corps }; return reglagesDemo; }
     if (chemin === "/api/design") {                   // schemas et filaments : dans ce telephone, en demo
       if (corps) { try { localStorage.setItem("microduck-demo-design", JSON.stringify(corps)); } catch (e) { /* prive */ } return { ok: true }; }
       try { return JSON.parse(localStorage.getItem("microduck-demo-design")) || DESIGN; } catch (e) { return DESIGN; }

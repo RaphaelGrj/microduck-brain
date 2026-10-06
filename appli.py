@@ -19,9 +19,12 @@ API :
   GET  /api/lieux           les lieux (lieux.py) ; GET /api/lieu-carte?id=... la carte gardee d'un lieu
   POST /api/lieu            {"action": ..., "id": ..., "nom": ...} (basculer, renommer, archiver, restaurer, ...)
   GET  /api/design          schemas de couleurs et filaments du design space ; POST /api/design pour les garder
+  GET  /api/alertes?depuis=T les alertes (chute, batterie, garde, incendie, impressions...) apres l'instant T (s)
+  GET  /api/reglages        heures calmes, bonjour, repas... ; POST /api/reglages pour les changer (reglages.py)
   GET  /api/sante           test de vie, sans code (pour savoir si le canard repond)
 Le code se passe dans l'en-tete `X-Microduck-Code` (ou `?code=` pour le flux).
 """
+import collections
 import hmac
 import os
 import re
@@ -48,6 +51,7 @@ COMMANDES = {
     "stop": "commande:stop", "stop_taquinerie": "stop_taquinerie", "diagnostic": "diagnostic",
     "calme_on": "calme_on", "calme_off": "calme_off", "garde_on": "garde_on", "garde_off": "garde_off",
     "oublier_carte": "oublier_carte",
+    "batterie_1": "batterie_mise:1", "batterie_2": "batterie_mise:2", "batterie_3": "batterie_mise:3",
     "avance": "guide:avance", "gauche": "guide:gauche", "droite": "guide:droite",
     "regard_gauche": "regard:gauche", "regard_droite": "regard:droite", "regard_haut": "regard:haut",
     "regard_bas": "regard:bas", "regard_centre": "regard:centre",
@@ -82,6 +86,7 @@ def instantane(brain, state, version=None):
     perso = getattr(brain, "perso", None)
     servos = getattr(getattr(brain, "diagnostic", None), "servos", None)
     chutes = getattr(getattr(brain, "diagnostic", None), "chutes", None)
+    jb = getattr(getattr(brain, "diagnostic", None), "batterie", None)
     return {
         "t": time.time(), "version": version,
         "etat": brain.courant.nom, "energie": round(brain.humeur.energie, 2), "eveil": round(brain.humeur.eveil, 2),
@@ -96,13 +101,16 @@ def instantane(brain, state, version=None):
                   "taquineries_coupees": brain.t_global < getattr(getattr(brain, "malice", None), "stop_jusqua", -1)},
         "presents": sorted(getattr(brain, "presents", ())),
         "du_jour": dict(getattr(brain, "du_jour", {}) or {}),
+        "semaine": brain.semaine() if hasattr(brain, "semaine") else [],
         "journal": [{"t": round(e[0]), "etat": e[1]} for e in list(brain.journal)[-40:]],
         "temperatures": dict(getattr(brain, "temperatures", {}) or {}),
         "maintenance": {
             "diagnostic": {"ok": at.ok() if at else None, "le": dg.get("autotest_le"),
                            "detail": dg.get("autotest_detail") or {}, "demande": bool(getattr(brain, "diag_demande", False))},
             "batterie": {"autonomie_h": dg.get("autonomie_h"), "sante_pct": dg.get("sante_batterie"),
-                         "a_remplacer": dg.get("batterie_a_remplacer"), "cycles": dg.get("cycles")},
+                         "a_remplacer": dg.get("batterie_a_remplacer"), "cycles": dg.get("cycles"),
+                         **({"actuelle": jb.d.get("actuelle"), "a_nommer": bool(jb.d.get("a_nommer")),
+                             "batteries": jb.par_batterie()} if jb is not None and hasattr(jb, "par_batterie") else {})},
             "servos": {"derives": dg.get("servos_derive") or [], "plus_chaud_habituel": dg.get("servo_chaud_habituel"),
                        "jours_mesures": len((servos.d.get("jours") or {})) if servos else 0},
             "chutes": {"sept_jours": dg.get("chutes_7j"), "activite_risquee": dg.get("activite_risquee"),
@@ -146,6 +154,18 @@ def carte(brain, state):
     }
 
 
+# Alertes pour les notifications du telephone : evenements du cerveau (ecouteur) -> (titre, texte, importante)
+ALERTES_EVENEMENTS = {
+    "alarme_fumee": ("Alarme incendie !", "Le détecteur de fumée sonne.", True),
+    "impression_finie": ("Impression finie", "{detail}", False),
+    "impression_echec": ("Impression ratée", "{detail}", True),
+    "machine_finie": ("Machine terminée", "{detail}", False),
+    "machine_echec": ("Machine en panne", "{detail}", True),
+}
+GARDE = {"voix": "une voix", "choc": "un choc", "porte": "des coups à la porte", "bruit": "un bruit"}
+BATTERIE_FAIBLE_PCT, BATTERIE_REMONTEE_PCT = 20.0, 30.0
+
+
 COULEUR = re.compile(r"^#[0-9a-fA-F]{6}$")
 DESIGN_VIDE = {"filaments": [], "schemas": [], "actif": None}
 
@@ -177,7 +197,14 @@ class Appli:
         self.evenements = queue.Queue()
         self.etat = {}
         self.carte = {}
+        self.alertes = collections.deque(maxlen=60)    # {"t", "type", "titre", "texte", "importante"}
+        self._verrou_alertes = threading.Lock()
+        self._avant = None                      # instantane precedent : on alerte sur les changements
+        self._ecoute = None
         self.fichier_design = Path(os.environ.get("MICRODUCK_DESIGN", Path.home() / ".local/share/microduck/design.json"))
+        self.cerveau = None                     # section [cerveau] fusionnee (canard.py) : reglages modifiables
+        self.fichier_reglages = None
+        self._reglages_a_appliquer = None
         self.lieux = None                       # lieux.Lieux, branche par canard.py (sinon : pas de section Lieux)
         self._t_photo = self._t_carte = -1e9
         self._echecs = {}                       # ip -> instant du dernier code faux (freine les essais)
@@ -191,9 +218,62 @@ class Appli:
             return
         self._t_photo = now
         self.etat = instantane(brain, state, self.version)
+        if self._ecoute is not brain and hasattr(brain, "ecouteurs"):
+            self._ecoute = brain
+            brain.ecouteurs.append(self.sur_evenement)
+        self._surveiller(self.etat)
+        nouveaux, self._reglages_a_appliquer = self._reglages_a_appliquer, None
+        if nouveaux is not None:
+            import reglages
+            reglages.appliquer(brain, nouveaux)
         if now - self._t_carte >= PERIODE_CARTE_S:
             self._t_carte = now
             self.carte = carte(brain, state)
+
+    # -- alertes (notifications du telephone) -----------------------------------------------------------------------
+    def alerter(self, type_, titre, texte="", importante=False):
+        with self._verrou_alertes:
+            # instants strictement croissants : le telephone lit « depuis T », deux alertes de la meme milliseconde
+            # ne doivent pas se confondre
+            t = round(max(time.time(), (self.alertes[-1]["t"] + 0.001) if self.alertes else 0.0), 3)
+            self.alertes.append({"t": t, "type": type_, "titre": titre, "texte": texte,
+                                 "importante": bool(importante)})
+
+    def sur_evenement(self, quoi):
+        """Ecouteur du cerveau (evenements recus et « garde:<type> ») : rien de lent ici."""
+        base, _, detail = str(quoi).partition(":")
+        if base == "garde":
+            self.alerter("garde", "Alerte de garde", f"Il a entendu {GARDE.get(detail, 'quelque chose')}, "
+                         "alors que personne n'est à la maison.", True)
+        elif base in ALERTES_EVENEMENTS:
+            titre, texte, importante = ALERTES_EVENEMENTS[base]
+            self.alerter(base, titre, texte.format(detail=detail).strip(), importante)
+
+    def _surveiller(self, e):
+        """Changements d'etat qui meritent une notification : chute, batterie faible, diagnostic, batterie a nommer."""
+        avant, self._avant = self._avant, e
+        if avant is None:
+            return
+        if e["tombe"] and not avant["tombe"]:
+            self.alerter("chute", "Il est tombé", "Il essaie de se relever tout seul.", True)
+        p, p0 = e["batterie"].get("pourcent"), avant["batterie"].get("pourcent")
+        if p is not None and p0 is not None:
+            if p < BATTERIE_FAIBLE_PCT <= p0 and not self._batterie_signalee:
+                self._batterie_signalee = True
+                self.alerter("batterie", "Batterie faible", f"Plus que {round(p)} % : il va vouloir se reposer.", True)
+            elif p >= BATTERIE_REMONTEE_PCT:
+                self._batterie_signalee = False
+        diag, diag0 = e["maintenance"]["diagnostic"], avant["maintenance"]["diagnostic"]
+        if diag.get("ok") is False and diag.get("le") != diag0.get("le"):
+            self.alerter("diagnostic", "Diagnostic : problème détecté", "Détails dans Santé.", True)
+        if e["maintenance"]["batterie"].get("a_nommer") and not avant["maintenance"]["batterie"].get("a_nommer"):
+            self.alerter("batterie_echange", "Batterie changée", "Laquelle as-tu mise ? Réponds dans Santé.", False)
+
+    _batterie_signalee = False
+
+    def alertes_depuis(self, t):
+        with self._verrou_alertes:
+            return [a for a in self.alertes if a["t"] > t]
 
     def source(self):
         """Evenements envoyes par l'appli depuis la derniere trame (brain.run(source=...))."""
@@ -260,6 +340,21 @@ class Appli:
                     if self._autorise():
                         self._json(200, appli.carte)
                     return
+                if url.path == "/api/alertes":
+                    if self._autorise():
+                        try:
+                            depuis = float(parse_qs(url.query).get("depuis", ["0"])[0])
+                        except ValueError:
+                            depuis = 0.0
+                        self._json(200, {"maintenant": time.time(), "alertes": appli.alertes_depuis(depuis)})
+                    return
+                if url.path == "/api/reglages":
+                    if self._autorise():
+                        if appli.cerveau is None:
+                            return self._json(404, {"erreur": "reglages non geres"})
+                        import reglages
+                        self._json(200, reglages.pour_appli(appli.cerveau))
+                    return
                 if url.path == "/api/design":
                     if self._autorise():
                         try:
@@ -296,7 +391,7 @@ class Appli:
                 chemin = urlparse(self.path).path
                 if not adresse_locale(self.client_address[0]):
                     return self._json(403, {"erreur": "reseau local seulement"})
-                if chemin not in ("/api/commande", "/api/lieu", "/api/design"):
+                if chemin not in ("/api/commande", "/api/lieu", "/api/design", "/api/reglages"):
                     return self._json(404, {"erreur": "inconnu"})
                 if not self._autorise():
                     return
@@ -307,6 +402,20 @@ class Appli:
                         raise ValueError
                 except (ValueError, AttributeError):
                     return self._json(400, {"erreur": "JSON attendu"})
+                if chemin == "/api/reglages":
+                    import reglages
+                    propre = reglages.valider(corps) if appli.cerveau is not None else None
+                    if not propre:
+                        return self._json(400, {"erreur": "reglages attendus"})
+                    fusion = {**appli.cerveau, **propre}
+                    fichier = appli.fichier_reglages or reglages.CHEMIN_DEFAUT
+                    try:
+                        reglages.ecrire({**reglages.lire(fichier), **propre}, fichier)
+                    except OSError:
+                        return self._json(500, {"erreur": "enregistrement impossible"})
+                    appli.cerveau = fusion
+                    appli._reglages_a_appliquer = dict(fusion)
+                    return self._json(200, reglages.pour_appli(fusion))
                 if chemin == "/api/design":
                     propre = valider_design(corps)
                     if propre is None:

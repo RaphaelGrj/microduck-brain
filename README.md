@@ -55,14 +55,20 @@ du dépôt, dans `~/.microduck-android/`.
 - **Accueil** : humeur, batterie, qui est là, journal du jour.
 - **Jouer** : balle, cache-cache, 1-2-3 soleil, danse, tours.
 - **Commander** : petits pas guidés, avec les garde-fous du cerveau (pas d'obstacle, pas de vide, pas de recul), et le regard.
-- **Santé** : bouton **lancer le diagnostic**, batterie, servos, températures, chutes, version.
+- **Santé** : bouton **lancer le diagnostic**, batterie, **ses 3 batteries** (après un échange, il demande
+  laquelle est mise ; cycles, autonomie et santé de chacune), servos, températures, chutes, version.
 - **Caractère** : personnalité, voix, êtres connus.
 - **Réglages** : mode calme, mode garde, couper les taquineries, effacer sa carte, **lieux**.
   - Le canard reconnaît où il est par son Wi-Fi (`lieux.py`) : sur un réseau inconnu, il crée un lieu ; de retour
     sur un réseau connu, il y rebascule.
   - Chaque lieu peut être renommé, lié à un autre réseau (répéteur), archivé, restauré ou supprimé.
   - Chaque lieu garde sa dernière carte, qu'on peut regarder dans l'appli.
-- **Journal** : ce qu'il a fait.
+- **Journal** : **sa semaine** (une barre par jour, les totaux), puis ce qu'il a fait.
+- **Alertes** (accueil) et **notifications** de l'APK : chute, batterie faible, diagnostic en échec, garde, alarme
+  incendie, impressions et machines finies ou ratées. Le canard les tient (`GET /api/alertes`), le téléphone les lit.
+- **Réglages → Sa journée** : heures calmes, bonjour du matin (semaine, week-end), repas, auto-test, rythme. Ils sont
+  gardés dans `reglages.json` (`reglages.py`) et prennent le dessus sur `ha.toml`, qui n'est jamais réécrit.
+- **Widget Android** : son état et sa batterie sur l'écran d'accueil.
 
 **En haut à droite** :
 - **Design** (palette) : le vrai Microduck en 3D, d'après son modèle officiel allégé (`outils/modele_3d.py`).

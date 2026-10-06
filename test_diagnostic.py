@@ -272,3 +272,22 @@ def test_diagnostic_lance_a_la_main_avec_la_batterie():
     assert r["batterie"][0] and "64 %" in r["batterie"][1] and "7.60 V" in r["batterie"][1]
     det = b.diagnostic.resume()["autotest_detail"]
     assert det["batterie"].startswith("OK ") and b.diagnostic.resume()["autotest_le"]
+
+
+def test_batteries_du_pack():
+    """Echange de batterie (+30 % d'un coup) -> l'appli demande laquelle ; les cycles sont comptes par batterie."""
+    from diagnostic import JournalBatterie
+    jb = JournalBatterie()
+    t = 0.0
+    for pct in range(100, 40, -1):                     # batterie 1 : decharge de 100 a 41 %
+        jb.note(t, float(pct)); t += 60
+    jb.note(t, 100.0)                                  # echange : canard rallume avec une batterie pleine
+    assert jb.d["a_nommer"] and jb.d["cycles"][-1]["batterie"] == "1"
+    assert jb.mettre("3") and not jb.d["a_nommer"] and jb.d["actuelle"] == "3"
+    for pct in range(99, 50, -1):
+        t += 60; jb.note(t, float(pct))
+    t += 60; jb.note(t, 100.0)
+    par = jb.par_batterie()
+    assert par["1"]["cycles"] == 1 and par["3"]["cycles"] == 1 and par["2"]["cycles"] == 0
+    assert par["3"]["autonomie_h"] and par["2"]["autonomie_h"] is None
+    assert jb.mettre("9") is False

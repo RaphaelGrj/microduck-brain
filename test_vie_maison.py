@@ -452,3 +452,23 @@ def test_journal_de_bord_du_jour_et_journal_borne():
     for k in range(500):
         b._bascule("chill" if k % 2 else "look")
     assert len(b.journal) <= 100
+
+
+def test_bilan_de_la_semaine():
+    """A minuit, le journal du jour part dans l'historique (60 jours) : l'appli montre les 7 derniers jours."""
+    class Mem:
+        donnees = {}
+
+        def sauver(self):
+            pass
+    b, _, horloge = cerveau(memoire=Mem())
+    b._compte_du_jour("wander")
+    b._compte_du_jour("nap")
+    horloge.jour += 1
+    b._compte_du_jour("wander")
+    sem = b.semaine()
+    assert [j["compte"] for j in sem] == [{"promenades": 1, "siestes": 1}, {"promenades": 1}]
+    for _ in range(70):
+        horloge.jour += 1
+        b._compte_du_jour("danse")
+    assert len(Mem.donnees["historique_jours"]) == Brain.HISTORIQUE_JOURS and len(b.semaine()) == 7

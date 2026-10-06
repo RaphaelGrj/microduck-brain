@@ -282,3 +282,22 @@ input {
   text-decoration: none; font-weight: 600; background: var(--orange-fonce); color: var(--accent-texte); }
 .piece .liens a.secondaire { background: var(--barre); color: var(--texte); border: 1px solid var(--bord); }
 .piece .essayer { width: 100%; margin-top: 8px; }
+
+/* Alertes, batteries, journee, semaine */
+.alertes li { display: block; }
+.alertes li b { display: block; }
+.alertes li.importante b { color: var(--danger); }
+.alertes li small { color: var(--discret); }
+.case { width: 26px; height: 26px; accent-color: var(--orange-fonce); flex: none; }
+.heures { display: flex; align-items: center; gap: 8px; padding: 0 0 10px; color: var(--discret); }
+.heures select, .reglage input[type=time], .repas input[type=time] { font: inherit; color: var(--texte); background: var(--carte);
+  border: 1px solid var(--bord); border-radius: 10px; min-height: 40px; padding: 0 8px; }
+.repas { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 10px; }
+.repas span { display: inline-flex; align-items: center; gap: 4px; }
+.repas button { min-height: 36px; padding: 4px 10px; }
+.semaine { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; align-items: end; height: 140px; margin: 8px 0 12px; }
+.semaine div { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 4px; }
+.semaine i { display: block; width: 100%; max-width: 28px; border-radius: 6px 6px 2px 2px; background: var(--orange); min-height: 3px; }
+.semaine .aujourdhui i { background: var(--orange-fonce); }
+.semaine b { font-size: .8rem; font-variant-numeric: tabular-nums; }
+.semaine span { font-size: .75rem; color: var(--discret); }

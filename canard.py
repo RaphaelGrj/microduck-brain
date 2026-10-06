@@ -62,6 +62,8 @@ def assembler(client, args, log=print, cfg=None, cerveau=None, appli_cfg=None):
     """-> dict(extras, sources, crochets, options, pont, fils) ; `cfg` = config HA deja lue (ou None), `cerveau` =
     section [cerveau] du fichier de config (lue meme sans Home Assistant : le canard vit sans lui)."""
     cerveau = cerveau if cerveau is not None else ((cfg or {}).get("cerveau") or {})
+    import reglages
+    cerveau = {**cerveau, **reglages.lire()}           # reglages changes dans l'appli : prennent le dessus sur ha.toml
     extras, sources, crochets, fils = {"memoire": memoire.Memoire(ecriture_differee=True)}, [], [], []
     extras["autotest"] = cerveau.get("autotest", True)     # auto-test au premier reveil de la journee (diagnostic.py)
     extras["circadien"] = cerveau.get("circadien", True)   # vivacite selon l'heure du jour (Brain.vivacite)
@@ -127,6 +129,7 @@ def assembler(client, args, log=print, cfg=None, cerveau=None, appli_cfg=None):
                                     version=version_du_cerveau())
             sources.append(appli.source)
             crochets.append(appli.photographier)
+            appli.cerveau = dict(cerveau)
         except ValueError as e:
             log(f"application Microduck desactivee : {e}")
     lieux = None

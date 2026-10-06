@@ -39,6 +39,7 @@ public class Canard extends Activity {
         s.setDomStorageEnabled(true);           // le code d'appairage reste memorise (localStorage)
         s.setAllowFileAccess(false);
         s.setAllowContentAccess(false);
+        vue.addJavascriptInterface(new Pont(this), "MicroduckAndroid");   // seules les pages du canard sont chargees ici
         vue.setWebViewClient(new WebViewClient() {     // (un WebViewClient garde tous les liens dans l'appli)
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) {

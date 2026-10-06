@@ -49,6 +49,14 @@ public class Accueil extends Activity {
         super.onCreate(b);
         prefs = getSharedPreferences("microduck", MODE_PRIVATE);
         getWindow().setStatusBarColor(ORANGE_FONCE);
+        if (android.os.Build.VERSION.SDK_INT >= 33) {      // Android 13+ : les notifications se demandent
+            requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 1);
+        }
+        Veille.planifier(this, false);
+        String connu = prefs.getString("url", null);
+        if (getIntent().getBooleanExtra("reprendre", false) && connu != null) {
+            startActivity(new Intent(this, Canard.class).putExtra("url", connu + "/"));   // notification ou widget
+        }
 
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);

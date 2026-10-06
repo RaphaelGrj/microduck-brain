@@ -44,6 +44,10 @@ class JournalBatterie:
     def __init__(self, donnees=None, sauver=None):
         self.d = donnees if donnees is not None else {}
         self.d.setdefault("cycles", [])
+        # les batteries du pack (numerotees au feutre : 1, 2, 3) ; apres un echange, l'appli demande laquelle est mise
+        self.d.setdefault("batteries", ["1", "2", "3"])
+        self.d.setdefault("actuelle", self.d["batteries"][0])
+        self.d.setdefault("a_nommer", False)
         self.sauver = sauver
         # cycle en cours, PERSISTANT : canard eteint batterie vide puis rallume avec une batterie chargee (les 2 de
         # rechange du pack) -> le cycle d'avant est clos au redemarrage au lieu d'etre perdu
@@ -77,10 +81,12 @@ class JournalBatterie:
     def _note(self, t, pct):
         if not self.en_charge and pct >= self.bas[1] + self.CHARGE_PCT:
             cand = getattr(self, "_candidat", None)
-            if pct >= self.bas[1] + self.ECHANGE_PCT or (
-                    cand is not None and t - cand[0] >= self.CONFIRME_S and pct > cand[1] + 1.0):
+            echange = pct >= self.bas[1] + self.ECHANGE_PCT
+            if echange or (cand is not None and t - cand[0] >= self.CONFIRME_S and pct > cand[1] + 1.0):
                 self._candidat = None
                 self._clos_cycle()
+                if echange and len(self.d["batteries"]) > 1:
+                    self.d["a_nommer"] = True             # une autre batterie (ou la meme rechargee) : on demande
                 self.en_charge = True
                 self.haut = self.bas = (t, pct)
             elif cand is None:
@@ -104,7 +110,8 @@ class JournalBatterie:
         h = (t1 - t0) / 3600.0
         if p0 - p1 >= self.CYCLE_MIN_PCT and h >= self.CYCLE_MIN_H:
             self.d["cycles"] = (self.d["cycles"] + [{"debut": round(t0), "de": round(p0, 1), "a": round(p1, 1),
-                                                     "h": round(h, 3)}])[-self.CYCLES_MAX:]
+                                                     "h": round(h, 3), "batterie": self.d.get("actuelle")}]
+                                )[-self.CYCLES_MAX:]
             if self.sauver is not None:
                 self.sauver()
 
@@ -112,27 +119,50 @@ class JournalBatterie:
     def _vitesse(c):
         return (c["de"] - c["a"]) / c["h"]
 
-    def vitesse_pct_h(self, derniers=N_COMPARE):
-        c = self.d["cycles"][-derniers:]
+    def vitesse_pct_h(self, derniers=N_COMPARE, cycles=None):
+        c = (self.d["cycles"] if cycles is None else cycles)[-derniers:]
         return statistics.median(self._vitesse(x) for x in c) if c else None
 
-    def autonomie_h(self):
+    def autonomie_h(self, cycles=None):
         """Autonomie estimee d'une charge pleine, d'apres les derniers cycles (None avant le premier cycle)."""
-        v = self.vitesse_pct_h()
+        v = self.vitesse_pct_h(cycles=cycles)
         return round(100.0 / v, 2) if v else None
 
-    def sante_pct(self):
+    def sante_pct(self, cycles=None):
         """100 % = comme a ses debuts ; None tant qu'il n'y a pas 2 x N_COMPARE cycles."""
-        c = self.d["cycles"]
+        c = self.d["cycles"] if cycles is None else cycles
         if len(c) < 2 * self.N_COMPARE:
             return None
         neuf = statistics.median(self._vitesse(x) for x in c[:self.N_COMPARE])
         recent = statistics.median(self._vitesse(x) for x in c[-self.N_COMPARE:])
         return round(min(100.0, 100.0 * neuf / recent), 1)
 
-    def a_remplacer(self):
-        s = self.sante_pct()
+    def a_remplacer(self, cycles=None):
+        s = self.sante_pct(cycles)
         return s is not None and s < self.REMPLACER_PCT
+
+    def mettre(self, nom):
+        """L'appli dit quelle batterie est dans le canard (apres un echange, ou pour corriger)."""
+        nom = str(nom)
+        if nom not in self.d["batteries"]:
+            return False
+        if nom != self.d["actuelle"] and self.haut is not None and not self.d["a_nommer"]:
+            self._clos_cycle()                  # correction en cours de route : le cycle commence pour la bonne batterie
+            self.haut = self.bas
+        self.d["actuelle"], self.d["a_nommer"] = nom, False
+        if self.sauver is not None:
+            self.sauver()
+        return True
+
+    def par_batterie(self):
+        """Chaque batterie du pack : cycles mesures, autonomie, sante, a remplacer, derniere utilisation."""
+        out = {}
+        for nom in self.d["batteries"]:
+            c = [x for x in self.d["cycles"] if x.get("batterie") == nom]
+            out[nom] = {"cycles": len(c), "autonomie_h": self.autonomie_h(c) if c else None,
+                        "sante_pct": self.sante_pct(c), "a_remplacer": self.a_remplacer(c),
+                        "derniere": c[-1]["debut"] + round(c[-1]["h"] * 3600) if c else None}
+        return out
 
 
 # -- servos -----------------------------------------------------------------------------------------------------------

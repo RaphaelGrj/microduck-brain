@@ -69,6 +69,10 @@
           <div class="carte jauge"><span class="libelle">Batterie</span><div class="barre"><i id="b-batterie"></i></div><b id="v-batterie">—</b></div>
           <div class="carte"><span class="libelle">À la maison</span><b id="presents">—</b></div>
         </div>
+        <div class="carte" id="carte-alertes" hidden>
+          <h2>Alertes</h2>
+          <ul id="alertes-liste" class="liste alertes"></ul>
+        </div>
         <div class="carte">
           <h2>Aujourd'hui</h2>
           <ul id="du-jour" class="pastilles"></ul>
@@ -142,6 +146,14 @@
           <h2>Batterie</h2>
           <dl class="valeurs" id="batt"></dl>
         </div>
+        <div class="carte" id="carte-batteries" hidden>
+          <h2>Ses batteries</h2>
+          <div id="batterie-question" class="suggestion" hidden>
+            <span>Batterie changée : laquelle viens-tu de mettre ?</span>
+          </div>
+          <ul id="batteries" class="liste-choix"></ul>
+          <p class="discret petit">Écris 1, 2 et 3 au feutre sur tes batteries : il suit la santé de chacune.</p>
+        </div>
         <div class="carte">
           <h2>Servos et températures</h2>
           <dl class="valeurs" id="servos"></dl>
@@ -183,6 +195,24 @@
           <div class="reglage"><div><b>Sa carte</b><p class="discret">L'effacer (meubles déplacés, nouvel endroit). Elle repart aussi de zéro à chaque démarrage.</p></div>
             <button id="oublier-carte">Effacer</button></div>
         </div>
+        <div class="carte" id="carte-journee" hidden>
+          <h2>Sa journée</h2>
+          <div class="reglage"><div><b>Heures calmes</b><p class="discret">Assis et silencieux la nuit.</p></div>
+            <input type="checkbox" id="r-calmes" class="case"></div>
+          <div class="heures" id="r-calmes-heures">de <select id="r-calmes-debut"></select> h à <select id="r-calmes-fin"></select> h</div>
+          <div class="reglage"><div><b>Bonjour du matin</b><p class="discret">Il s'étire et dit bonjour.</p></div>
+            <input type="time" id="r-bonjour" aria-label="Heure du bonjour en semaine"></div>
+          <div class="reglage"><div><b>Bonjour le week-end</b><p class="discret">Vide : comme en semaine.</p></div>
+            <input type="time" id="r-bonjour-we" aria-label="Heure du bonjour le week-end"></div>
+          <div class="reglage"><div><b>Repas</b><p class="discret">Il apprend où l'on mange et vient voir.</p></div>
+            <button id="r-repas-ajout" aria-label="Ajouter un repas">+</button></div>
+          <div id="r-repas" class="repas"></div>
+          <div class="reglage"><div><b>Auto-test du matin</b><p class="discret">Un diagnostic rapide au premier réveil.</p></div>
+            <input type="checkbox" id="r-autotest" class="case"></div>
+          <div class="reglage"><div><b>Rythme de la journée</b><p class="discret">Plus vif le matin, plus calme le soir.</p></div>
+            <input type="checkbox" id="r-circadien" class="case"></div>
+          <button id="r-enregistrer" class="principal large">Enregistrer</button>
+        </div>
         <div class="carte" id="carte-lieux" hidden>
           <h2>Lieux</h2>
           <p class="discret">Il reconnaît où il est par le Wi-Fi : sur un réseau inconnu, il crée un nouveau lieu ;
@@ -210,6 +240,11 @@
 
       <!-- Journal -->
       <div class="page" data-page="journal" hidden>
+        <div class="carte">
+          <h2>Sa semaine</h2>
+          <div id="semaine" class="semaine" aria-label="Activités des 7 derniers jours"></div>
+          <ul id="semaine-totaux" class="pastilles"></ul>
+        </div>
         <div class="carte">
           <h2>Ce qu'il a fait</h2>
           <ol id="journal" class="liste chrono"></ol>

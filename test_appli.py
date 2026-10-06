@@ -3,6 +3,7 @@
 fermee, instantane du cerveau ; telecommande (pas et regard guides) avec les garde-fous du cerveau."""
 import json
 import math
+import re
 import urllib.error
 import urllib.request
 
@@ -163,7 +164,9 @@ def test_manifeste_android():
     """L'APK ne demande que l'acces reseau, et vise une version d'Android installable aujourd'hui."""
     from pathlib import Path
     m = (Path(__file__).parent / "android" / "AndroidManifest.xml").read_text(encoding="utf-8")
-    assert m.count("uses-permission") == 1 and "android.permission.INTERNET" in m
+    permissions = set(re.findall(r'uses-permission android:name="([^"]+)"', m))
+    assert permissions == {"android.permission.INTERNET", "android.permission.POST_NOTIFICATIONS",
+                           "android.permission.RECEIVE_BOOT_COMPLETED"}      # reseau, notifications, veille apres redemarrage
     assert 'android:targetSdkVersion="34"' in m and 'android:allowBackup="false"' in m
 
 
@@ -263,3 +266,65 @@ def test_modele_3d_coherent():
         assert p["v"][1] % 3 == 0 and p["f"][1] % 3 == 0
     assert all(len(i["m"]) == 12 for i in m["instances"])
     assert {g["id"] for g in m["groupes"] if g["imprimable"]} >= {"dessus_tete", "coques", "pieds", "bec"}
+
+
+
+def test_alertes_pour_les_notifications(serveur):
+    """Chute, batterie faible (une fois par decharge), garde, incendie, impression : le canard tient les alertes ;
+    le telephone les lit avec un curseur (pas de doublon)."""
+    import time
+    b, _, _ = cerveau()
+    vivre(b, 1)
+    serveur.photographier(b, {"battery": {"percent": 25.0}})
+    assert serveur.sur_evenement in b.ecouteurs                       # branche au cerveau a la premiere trame
+    serveur._t_photo = -1e9
+    b.tombe = True
+    serveur.photographier(b, {"battery": {"percent": 19.0}})
+    b.evenement("garde:voix")                                         # ce que le cerveau envoie aux ecouteurs
+    serveur.sur_evenement("impression_finie:MK4S")
+    serveur.sur_evenement("sonnette")                                 # pas une alerte
+    types = [a["type"] for a in serveur.alertes]
+    assert types == ["chute", "batterie", "garde", "impression_finie"], types
+    assert serveur.alertes[-1]["texte"] == "MK4S" and serveur.alertes[0]["importante"]
+    serveur._t_photo = -1e9
+    serveur.photographier(b, {"battery": {"percent": 18.0}})          # toujours faible : pas de seconde alerte
+    assert [a["type"] for a in serveur.alertes].count("batterie") == 1
+    t = serveur.alertes[1]["t"]
+    statut, corps = requete(serveur.port, f"/api/alertes?depuis={t}")
+    assert statut == 200 and [a["type"] for a in json.loads(corps)["alertes"]] == ["garde", "impression_finie"]
+    time.sleep(1.1)
+
+
+def test_reglages_depuis_l_appli(serveur, tmp_path):
+    """Heures calmes, bonjour, repas... : valides, gardes a part (ha.toml jamais reecrit), appliques sans redemarrer."""
+    import time
+    import reglages
+    b, _, _ = cerveau()
+    vivre(b, 1)
+    serveur.cerveau = {"heures_calmes": [23, 7], "bonjour": "7:30", "autotest": True}
+    serveur.fichier_reglages = tmp_path / "reglages.json"
+    lu = json.loads(requete(serveur.port, "/api/reglages")[1])
+    assert lu["heures_calmes"] == [23, 7] and lu["bonjour"] == "07:30" and lu["repas"] == [] and lu["circadien"]
+    envoi = {"heures_calmes": [22, 6], "bonjour": "08:15", "bonjour_weekend": None, "repas": ["12:30", "19:30", "12:30", "x"],
+             "autotest": False, "jeton": "pirate"}
+    statut, corps = requete(serveur.port, "/api/reglages", corps=envoi)
+    assert statut == 200 and json.loads(corps)["repas"] == ["12:30", "19:30"]
+    garde = json.loads((tmp_path / "reglages.json").read_text())
+    assert "jeton" not in garde and garde["bonjour"] == "08:15" and garde["heures_calmes"] == [22, 6]
+    serveur._t_photo = -1e9
+    serveur.photographier(b, {})                                      # applique dans la boucle du cerveau
+    assert b.heures_calmes == (22, 6) and b.bonjour == (8, 15) and b.bonjour_weekend is None
+    assert b.ctx.extras["repas"] == [(12, 30), (19, 30)] and b.ctx.extras["autotest"] is False
+    assert reglages.valider({"heures_calmes": [5, 5]})["heures_calmes"] is None
+    assert reglages.valider({"heures_calmes": [True, 7]})["heures_calmes"] is None
+    assert requete(serveur.port, "/api/reglages", corps={"inconnu": 1})[0] == 400
+    time.sleep(1.1)
+
+
+def test_semaine_et_batteries_dans_l_instantane():
+    b, _, _ = cerveau()
+    vivre(b, 1)
+    e = appli.instantane(b, {"battery": {"percent": 80.0}})
+    assert e["semaine"] and e["semaine"][-1]["compte"] == e["du_jour"]
+    bt = e["maintenance"]["batterie"]
+    assert bt["actuelle"] == "1" and bt["a_nommer"] is False and set(bt["batteries"]) == {"1", "2", "3"}

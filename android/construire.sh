@@ -20,8 +20,20 @@ done
 
 rm -rf "$TMP"; mkdir -p "$TMP"/{gen,classes,res/drawable-nodpi,assets} "$SORTIE"
 
-# 1. Ressources : l'icone et l'interface servie par le canard (pour le mode demo, sans le canard).
+# 1. Ressources : l'icone, les dessins et mises en page du dossier res/, et l'interface servie par le canard (pour le
+#    mode demo, sans le canard). Etats.java : les libelles des etats, repris de interface/app.js (widget).
+cp -r "$ICI/res/." "$TMP/res/"
 cp "$RACINE/interface/icone.png" "$TMP/res/drawable-nodpi/icone.png"
+python3 - "$RACINE/interface/app.js" > "$TMP/gen/Etats.java" <<'PY'
+import json, re, sys
+bloc = re.search(r"const ETATS = \{(.*?)\};", open(sys.argv[1], encoding="utf-8").read(), re.S).group(1)
+paires = re.findall(r'(\w+): "([^"]*)"', bloc)
+print("package fr.microduck.appli;\n/** Genere par construire.sh depuis interface/app.js (ETATS). */\nclass Etats {")
+print("    static final java.util.HashMap<String, String> L = new java.util.HashMap<String, String>();\n    static {")
+for k, v in paires:
+    print(f"        L.put({json.dumps(k)}, {json.dumps(v, ensure_ascii=False)});")
+print("    }\n    static String libelle(String e) { String l = L.get(e); return l != null ? l : e; }\n}")
+PY
 cp -r "$RACINE/interface" "$TMP/assets/interface"
 
 # 2. R.java, puis le paquet de ressources.
