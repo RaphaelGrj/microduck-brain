@@ -52,7 +52,7 @@ def assembler(client, args, log=print, cfg=None, cerveau=None):
     """-> dict(extras, sources, crochets, options, pont, fils) ; `cfg` = config HA deja lue (ou None), `cerveau` =
     section [cerveau] du fichier de config (lue meme sans Home Assistant : le canard vit sans lui)."""
     cerveau = cerveau if cerveau is not None else ((cfg or {}).get("cerveau") or {})
-    extras, sources, crochets, fils = {"memoire": memoire.Memoire()}, [], [], []
+    extras, sources, crochets, fils = {"memoire": memoire.Memoire(ecriture_differee=True)}, [], [], []
     extras["autotest"] = cerveau.get("autotest", True)     # auto-test au premier reveil de la journee (diagnostic.py)
     extras["circadien"] = cerveau.get("circadien", True)   # vivacite selon l'heure du jour (Brain.vivacite)
     repas = [h for h in (lire_heure(r) for r in cerveau.get("repas", [])) if h is not None]

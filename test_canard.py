@@ -35,7 +35,7 @@ def _assemble(args, sock_tof_existe, cfg=None):
         tof_mod.SOCK_TOF = Path(d) / "tof.sock"
         if sock_tof_existe:
             tof_mod.SOCK_TOF.touch()
-        memoire.Memoire = lambda: ancienne_mem(Path(d) / "memoire.json")
+        memoire.Memoire = lambda **kw: ancienne_mem(Path(d) / "memoire.json", **kw)
         try:
             return canard.assembler(FauxRobotd(), args, log=lambda m: None, cfg=cfg)
         finally:

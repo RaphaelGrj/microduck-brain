@@ -259,3 +259,24 @@ def test_r13_carte_chaude_pas_de_veille_peripherique():
     b.fin_etat = 1e9
     vivre(b, 5)
     assert v.armements == 0
+
+
+def test_memoire_compacte_et_ecriture_differee():
+    import json
+    import tempfile
+    import time
+    from pathlib import Path
+    from memoire import Memoire
+    with tempfile.TemporaryDirectory() as d:
+        m = Memoire(Path(d) / "m.json", ecriture_differee=True)
+        for k in range(50):
+            m.rencontre(f"etre{k}")
+        m.vider()
+        texte = (Path(d) / "m.json").read_text()
+        assert "\n" not in texte and len(json.loads(texte)["etres"]) == 50, "JSON compact, complet"
+        m.blague("pousse_balle")
+        for _ in range(100):                     # le fil ecrivain finit par l'ecrire seul
+            if "pousse_balle" in (Path(d) / "m.json").read_text():
+                break
+            time.sleep(0.01)
+        assert Memoire(Path(d) / "m.json").blagues() == {"pousse_balle": 1}
