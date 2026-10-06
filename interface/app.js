@@ -361,8 +361,8 @@ function chargerImage(src) {
 async function imageLook(pose) {
   const cle = pose + JSON.stringify(look);
   if (cacheLook.has(cle)) return cacheLook.get(cle);
-  if (!ordreGroupes) ordreGroupes = (await fetch("/design/microduck.json").then((r) => r.json())).groupes;
-  const [ombre, groupes] = await Promise.all([chargerImage(`/microduck/${pose}-ombre.webp`), chargerImage(`/microduck/${pose}-groupes.png`)]);
+  if (!ordreGroupes) ordreGroupes = (await fetch("design/microduck.json").then((r) => r.json())).groupes;
+  const [ombre, groupes] = await Promise.all([chargerImage(`microduck/${pose}-ombre.webp`), chargerImage(`microduck/${pose}-groupes.png`)]);
   const c = document.createElement("canvas"); c.width = ombre.width; c.height = ombre.height;
   const g = c.getContext("2d", { willReadFrequently: true });
   g.drawImage(groupes, 0, 0); const idx = g.getImageData(0, 0, c.width, c.height).data;
@@ -381,7 +381,7 @@ async function imageLook(pose) {
   cacheLook.set(cle, url);
   return url;
 }
-function srcPose(pose) { return `/microduck/${pose}.webp`; }
+function srcPose(pose) { return `microduck/${pose}.webp`; }
 async function poserImage(img, pose) {
   if (!look) { if (!img.src.endsWith(srcPose(pose))) img.src = srcPose(pose); return; }
   try { const url = await imageLook(pose); if (img.dataset.pose !== pose || img.src !== url) { img.src = url; img.dataset.pose = pose; } }
@@ -506,7 +506,7 @@ const FAMILLES = {
 };
 const IMAGES = ["debout", "debout-tete-basse", "debout-tete-haute", "debout-gauche", "debout-droite", "debout-penche",
   "marche", "assis", "assis-dort", "tombe"];
-IMAGES.forEach((n) => { new Image().src = `/microduck/${n}.webp`; });     // prechargees : pas de clignotement
+IMAGES.forEach((n) => { new Image().src = `microduck/${n}.webp`; });     // prechargees : pas de clignotement
 let pasMarche = null;
 
 function image(e, famille) {
@@ -735,7 +735,7 @@ $("#lieu-nouveau").addEventListener("click", () => {
 // Ecrans plein (design, marketplace) : ouverts par les icones en haut a droite, fermes par la fleche ou le bouton retour
 async function ouvrirDesign() {
   try {
-    if (!window.MicroduckDesign) await import("/design.js");
+    if (!window.MicroduckDesign) await import("./design.js");
     await window.MicroduckDesign.ouvrir();
   } catch (e) { toast("Le design ne s'ouvre pas"); }
 }

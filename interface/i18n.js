@@ -225,7 +225,7 @@
     "Sur un autre appareil": "On another device", "iPhone, iPad": "iPhone, iPad",
     "Scanne le QR avec l'appareil photo (même Wi-Fi), ouvre dans Safari, puis Partager → « Sur l'écran d'accueil » : l'appli s'installe comme les autres.": "Scan the QR with the camera (same Wi-Fi), open in Safari, then Share → “Add to Home Screen”: the app installs like any other.",
     "Ordinateur": "Computer", "Windows, Mac, Linux : l'appli Microduck pour ordinateur trouve le canard toute seule.": "Windows, Mac, Linux: the Microduck desktop app finds the duck on its own.",
-    "Télécharger": "Download", "Sur un iPhone": "On an iPhone", "Depuis l'appli connectée au canard (pas en démo)": "From the app connected to the duck (not in demo)",
+    "Télécharger": "Download", "Sur un iPhone": "On an iPhone", "Démo sur iPhone": "Demo on iPhone", "Appareil photo → ouvrir dans Safari → Partager → « Sur l'écran d'accueil ». Une démo, sans le canard.": "Camera → open in Safari → Share → “Add to Home Screen”. A demo, without the duck.",
     "Appareil photo → ouvrir dans Safari → Partager → « Sur l'écran d'accueil ». Puis entre le code du canard.": "Camera → open in Safari → Share → “Add to Home Screen”. Then enter the duck's code.",
     // design : code couleur, couleurs gardees, partage des schemas
     "Choisir une couleur": "Pick a colour", "Code couleur (#rrggbb)": "Colour code (#rrggbb)", "Garder": "Keep", "Garder cette couleur": "Keep this colour",

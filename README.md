@@ -52,6 +52,9 @@ Le canard sert lui-même son application, sans Home Assistant et sans serveur ai
 2. Sur le téléphone, connecté au même Wi-Fi, ouvre `http://<ip-du-canard>:8090` et entre le code.
 3. Ajoute la page à l'écran d'accueil : elle s'ouvre ensuite comme une appli.
 
+**Démo en ligne** (sans le canard, aussi sur iPhone : Safari → « Sur l'écran d'accueil ») :
+<https://raphaelgrj.github.io/microduck-brain/?demo>, publiée par `.github/workflows/pages.yml`.
+
 **Sur iPhone et iPad** : l'appli web du canard s'installe depuis Safari, sans App Store.
 1. Le téléphone sur le Wi-Fi de la maison, ouvre `http://<ip-du-canard>:8090`. Le plus simple : Réglages → Sur un
    autre appareil → QR, puis scanner avec l'appareil photo.
