@@ -351,3 +351,20 @@ def test_visiteur_recurrent_de_moins_en_moins_timide():
     assert departs[-1] == 0.0, "bien connue : plus de timidite"
     vivre(b, 2, evenements=[(0.5, "visiteur")])
     assert b.timidite() > 0.95, "un inconnu reste un inconnu"
+
+
+def test_batterie_faible_va_voir_quelqu_un_avant_la_prise_une_fois():
+    b, _, _ = cerveau(tof=Tof())
+    for _ in range(3):
+        vivre(b, 5, pos=(1.5, 0.0), evenements=[(0.5, "caresse")])
+    b.presents.add("Raphael")
+    b.fin_etat = 0.0
+    b._batterie_pct = 35.0
+    vivre(b, 60, pos=(0.0, 0.0))
+    b._batterie_pct = 35.0
+    noms = [e[1] for e in b.journal]
+    assert noms.count("va_social") == 1, noms
+    b.presents.clear()
+    b._social_fait = False
+    vivre(b, 60, pos=(0.0, 0.0))
+    assert [e[1] for e in b.journal].count("va_social") == 1, "personne a la maison : rien"

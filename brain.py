@@ -45,6 +45,7 @@ class Brain:
     # de ce seuil - anticipation (consommer moins en se posant) plutot qu'attendre l'arret force. Pas encore de
     # retour physique au chargeur : aucune position de chargeur connue dans brain.py (meme limite que `Accueil`).
     BATTERIE_BASSE_PCT = 25.0
+    BATTERIE_FAIBLE_PCT = 40.0  # entre 25 et 40 % : il passe d'abord voir quelqu'un, une fois, avant le chargeur
     RARES = {"lissage": 0.015, "ebouriffe": 0.01, "etirement": 0.008, "eternuement": 0.005}   # poids face a ~1 pour le reste
     DELAI_RARE = 300.0
     # Occupation autonome / recherche d'attention (ROADMAP "chantier actif", 2026-10-05) : si rien ne s'est passe
@@ -204,6 +205,7 @@ class Brain:
             "va_repas": VaAuCoin("va_repas", "look", "trainer la ou l'on mange, comme chaque jour a cette heure"),
             "va_compagnie": VaAuCoin("va_compagnie", "compagnie", "tenir compagnie la ou l'on s'occupe de lui"),
             "compagnie": Compagnie(),
+            "va_social": VaAuCoin("va_social", "cherche_attention", "voir quelqu'un avant d'aller se recharger"),
         }
         self.etats["taquin"].taquinerie = True
         self.malice = Malice(self.ctx.extras.get("memoire"))
@@ -746,6 +748,9 @@ class Brain:
             return "nap"
         if self.discret:
             return self.rng.choice(("chill", "chill", "look"))   # quelqu'un telephone : il reste tranquille, sans bruit
+        social = self._presence_avant_la_prise()
+        if social is not None:
+            return social
         if self.courant.nom == "nap":
             self.derniere_fois["etirement"] = self.t_global
             return "etirement"                  # on s'etire en se reveillant
@@ -951,6 +956,24 @@ class Brain:
 
     P_BAILLEMENT_CONTAGIEUX = 0.6
     ASPI_MEFIANT, ASPI_FAMILIER = 0.3, 0.7     # familiarite (memoire.py) avec l'aspirateur
+
+    def _presence_avant_la_prise(self):
+        """ROADMAP "Cherche la presence humaine plutot que la prise" : batterie faible mais pas critique, quelqu'un a la
+        maison -> il va d'abord la ou l'on s'occupe de lui (coin "social" appris), une fois par decharge ; le chargeur
+        ne vient qu'en dessous de BATTERIE_BASSE_PCT."""
+        pct = self._batterie_pct
+        if pct is None or pct >= self.BATTERIE_FAIBLE_PCT:
+            self._social_fait = False           # rechargee : la prochaine decharge y aura droit
+            return None
+        if (getattr(self, "_social_fait", False) or pct < self.BATTERIE_BASSE_PCT or not self.presents
+                or self.ctx.extras.get("tof") is None or self.surchauffe):
+            return None
+        self._social_fait = True
+        coin = self.exploration.coin_favori("social", self.t_global)
+        if coin is None or not self._atteignable(coin, (0.5, 3.0)):
+            return None
+        self.etats["va_social"].cible = coin
+        return "va_social"
 
     def _sur_vacarme(self, fort):
         """Ambiance tres bruyante et prolongee (fete, dispute, travaux ; audio.py) : il se retire dans son coin de sieste
