@@ -17,8 +17,10 @@ import numpy as np
 import trimesh
 
 SORTIE = Path(__file__).resolve().parents[1] / "interface" / "design"
-GARDE = 0.10                 # part des triangles gardes sur les grosses pieces
+GARDE = 0.6                  # pieces imprimables (celles qu'on regarde et qu'on recolore) : surfaces fideles
+GARDE_CACHEES = 0.08         # pieces achetees (electronique, servos, roulements) : surtout cachees
 MIN_FACES = 400              # en dessous, la piece reste telle quelle
+ARETE_VIVE_DEG = 35          # au-dela, l'arete reste nette ; en dessous, la surface est lissee (pas de facettes)
 
 # groupes recolorables : (identifiant, nom affiche, pieces) ; imprimable = on peut l'imprimer dans sa couleur
 GROUPES = [
@@ -55,9 +57,10 @@ def main(racine):
     d.qpos[:] = m.key_qpos[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_KEY, "STAND")]
     mujoco.mj_forward(m, d)
     groupe_de = {p: g for g, _, pieces, _ in GROUPES for p in pieces}
+    imprimable = {g: imp for g, _, _, imp in GROUPES}
 
     pieces, instances, couleurs = {}, [], {}
-    positions, indices = bytearray(), bytearray()
+    positions, normales, indices = bytearray(), bytearray(), bytearray()
     for i in range(m.ngeom):
         if m.geom_type[i] != mujoco.mjtGeom.mjGEOM_MESH or m.geom_group[i] != 2:     # pieces visibles seulement
             continue
@@ -68,13 +71,18 @@ def main(racine):
         if nom not in pieces:
             brut = trimesh.load(dossier / "assets" / f"{nom}.stl")
             if len(brut.faces) > MIN_FACES:
-                brut = brut.simplify_quadric_decimation(face_count=max(MIN_FACES, int(len(brut.faces) * GARDE)))
+                garde = GARDE if imprimable[groupe_de[nom]] else GARDE_CACHEES
+                brut = brut.simplify_quadric_decimation(face_count=max(MIN_FACES, int(len(brut.faces) * garde)))
+            # normales lissees par angle : les sommets sont dedoubles le long des aretes vives seulement
+            brut = trimesh.graph.smooth_shade(brut, angle=np.radians(ARETE_VIVE_DEG))
             v = np.asarray(brut.vertices, dtype="<f4")
+            n = np.clip(np.round(np.asarray(brut.vertex_normals) * 127), -127, 127).astype("i1")   # 3 octets
             if len(v) >= 65536:
                 raise SystemExit(f"{nom} : trop de sommets pour des indices 16 bits")
             f = np.asarray(brut.faces, dtype="<u2")                 # indices 16 bits : chaque piece < 65 536 sommets
-            pieces[nom] = {"v": [len(positions) // 4, v.size], "f": [len(indices) // 2, f.size]}
+            pieces[nom] = {"v": [len(positions) // 4, v.size], "n": len(normales), "f": [len(indices) // 2, f.size]}
             positions += v.tobytes()
+            normales += n.tobytes()
             indices += f.tobytes()
             if len(indices) % 4:
                 indices += b"\0\0"                              # (alignement, sans effet)
@@ -90,10 +98,12 @@ def main(racine):
                           "m": [round(float(x), 6) for x in np.hstack([a, b[:, None]]).ravel()]})
 
     SORTIE.mkdir(parents=True, exist_ok=True)
-    (SORTIE / "microduck.bin").write_bytes(bytes(positions) + bytes(indices))
+    normales += b"\0" * (-len(normales) % 4)                # les indices 16 bits suivent, alignes
+    (SORTIE / "microduck.bin").write_bytes(bytes(positions) + bytes(normales) + bytes(indices))
     modele = {
         "source": "pollen-robotics/microduck_rl (Apache-2.0), scene_walk.xml, pose STAND",
         "unite": "m", "haut": "z", "octets_positions": len(positions),
+        "octets_normales": len(normales),
         "groupes": [{"id": g, "nom": n, "imprimable": imp, "origine": couleurs[g]} for g, n, _, imp in GROUPES],
         "pieces": pieces, "instances": instances,
     }

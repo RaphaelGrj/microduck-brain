@@ -260,9 +260,12 @@ def test_modele_3d_coherent():
     taille = (appli.DOSSIER / "design" / "microduck.bin").stat().st_size
     groupes = {g["id"] for g in m["groupes"]}
     assert {i["groupe"] for i in m["instances"]} <= groupes and {i["piece"] for i in m["instances"]} == set(m["pieces"])
+    indices0 = m["octets_positions"] + m["octets_normales"]
+    assert indices0 % 2 == 0
     for p in m["pieces"].values():
         assert (p["v"][0] + p["v"][1]) * 4 <= m["octets_positions"]
-        assert m["octets_positions"] + (p["f"][0] + p["f"][1]) * 2 <= taille
+        assert p["n"] + p["v"][1] <= m["octets_normales"]                    # une normale (3 octets) par sommet
+        assert indices0 + (p["f"][0] + p["f"][1]) * 2 <= taille
         assert p["v"][1] % 3 == 0 and p["f"][1] % 3 == 0
     assert all(len(i["m"]) == 12 for i in m["instances"])
     assert {g["id"] for g in m["groupes"] if g["imprimable"]} >= {"dessus_tete", "coques", "pieds", "bec"}

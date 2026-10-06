@@ -2,6 +2,9 @@
 // d'imprimer. Schemas et filaments sont gardes sur le canard (/api/design) ; un STL perso reste dans le telephone.
 import * as THREE from "./lib/three.module.min.js";
 import { OrbitControls } from "./lib/OrbitControls.js";
+import { toCreasedNormals } from "./lib/BufferGeometryUtils.js";
+
+const ARETE_VIVE = (35 * Math.PI) / 180;         // comme outils/modele_3d.py : lisse en dessous, arete nette au-dela
 
 const $ = (s) => document.querySelector(s);
 const PALETTE = [["Blanc", "#f4f4f2"], ["Gris clair", "#c9c9c4"], ["Gris", "#7d7f84"], ["Noir", "#26272b"],
@@ -18,10 +21,12 @@ async function charger() {
     fetch("/design/microduck.bin").then((r) => r.arrayBuffer())]);
   modele = json;
   for (const g of modele.groupes) { groupes[g.id] = g; origine[g.id] = g.origine; }
-  const indices0 = modele.octets_positions;
+  const normales0 = modele.octets_positions, indices0 = normales0 + (modele.octets_normales || 0);
   for (const [nom, p] of Object.entries(modele.pieces)) {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(bin, p.v[0] * 4, p.v[1]), 3));
+    // normales lissees precalculees (3 octets signes par sommet) : surfaces lisses, sans facettes visibles
+    geo.setAttribute("normal", new THREE.BufferAttribute(new Int8Array(bin, normales0 + p.n, p.v[1]), 3, true));
     geo.setIndex(new THREE.BufferAttribute(new Uint16Array(bin, indices0 + p.f[0] * 2, p.f[1]), 1));
     geo.computeBoundingSphere();
     geometries[nom] = originales[nom] = geo;
@@ -40,7 +45,7 @@ async function charger() {
   racine.rotation.x = -Math.PI / 2;                     // le modele a z en haut, three.js y en haut
   scene.add(racine);
   for (const g of modele.groupes) {
-    materiaux[g.id] = new THREE.MeshStandardMaterial({ color: g.origine, roughness: 0.62, metalness: 0.0, flatShading: true });
+    materiaux[g.id] = new THREE.MeshStandardMaterial({ color: g.origine, roughness: 0.55, metalness: 0.0 });
   }
   for (const inst of modele.instances) {
     const m = inst.m, mat = new THREE.Matrix4().set(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11], 0, 0, 0, 1);
@@ -204,8 +209,9 @@ function lireStl(tampon) {
   if (max > 1) for (let i = 0; i < pos.length; i++) pos[i] *= 0.001;   // dessine en mm : le modele est en metres
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-  geo.computeBoundingSphere();
-  return geo;
+  const lisse = toCreasedNormals(geo, ARETE_VIVE);   // ta piece aussi : lisse, aretes vives gardees
+  lisse.computeBoundingSphere();
+  return lisse;
 }
 
 function remplacer(piece, geo) {
