@@ -111,6 +111,20 @@
             <li><i class="l-passe"></i>passé par là</li><li><i class="l-obstacle"></i>obstacle</li>
             <li><i class="l-chute"></i>il y est tombé</li><li>💤 sieste</li><li>🛋️ repos</li><li>🍽️ repas</li><li>🔌 chargeur</li><li>• objet remarqué</li>
           </ul>
+          <h3 class="sous-titre">Où l'a-t-il vu ?</h3>
+          <ul id="vus" class="liste"></ul>
+        </div>
+        <div class="carte">
+          <h2>Messages</h2>
+          <p class="discret petit">Laisse un message pour quelqu'un : quand il le verra (à son retour, ou tout de suite
+            s'il est là), le canard le lui signalera en pépiant, et le texte s'affichera ici.</p>
+          <div class="message-form">
+            <input id="msg-pour" list="msg-noms" placeholder="Pour qui ?" maxlength="40" aria-label="Pour qui ?">
+            <datalist id="msg-noms"></datalist>
+            <input id="msg-texte" placeholder="Ton message" maxlength="280" aria-label="Ton message">
+            <button id="msg-envoyer" class="principal">Laisser</button>
+          </div>
+          <ul id="messages" class="liste-choix"></ul>
         </div>
       </div>
 
@@ -128,6 +142,27 @@
             <button id="defi-tour" class="principal large">Au tour de…</button>
             <button id="defi-raz" class="large">Nouvelle partie</button>
           </details>
+        </div>
+        <div class="carte">
+          <h2>Sur sa carte</h2>
+          <p class="discret petit" id="jeu-aide">Choisis un jeu, puis touche sa carte.</p>
+          <div class="boutons">
+            <button id="jeu-balle" aria-pressed="false">⚽ La balle est là</button>
+            <button id="jeu-parcours" aria-pressed="false">🏁 Parcours</button>
+          </div>
+          <canvas id="plan-jeu" class="plan" aria-label="Sa carte : touche pour poser un point"></canvas>
+          <p id="plan-jeu-vide" class="discret">Il faut qu'il ait un peu exploré pour avoir une carte.</p>
+          <div class="boutons">
+            <button id="jeu-partir" class="principal" disabled>Partir</button>
+            <button id="jeu-effacer">Effacer les points</button>
+          </div>
+          <dl class="valeurs" id="records"></dl>
+        </div>
+        <div class="carte" data-parent>
+          <h2>Mode photo</h2>
+          <p class="discret petit">Il prend la pose et la tient, sans un son, le temps de la photo (sa caméra).</p>
+          <div class="boutons" id="poses"></div>
+          <img id="photo-posee" class="photo-posee" alt="La dernière photo" hidden>
         </div>
         <div class="carte">
           <h2>Ses tours à lui</h2>
@@ -219,6 +254,38 @@
           <h2>Chutes</h2>
           <dl class="valeurs" id="chutes"></dl>
         </div>
+        <div class="carte" id="carte-usure">
+          <h2>Usure des servos</h2>
+          <p class="discret petit">Au repos debout, chaque jour : l'effort de chaque servo (courant) et la chaleur. Un
+            servo qui force de plus en plus s'use : mieux vaut le savoir avant qu'il ne lâche.</p>
+          <select id="usure-servo" aria-label="Servo"></select>
+          <canvas id="usure-graphe" class="graphe" aria-label="Courant de repos du servo, jour par jour"></canvas>
+          <p id="usure-vide" class="discret">Pas encore assez de jours de mesure (il en faut quelques-uns au repos).</p>
+          <ul id="usure-alertes" class="liste"></ul>
+        </div>
+        <div class="carte" id="carte-comparer" hidden>
+          <h2>Comparer les batteries</h2>
+          <canvas id="batteries-graphe" class="graphe" aria-label="Autonomie de chaque batterie, cycle après cycle"></canvas>
+          <ul id="batteries-legende" class="legende"></ul>
+        </div>
+        <div class="carte" data-parent>
+          <h2>Carnet d'entretien</h2>
+          <div class="carnet-form">
+            <select id="cn-type" aria-label="Type">
+              <option value="piece">Pièce changée</option><option value="impression">Pièce imprimée</option>
+              <option value="servo">Servo remplacé</option><option value="batterie">Batterie remplacée</option>
+              <option value="nettoyage">Nettoyage</option><option value="autre">Autre</option>
+            </select>
+            <select id="cn-servo" aria-label="Quel servo ?" hidden></select>
+            <select id="cn-batterie" aria-label="Quelle batterie ?" hidden><option value="1">Batterie 1</option>
+              <option value="2">Batterie 2</option><option value="3">Batterie 3</option></select>
+            <input id="cn-texte" placeholder="Détail (pièce, couleur, remarque…)" maxlength="200" aria-label="Détail">
+            <input id="cn-date" type="date" aria-label="Date">
+            <button id="cn-ajouter" class="principal">Noter</button>
+          </div>
+          <p class="discret petit">Un servo ou une batterie notés « remplacés » repartent d'une mesure neuve.</p>
+          <ol id="carnet" class="liste chrono"></ol>
+        </div>
         <div class="carte" data-parent>
           <h2>Mises à jour et rapport</h2>
           <dl class="valeurs"><dt>Cerveau</dt><dd id="maj-version">—</dd></dl>
@@ -269,6 +336,8 @@
             <button id="t-calme" class="bascule" role="switch" aria-checked="false"></button></div>
           <div class="reglage"><div><b>Mode garde</b><p class="discret">Maison vide : il signale une voix, un choc, des coups à la porte.</p></div>
             <button id="t-garde" class="bascule" role="switch" aria-checked="false"></button></div>
+          <div class="reglage"><div><b>Vacances</b><p class="discret">Maison vide pour longtemps : calme et garde, et des nouvelles chaque soir à 20 h.</p></div>
+            <button id="t-vacances" class="bascule" role="switch" aria-checked="false"></button></div>
           <div class="reglage"><div><b>Taquineries</b><p class="discret">Les couper 30 minutes.</p></div>
             <button data-cmd="stop_taquinerie">Couper</button></div>
           <div class="reglage"><div><b>Sa carte</b><p class="discret">L'effacer (meubles déplacés, nouvel endroit). Elle repart aussi de zéro à chaque démarrage.</p></div>
@@ -325,6 +394,25 @@
           <p id="plan-lieu-vide" class="discret">Pas de carte gardée pour ce lieu.</p>
           <form method="dialog"><button class="large">Fermer</button></form>
         </dialog>
+        <div class="carte" data-parent>
+          <h2>Invités</h2>
+          <p class="discret petit">Un code pour quelques heures (un ami, les grands-parents) : jouer, regarder, laisser un
+            message. Ni réglages, ni marche guidée, ni photos.</p>
+          <div class="message-form">
+            <input id="inv-nom" placeholder="Pour qui ?" maxlength="30" aria-label="Pour qui ?">
+            <select id="inv-duree" aria-label="Durée"><option value="3">3 h</option><option value="24" selected>1 jour</option>
+              <option value="72">3 jours</option><option value="168">1 semaine</option></select>
+            <button id="inv-creer" class="principal">Créer</button>
+          </div>
+          <ul id="invites" class="liste-choix"></ul>
+        </div>
+        <dialog id="vue-qr" class="vue-qr">
+          <h2 id="vue-qr-titre"></h2>
+          <div id="vue-qr-image" class="qr"></div>
+          <p id="vue-qr-texte" class="discret petit"></p>
+          <div class="boutons"><button id="vue-qr-copier">Copier</button><button id="vue-qr-partager">Partager</button></div>
+          <form method="dialog"><button class="large">Fermer</button></form>
+        </dialog>
         <div class="carte">
           <h2>Ce téléphone</h2>
           <div id="presence-tel" hidden>
@@ -352,6 +440,23 @@
 
       <!-- Journal -->
       <div class="page" data-page="journal" hidden>
+        <div class="carte" data-parent id="carte-photos">
+          <h2>Ses photos</h2>
+          <div class="reglage"><div><b>Journal photo</b><p class="discret">Il garde quelques images de sa journée (le chat,
+            un retour, une partie, une impression finie). Sur lui seulement, 7 jours, jamais ailleurs.</p></div>
+            <button id="t-photos" class="bascule" role="switch" aria-checked="false"></button></div>
+          <div id="photos" class="photos-grille"></div>
+          <p id="photos-vide" class="discret">Pas de photo pour l'instant.</p>
+          <div class="boutons"><button id="photo-maintenant">📷 Une photo maintenant</button>
+            <button id="photos-effacer" class="danger">Tout effacer</button></div>
+        </div>
+        <dialog id="vue-photo" class="vue-photo">
+          <img id="vue-photo-img" alt="">
+          <p id="vue-photo-legende" class="discret petit"></p>
+          <div class="boutons"><button id="vue-photo-garder" class="principal">Enregistrer</button>
+            <button id="vue-photo-effacer" class="danger">Effacer</button></div>
+          <form method="dialog"><button class="large">Fermer</button></form>
+        </dialog>
         <div class="carte">
           <h2>Sa semaine</h2>
           <div id="semaine" class="semaine" aria-label="Activités des 7 derniers jours"></div>
@@ -506,6 +611,20 @@
         </div>
       </div>
       <div class="boutons"><button id="studio-jouer">▶ Essayer</button><button id="studio-enregistrer" class="principal">Enregistrer</button></div>
+      <div class="carte">
+        <h2>Partager</h2>
+        <p class="discret petit">Exporte ce tour (fichier, texte ou QR code) pour un autre Microduck, ou importe celui
+          d'un ami. Pour le proposer à tous : le dossier « choregraphies » du catalogue.</p>
+        <div class="boutons"><button id="studio-exporter">Exporter</button><button id="studio-qr">QR code</button></div>
+        <div class="boutons">
+          <label class="bouton-like">Importer un fichier<input id="studio-importer" type="file" accept=".json,application/json" hidden></label>
+          <button id="studio-coller">Coller un texte</button>
+        </div>
+      </div>
+      <div class="carte">
+        <h2>Du catalogue</h2>
+        <ul id="studio-catalogue" class="liste-choix"><li class="discret">Chargement…</li></ul>
+      </div>
     </main>
   </section>
 
@@ -601,5 +720,7 @@
   <script src="/boutique.js"></script>
   <script src="/connexions.js"></script>
   <script src="/studio.js"></script>
+  <script src="/lib/qrcode.js"></script>
+  <script src="/plus.js"></script>
 </body>
 </html>

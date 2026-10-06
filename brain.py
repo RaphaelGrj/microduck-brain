@@ -31,6 +31,7 @@ from etats_base import (DT_DEFAUT, SONS_CANARD, FATIGUE_BAS, FATIGUE_MIN, FATIGU
                         V_PROMENADE, V_ROTATION, Chill, Ctx, Ecoute, Etat, Geste, Humeur, LookAround, Nap, Sequence,
                         TurnInPlace, Wander, _regarder, fatigue)
 from etats_jeux import CacheCache, JeuBalle, Soleil
+from etats_appli import Parcours, PosePhoto
 from diagnostic import Diagnostic
 from etats_maison import AlarmeFumee, AssisDemande, AutoTestReveil, Toupie
 from etats_taquineries import (Aspirateur, Baillement, CompteEternuements, DernierMot, Esquive, FausseChute,
@@ -212,6 +213,8 @@ class Brain:
             "va_repas": VaAuCoin("va_repas", "look", "trainer la ou l'on mange, comme chaque jour a cette heure"),
             "va_compagnie": VaAuCoin("va_compagnie", "compagnie", "tenir compagnie la ou l'on s'occupe de lui"),
             "compagnie": Compagnie(),
+            # lances depuis l'application : parcours d'obstacles, balle guidee, pose pour une photo
+            "parcours": Parcours(), "pose_photo": PosePhoto(),
             "va_social": VaAuCoin("va_social", "cherche_attention", "voir quelqu'un avant d'aller se recharger"),
         }
         self.etats["taquin"].taquinerie = True
@@ -258,6 +261,10 @@ class Brain:
         self.detecteur_main = DetecteurMain()
         self._tete_prec, self._t_tete_change = None, 0.0     # derniere consigne de tete vue, et quand elle a change
         self.messages = []                      # notifications a redire au prochain habitant qui rentre
+        self.messages_perso = []                # (id, destinataire) : messages laisses dans l'application
+        self.vus = {}                           # "chat"/"balle"/"objet" -> (heure murale, x, y) : ou il l'a vu
+        self._t_vu_balle = -1e9
+        self.vacances = False                   # mode vacances de l'application : calme + garde
         self.suivant_force = None               # etat impose pour la prochaine bascule (un etat qui enchaine)
         self._sons_etat = set()                 # sons "une fois" deja joues dans l'etat courant (son_une_fois)
         self.derniere_fois = {}                 # etat rare -> t_global de la derniere fois
@@ -316,6 +323,8 @@ class Brain:
         while self.evenements:
             nom = self.evenements.pop(0)
             base, _, detail = nom.partition(":")     # "impression_echec:MK4S" -> ("impression_echec", "MK4S")
+            if base in self.VUS_EVENEMENTS:
+                self._note_vu(self.VUS_EVENEMENTS[base])
             if base == "alarme_fumee":
                 # securite des habitants : avant le mode calme, la conversation vocale, la sieste ou un jeu
                 print(f"[{self.t_global:6.1f}s] ALARME fumee / CO", flush=True)
@@ -334,6 +343,52 @@ class Brain:
             self._veille_garde(base)
             if base in ("garde_on", "garde_off"):
                 self.ctx.extras["garde"] = base == "garde_on"      # depuis l'application
+                continue
+            if base in ("vacances_on", "vacances_off"):
+                # application : la maison est vide pour longtemps. Calme (sieste, silence) + garde ; au retour, tout
+                # reprend. Un vrai interrupteur calme ou garde reste ensuite libre.
+                self.vacances = base == "vacances_on"
+                self.evenements[0:0] = ["calme_on", "garde_on"] if self.vacances else ["calme_off", "garde_off"]
+                print(f"[{self.t_global:6.1f}s] vacances {'ON' if self.vacances else 'off'}", flush=True)
+                continue
+            if base == "message":
+                # application : un message laisse pour quelqu'un. Le canard ne dit pas de mots : il le signale (sons
+                # de canard) quand la personne est la, et l'appli affiche le texte.
+                ident, _, pour = (detail or "").partition("|")
+                if ident and pour:
+                    self.messages_perso = (self.messages_perso + [(ident, pour)])[-self.MESSAGES_PERSO_MAX:]
+                    if pour in self.presents:
+                        self._transmet_messages(pour, maintenant=True)
+                continue
+            if base in ("parcours", "va_balle"):
+                # application : des points poses sur sa carte (ou « la balle est par la »). Debout, au calme, avec le
+                # capteur de distance (on ne marche jamais sans), et des etapes courtes (odometrie).
+                points = Parcours.lire_points(detail.replace("|", ";"), self._derniere_position)
+                libre = (not self.mode_calme and not self.tombe and not self.porte and not self.ctx.sitting
+                         and self.courant.nom not in ("alarme", "porte", "nap", "ecoute"))
+                if points and libre and self.ctx.extras.get("tof") is not None:
+                    self.derniere_interaction = self.t_global
+                    self.etats["parcours"].charger(points[:1] if base == "va_balle" else points,
+                                                   "balle" if base == "va_balle" else "parcours")
+                    self._bascule("parcours")
+                else:
+                    self._previent(f"parcours_fini:{'balle' if base == 'va_balle' else 'parcours'}|refuse|0|0/0")
+                continue
+            if base == "pose_photo":
+                if (detail in PosePhoto.POSES and not self.mode_calme and not self.tombe
+                        and self.courant.nom not in ("alarme", "porte", "ecoute")):
+                    self.etats["pose_photo"].geste = detail
+                    self._bascule("pose_photo")
+                continue
+            if base == "message_annule":
+                self.messages_perso = [m for m in self.messages_perso if m[0] != detail]
+                continue
+            if base == "arrivee":
+                # application : le telephone de quelqu'un vient de rejoindre le Wi-Fi de la maison. S'il est deja
+                # compte present (Home Assistant), rien ; sinon c'est un retour, avec l'accueil.
+                qui = (detail or "").partition("|")[0]
+                if qui and qui not in self.presents:
+                    self.evenements.insert(0, f"retour:{qui}")
                 continue
             if base in ("guide", "regard"):
                 self._sur_telecommande(base, detail)
@@ -370,6 +425,13 @@ class Brain:
                 # routine programmee dans l'application (« a 18 h, il vient me voir ») : comme son envie de compagnie
                 if not self.mode_calme and not self.tombe and self.courant.nom not in ("alarme", "porte"):
                     self._bascule("cherche_attention")
+                continue
+            if base in ("servo_remplace", "batterie_remplacee"):
+                # carnet d'entretien de l'application : une piece changee repart d'une mesure neuve
+                if base == "servo_remplace":
+                    self.diagnostic.servos.remplace(detail)
+                else:
+                    self.diagnostic.batterie.remplacee(detail)
                 continue
             if base == "batterie_mise":
                 # depuis l'application : quelle batterie du pack est dans le canard (statistiques par batterie)
@@ -501,6 +563,7 @@ class Brain:
                     continue
                 self.etats["accueil"].qui, self.etats["accueil"].absence_s = qui, absence
                 self.humeur.eveil = min(1.0, self.humeur.eveil + (0.6 if longue else 0.3))
+                self._transmet_messages(qui)
                 self._bascule("accueil")
                 if self._jour_special_aujourdhui() and qui not in self._jour_special_vu:
                     self._jour_special_vu.add(qui)
@@ -680,6 +743,32 @@ class Brain:
             elif nom == "personne":
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.3)
                 self._bascule("curious")
+
+    VUS_EVENEMENTS = {"chat": "chat", "objet_nouveau": "objet"}
+    MESSAGES_PERSO_MAX = 10
+
+    def _note_vu(self, quoi):
+        """« Ou l'a-t-il vu ? » (application) : la ou IL etait quand il l'a vu (repere de l'odometrie). Honnete : sa
+        position a lui, pas celle de la chose (la balle, elle, est situee par la camera : voir tick)."""
+        if self._derniere_position is not None:
+            mur = self.ctx.extras.get("mur", time.time)
+            self.vus[quoi] = (round(mur()), round(self._derniere_position[0], 2), round(self._derniere_position[1], 2))
+
+    def _transmet_messages(self, qui, maintenant=False):
+        """Messages laisses pour `qui` : signales a son accueil (brain.messages -> sons « il y a du nouveau »), ou tout
+        de suite s'il est deja la et que le canard est disponible. L'application est prevenue (message_transmis)."""
+        pour_lui = [m for m in self.messages_perso if m[1] == qui]
+        if not pour_lui:
+            return
+        if maintenant and (self.mode_calme or self.tombe or self.courant.nom in ("alarme", "porte", "nap", "ecoute")):
+            return                              # il le lui dira a son prochain retour
+        self.messages_perso = [m for m in self.messages_perso if m[1] != qui]
+        for ident, _ in pour_lui:
+            self._previent(f"message_transmis:{ident}")
+        if maintenant:
+            self._bascule("messager")
+        else:
+            self.messages = (self.messages + ["message_perso"])[-self.MESSAGES_MAX:]
 
     def reste_assis(self):
         """Pendant le mode calme, la veille apres des chutes ou une surchauffe des servos, on ne se releve pas entre
@@ -1050,6 +1139,8 @@ class Brain:
             return
         self.diagnostic.servos.note_plus_chaud((sante.get("motors") or {}).get("hottest"))
         moteurs = (sante.get("motors") or {}).get("max_c")
+        h = self.horloge()                      # (meme cle de jour que note_repos)
+        self.diagnostic.servos.note_chaleur(f"{getattr(h, 'tm_year', 0)}-{getattr(h, 'tm_yday', 0):03d}", moteurs)
         cpu = sante.get("cpu_temp_c")
         self.temperatures = {"moteurs": moteurs, "cpu": cpu}
         if moteurs is not None:
@@ -1603,6 +1694,16 @@ class Brain:
                 self.evenement("calme_on" if nuit else "calme_off")
         if state.get("odom"):
             self._derniere_position = (state["odom"]["position"][0], state["odom"]["position"][1])
+            vb = self.ctx.extras.get("balle")
+            if vb is not None and hasattr(vb, "position") and self.t_global - self._t_vu_balle >= 2.0:
+                self._t_vu_balle = self.t_global
+                b = vb.position()               # (x, y) dans le repere du tronc : -> repere de l'odometrie
+                if b is not None:
+                    cap = state["odom"].get("yaw") or 0.0
+                    x0, y0 = self._derniere_position
+                    mur = self.ctx.extras.get("mur", time.time)
+                    self.vus["balle"] = (round(mur()), round(x0 + b[0] * math.cos(cap) - b[1] * math.sin(cap), 2),
+                                         round(y0 + b[0] * math.sin(cap) + b[1] * math.cos(cap), 2))
         pct = (state.get("battery") or {}).get("percent")      # "battery": null tant que le bus n'a pas repondu
         if pct is not None:
             self._batterie_pct = pct

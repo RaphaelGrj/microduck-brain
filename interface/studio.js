@@ -146,10 +146,26 @@
       tours = r.liste; choisir(tours[0] ? tours[0].nom : ""); window.chargerTours();
     } catch (x) { window.toast(x.message); }
   });
+  // pour plus.js (partage) : le tour affiche, et l'ajout d'un tour venu d'ailleurs (fichier, texte, catalogue)
+  window.studio = {
+    courant: () => courant && { nom: $("#studio-nom").value.trim() || courant.nom, etapes: courant.etapes },
+    async ajouter(c) {
+      await window.chargerTours();
+      let nom = String(c.nom || "Tour importé").slice(0, 36), n = 2;
+      while (tours.some((t) => t.nom.toLowerCase() === nom.toLowerCase())) nom = `${String(c.nom).slice(0, 34)} ${n++}`;
+      const r = await window.api("/api/choregraphies", { liste: tours.concat([{ nom, etapes: c.etapes }]) });
+      tours = r.liste;
+      if (!tours.some((t) => t.nom === nom)) throw new Error("Rien de jouable dans ce tour");
+      choisir(nom);
+      window.chargerTours();
+      return nom;
+    },
+  };
   $("#ouvrir-studio").addEventListener("click", async () => {
     $("#studio").hidden = false; history.pushState({ ecran: "studio" }, "");
     await window.chargerTours();
     choisir(tours[0] ? tours[0].nom : "");
+    if (window.chargerCatalogueTours) window.chargerCatalogueTours();
   });
 
   // ---------- comportements ----------

@@ -154,6 +154,28 @@ class JournalBatterie:
             self.sauver()
         return True
 
+    def remplacee(self, nom):
+        """Batterie N remplacee par une neuve (carnet d'entretien) : ses anciens cycles sont gardes a part, la neuve
+        repart de zero (sinon sa « sante » serait comparee a celle de l'ancienne)."""
+        nom = str(nom)
+        if nom not in self.d["batteries"]:
+            return False
+        date = time.strftime("%Y-%m-%d")
+        for c in self.d["cycles"]:
+            if c.get("batterie") == nom:
+                c["batterie"] = f"{nom} (avant le {date})"
+        if self.sauver is not None:
+            self.sauver()
+        return True
+
+    def courbes(self):
+        """Pour comparer les batteries dans l'appli : autonomie de chaque cycle mesure, par batterie, dans l'ordre."""
+        out = {nom: [] for nom in self.d["batteries"]}
+        for c in self.d["cycles"]:
+            if c.get("batterie") in out and c["h"] > 0:
+                out[c["batterie"]].append({"t": c["debut"], "autonomie_h": round(100.0 / self._vitesse(c), 2)})
+        return out
+
     def par_batterie(self):
         """Chaque batterie du pack : cycles mesures, autonomie, sante, a remplacer, derniere utilisation."""
         out = {}
@@ -175,8 +197,10 @@ class SanteServos:
 
     def __init__(self, donnees=None, sauver=None):
         self.d = donnees if donnees is not None else {}
-        self.d.setdefault("jours", {})          # "2026-10-06" -> {"n", "courant": [14], "ecart": [14]}
+        self.d.setdefault("jours", {})          # "2026-279" (annee-jour) -> {"n", "courant": [15], "ecart": [15]}
         self.d.setdefault("plus_chaud", {})     # servo -> nombre de fois qu'il a ete le plus chaud
+        self.d.setdefault("chaleur", {})        # "2026-279" -> temperature max des servos ce jour-la (C)
+        self.d.setdefault("remplaces", {})      # servo -> date de son remplacement (carnet d'entretien)
         self.sauver = sauver
         self._jour = None
 
@@ -203,23 +227,50 @@ class SanteServos:
         if nom:
             self.d["plus_chaud"][nom] = self.d["plus_chaud"].get(nom, 0) + 1
 
+    def note_chaleur(self, jour, max_c):
+        if isinstance(max_c, (int, float)) and math.isfinite(max_c):
+            self.d["chaleur"][jour] = round(max(self.d["chaleur"].get(jour, -273.0), float(max_c)), 1)
+
+    def remplace(self, nom, jour=None):
+        """Servo change (carnet d'entretien) : son temoin repart des mesures faites APRES le remplacement."""
+        if nom not in SERVOS or nom == "mouth":
+            return False
+        self.d["remplaces"][nom] = jour or time.strftime("%Y-%j")    # (cle de jour de note_repos : annee-jour)
+        self.d["plus_chaud"].pop(nom, None)
+        if self.sauver is not None:
+            self.sauver()
+        return True
+
+    def courbes(self):
+        """Pour l'appli (usure) : par jour mesure, courant de repos et ecart de chaque servo, et la chaleur max."""
+        jours = self._valides()
+        return {"jours": [j for j, _ in jours],
+                "servos": {SERVOS[i]: {"courant": [round(v["courant"][i]) for _, v in jours],
+                                       "ecart": [round(v["ecart"][i], 3) for _, v in jours]} for i in SUIVIS},
+                "chaleur": [self.d["chaleur"].get(j) for j, _ in jours],
+                "remplaces": dict(self.d["remplaces"]), "plus_chaud": dict(self.d["plus_chaud"])}
+
     def _range_vieux(self):
         jours = sorted(self.d["jours"])
         for j in jours[:-self.JOURS_GARDES]:
             del self.d["jours"][j]
+        for j in sorted(self.d["chaleur"])[:-self.JOURS_GARDES]:
+            del self.d["chaleur"][j]
 
     def _valides(self):
         return [(j, v) for j, v in sorted(self.d["jours"].items()) if v["n"] >= self.MESURES_MIN_JOUR]
 
     def derives(self):
         """-> [(servo, "courant"|"ecart", valeur recente, temoin)] : servos qui derivent par rapport aux premiers jours."""
-        jours = self._valides()
-        if len(jours) <= self.JOURS_TEMOIN:
-            return []
-        temoin, recent = jours[:self.JOURS_TEMOIN], jours[-1][1]
+        tous = self._valides()
         out = []
         for i in SUIVIS:
             nom = SERVOS[i]
+            depuis = self.d["remplaces"].get(nom, "")      # servo change : on ne le compare qu'a lui-meme, neuf
+            jours = [(j, v) for j, v in tous if j >= depuis]
+            if len(jours) <= self.JOURS_TEMOIN:
+                continue
+            temoin, recent = jours[:self.JOURS_TEMOIN], jours[-1][1]
             c0 = statistics.mean(v["courant"][i] for _, v in temoin)
             e0 = statistics.mean(v["ecart"][i] for _, v in temoin)
             if c0 > 1.0 and recent["courant"][i] >= self.DERIVE_COURANT * c0:

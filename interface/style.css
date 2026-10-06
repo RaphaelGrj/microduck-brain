@@ -372,3 +372,32 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .faq p { margin: 8px 0 0; color: var(--discret); }
 .glossaire dd { text-align: left; }
 .choix-langue { font: inherit; min-height: 40px; border-radius: 10px; border: 1px solid var(--bord); background: var(--carte); color: var(--texte); padding: 0 8px; }
+
+/* Lots 5 a 8 : messages, ou l'a-t-il vu, carte de jeu, photos, usure, carnet, invites, QR */
+.sous-titre { font-size: .95rem; margin: 14px 0 4px; }
+.message-form, .carnet-form { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.message-form input, .message-form select, .carnet-form input, .carnet-form select {
+  flex: 1 1 140px; min-width: 0; min-height: 44px; padding: 0 10px; border-radius: 10px;
+  border: 1px solid var(--bord); background: var(--carte); color: var(--texte); font: inherit; }
+.message-form button, .carnet-form button { flex: 0 0 auto; }
+.liste-choix li.transmis .nom { color: var(--discret); }
+.liste-choix li small { display: block; color: var(--discret); font-size: .8rem; }
+#plan-jeu { touch-action: none; cursor: crosshair; }
+button[aria-pressed=true] { background: var(--orange-fonce); color: var(--accent-texte); border-color: transparent; }
+.photo-posee { display: block; width: 100%; margin-top: 10px; border-radius: 12px; }
+.photos-grille { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 10px 0; }
+.photos-grille button { padding: 0; border: 0; background: var(--barre); border-radius: 8px; overflow: hidden; aspect-ratio: 9 / 16;
+  position: relative; min-height: 0; }
+.photos-grille img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photos-grille small { position: absolute; left: 4px; bottom: 4px; background: rgba(0, 0, 0, .55); color: #fff;
+  border-radius: 6px; padding: 1px 6px; font-size: .7rem; }
+.vue-photo, .vue-qr { width: min(92vw, 420px); border: 0; border-radius: 18px; padding: 16px; background: var(--carte); color: var(--texte); }
+.vue-photo::backdrop, .vue-qr::backdrop { background: rgba(0, 0, 0, .55); }
+.vue-photo img { width: 100%; max-height: 62vh; object-fit: contain; border-radius: 10px; background: #000; }
+.qr { display: flex; justify-content: center; margin: 8px 0; }
+.qr img, .qr svg { width: min(70vw, 260px); height: auto; image-rendering: pixelated; background: #fff; padding: 8px; border-radius: 8px; }
+#vue-qr-texte { overflow-wrap: anywhere; text-align: center; }
+.graphe { display: block; width: 100%; height: 170px; margin-top: 8px; border-radius: 12px; background: var(--fond); }
+#usure-servo { width: 100%; min-height: 44px; border-radius: 10px; border: 1px solid var(--bord); background: var(--carte);
+  color: var(--texte); font: inherit; padding: 0 10px; }
+.legende i.ligne { display: inline-block; width: 14px; height: 3px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }

@@ -18,7 +18,7 @@ const ETATS = {
   coup_oeil: "Un coup d'œil", compagnie: "Il te tient compagnie", va_compagnie: "Il vient te voir",
   penaud: "Penaud", cajole: "Content", compris: "Compris !", pas_guide: "Il marche (télécommande)",
   regard_guide: "Il regarde (télécommande)", retrait: "Trop de bruit, il s'éloigne", jour_special: "Jour spécial !",
-  fier: "Il est fier", ou_es_tu: "Je suis là !", choregraphie: "Il fait son tour", baillement: "Il bâille", baillement_contagieux: "Il bâille", fausse_chute: "Fausse chute !",
+  fier: "Il est fier", ou_es_tu: "Je suis là !", parcours: "Il fait son parcours", pose_photo: "Il prend la pose", choregraphie: "Il fait son tour", baillement: "Il bâille", baillement_contagieux: "Il bâille", fausse_chute: "Fausse chute !",
 };
 window.ETATS_LIBELLES = ETATS;
 const JOUR = { promenades: ["promenade", "promenades"], siestes: ["sieste", "siestes"], jeux: ["jeu", "jeux"],
@@ -99,6 +99,7 @@ function afficher(e) {
   texte("#etat", e.tombe ? "Il est tombé" : e.porte ? "Dans les bras" : (ETATS[e.etat] || e.etat));
   texte("#sous-titre", e.tombe ? "Il est tombé…" : e.porte ? "Dans les bras" : e.assis ? "Assis" : "Debout");
   const alertes = [];
+  if (e.modes.vacances) alertes.push("Vacances");
   if (e.modes.calme) alertes.push("Mode calme");
   if (e.modes.garde) alertes.push("Garde");
   if (e.modes.discret) alertes.push("Quelqu'un téléphone");
@@ -164,7 +165,8 @@ function afficher(e) {
       li.append(a, b); return li;
     }));
 
-  for (const [id, actif] of [["#t-calme", e.modes.calme], ["#t-garde", e.modes.garde]]) $(id).setAttribute("aria-checked", String(actif));
+  for (const [id, actif] of [["#t-calme", e.modes.calme], ["#t-garde", e.modes.garde], ["#t-vacances", !!e.modes.vacances]]) $(id).setAttribute("aria-checked", String(actif));
+  if (window.majPlus) window.majPlus(e);
 
   const fin = e.journal.length ? e.journal[e.journal.length - 1].t : 0;
   $("#journal").replaceChildren(...e.journal.slice().reverse().map((x) => {
@@ -479,7 +481,7 @@ $("#presence-actif").addEventListener("change", enregistrerPresence);
 // Le Microduck de l'accueil : familles d'etats -> expression (signes par-dessus) ; image d'apres posture et tete.
 const FAMILLES = {
   dort: ["nap"],
-  marche: ["wander", "va_au_coin", "va_chargeur", "va_observer", "va_repas", "va_compagnie", "va_social", "pas_guide",
+  marche: ["wander", "parcours", "va_au_coin", "va_chargeur", "va_observer", "va_repas", "va_compagnie", "va_social", "pas_guide",
     "zoomies", "cherche_attention", "jeu_solitaire"],
   "joue-jeu": ["balle", "soleil", "cache_cache", "danse", "zoomies", "bravo", "salut", "toupie", "fier", "celebre"],
   alerte: ["alarme", "alerte", "startle", "sonnette", "meteo_orage", "retrait"],
@@ -524,8 +526,11 @@ function dessiner(e) {
 // haut, sa gauche a gauche. Rafraichie toutes les 5 s, seulement quand l'accueil est affiche.
 let derniereCarte = null;
 
-function dessinerCarte(c, plan = $("#plan"), messageVide = $("#plan-vide")) {
-  if (plan.id === "plan") derniereCarte = c;
+// `dessus(g, ecran)` : ce qu'un autre ecran dessine par-dessus (points d'un parcours) ; la transformation est gardee
+// sur le canvas (plan._vers_odom) pour retrouver un point de sa carte sous le doigt.
+const SIGNES_VUS = { chat: "🐱", balle: "⚽", objet: "📦" };
+function dessinerCarte(c, plan = $("#plan"), messageVide = $("#plan-vide"), dessus = null) {
+  if (plan.id === "plan") { derniereCarte = c; window.derniereCarte = c; }
   const vide = !c || !c.cases || !c.cases.length;
   plan.hidden = vide; messageVide.hidden = !vide;
   if (vide || plan.offsetParent === null) return;
@@ -536,11 +541,13 @@ function dessinerCarte(c, plan = $("#plan"), messageVide = $("#plan-vide")) {
   const k = c.case;                                   // odometrie (x devant, y gauche) -> ecran (u droite, w haut)
   const pts = [...c.cases, ...(c.obstacles || []), ...(c.chutes || [])].map(([i, j]) => [i * k, j * k]);
   if (c.canard) pts.push([c.canard.x, c.canard.y]);
+  for (const v of Object.values(c.vus || {})) pts.push([v.x, v.y]);
   const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
   const x0 = Math.min(...xs) - k, x1 = Math.max(...xs) + 2 * k, y0 = Math.min(...ys) - k, y1 = Math.max(...ys) + 2 * k;
   const e = Math.min((L - 16) / (y1 - y0), (H - 16) / (x1 - x0), 90);     // pixels par metre (zoom max : 90 px/m)
   const cu = L / 2 + ((y1 + y0) / 2) * e, cw = H / 2 + ((x1 + x0) / 2) * e;
   const ecran = (x, y) => [cu - y * e, cw - x * e];
+  plan._vers_odom = (u, w) => [(cw - w) / e, (cu - u) / e];
   const caseEcran = (i, j) => { const [u, w] = ecran((i + 1) * k, (j + 1) * k); return [u, w, k * e, k * e]; };
   g.fillStyle = v("--orange");
   for (const [i, j, f] of c.cases) { g.globalAlpha = 0.15 + 0.5 * f; g.fillRect(...caseEcran(i, j)); }
@@ -552,6 +559,8 @@ function dessinerCarte(c, plan = $("#plan"), messageVide = $("#plan-vide")) {
   for (const [a, p] of Object.entries(c.coins || {})) g.fillText(SIGNES[a] || "★", ...ecran(p[0], p[1]));
   if (c.chargeur) g.fillText("🔌", ...ecran(...c.chargeur));
   g.fillStyle = v("--texte"); for (const p of c.objets || []) { const [u, w] = ecran(...p); g.beginPath(); g.arc(u, w, 3, 0, 7); g.fill(); }
+  for (const [quoi, p] of Object.entries(c.vus || {})) if (SIGNES_VUS[quoi]) g.fillText(SIGNES_VUS[quoi], ...ecran(p.x, p.y));
+  if (dessus) { g.save(); dessus(g, ecran, v); g.restore(); }
   if (c.canard) {                                     // lui : un triangle pointe vers son cap
     const [u, w] = ecran(c.canard.x, c.canard.y), a = -c.canard.cap - Math.PI / 2;
     g.save(); g.translate(u, w); g.rotate(a);
@@ -562,7 +571,7 @@ function dessinerCarte(c, plan = $("#plan"), messageVide = $("#plan-vide")) {
 
 async function rafraichirCarte() {
   if ($("#plan").closest(".page").hidden || !code) return;
-  try { dessinerCarte(await api("/api/carte")); } catch (x) { /* la prochaine fois */ }
+  try { const c = await api("/api/carte"); dessinerCarte(c); if (window.majVus) window.majVus(c); } catch (x) { /* la prochaine fois */ }
 }
 setInterval(rafraichirCarte, 5000);
 window.addEventListener("resize", () => dessinerCarte(derniereCarte));
@@ -693,6 +702,11 @@ document.addEventListener("click", (ev) => {
   }
 });
 $("#t-calme").addEventListener("click", () => commande(dernier && dernier.modes.calme ? "calme_off" : "calme_on"));
+$("#t-vacances").addEventListener("click", async () => {
+  const on = !(dernier && dernier.modes.vacances);
+  try { await api("/api/reglages", { vacances: on }); toast(on ? "Bonnes vacances ! Des nouvelles chaque soir." : "Bon retour !"); }
+  catch (x) { toast(x.message === "code" ? "Code refusé" : "Microduck ne répond pas"); }
+});
 $("#t-garde").addEventListener("click", () => commande(dernier && dernier.modes.garde ? "garde_off" : "garde_on"));
 $("#oublier-carte").addEventListener("click", async () => {
   if (!confirm("Effacer sa carte ? Il oubliera aussi ses coins favoris et son chargeur, jusqu'à les réapprendre.")) return;
@@ -717,7 +731,11 @@ window.addEventListener("popstate", () => { document.querySelectorAll(".ecran.pl
 $("#oublier").addEventListener("click", () => { memoire("microduck-code", null); location.reload(); });
 $("#form-code").addEventListener("submit", (ev) => { ev.preventDefault(); entrer($("#code").value.trim()); });
 
-const enregistre = window.MicroduckDemo ? "demo" : memoire("microduck-code");
+// lien d'invite (QR code des Reglages) : http://<canard>:8090/#code=xxxx-xxxx -> on entre avec ce code, sans le garder
+// dans l'adresse (historique, capture d'ecran)
+const codeLien = (location.hash.match(/^#code=([\w-]{6,40})$/) || [])[1];
+if (codeLien) history.replaceState(null, "", location.pathname + location.search);
+const enregistre = window.MicroduckDemo ? "demo" : codeLien || memoire("microduck-code");
 if (enregistre) entrer(enregistre);
 else {
   // premier demarrage sans code : l'ecran d'installation (connexions.js) ; sinon l'appairage

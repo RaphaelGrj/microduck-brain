@@ -371,7 +371,7 @@ def test_presence_sauvegarde_restauration(serveur, tmp_path, monkeypatch):
     (tmp_path / "memoire.json").write_text(json.dumps({"etres": {"Raphael": {"rencontres": 3}}}))
     (tmp_path / "design.json").write_text(json.dumps({"filaments": []}))
     assert requete(serveur.port, "/api/presence", corps={"nom": "Raphaël|absent"})[0] == 200
-    assert serveur.source() == ["presence:Raphaëlabsent|home"]       # le nom ne peut pas forger un autre evenement
+    assert serveur.source() == ["arrivee:Raphaëlabsent"]       # le nom ne peut pas forger un autre evenement
     statut, corps = requete(serveur.port, "/api/sauvegarde")
     sauvegarde = json.loads(corps)
     assert statut == 200 and set(sauvegarde["fichiers"]) == {"memoire.json", "design.json"}

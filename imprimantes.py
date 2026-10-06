@@ -47,6 +47,37 @@ def lire_prusalink(adresse, cle, delai=5.0):
             "progression": job.get("progress"), "reste_s": job.get("time_remaining"), "brut": etat}
 
 
+FICHIER_MAX = 64 * 1024 * 1024
+EXTENSIONS_PRUSA = (".bgcode", ".gcode")
+
+
+def nom_de_fichier(nom):
+    """Nom sur la cle USB de l'imprimante : lettres, chiffres, - _ . seulement (8.3 inutile sur MK4S)."""
+    base = "".join(c if c.isalnum() or c in "-_." else "_" for c in str(nom or ""))[:60].strip("._")
+    return base if base.lower().endswith(EXTENSIONS_PRUSA) else None
+
+
+def envoyer_prusalink(adresse, cle, nom, octets, imprimer=False, delai=60.0):
+    """Envoie un G-code (deja tranche pour CETTE imprimante) sur la cle USB d'une Prusa, et lance l'impression si on le
+    demande. PrusaLink : PUT /api/v1/files/usb/<nom> (A VALIDER sur la MK4S : nom du stockage « usb »). -> code HTTP."""
+    nom = nom_de_fichier(nom)
+    if nom is None or not octets or len(octets) > FICHIER_MAX:
+        raise ValueError("fichier .bgcode ou .gcode attendu")
+    hote = adresse.split("://")[-1].rstrip("/")
+    req = urllib.request.Request(f"http://{hote}/api/v1/files/usb/{nom}", data=octets, method="PUT", headers={
+        "X-Api-Key": cle or "", "Content-Type": "application/octet-stream", "Overwrite": "?1",
+        "Print-After-Upload": "?1" if imprimer else "?0"})
+    try:
+        with urllib.request.urlopen(req, timeout=delai) as r:
+            return r.status
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            raise OSError("clé API refusée par l'imprimante") from e
+        if e.code == 409:
+            raise OSError("l'imprimante est occupée (impression en cours ?)") from e
+        raise OSError(f"l'imprimante a répondu {e.code}") from e
+
+
 # -- WebSocket minimal (client, texte seulement) : la bibliotheque standard n'en a pas ---------------------------------
 def _ws_ouvrir(hote, port, chemin, delai):
     s = socket.create_connection((hote, port), timeout=delai)

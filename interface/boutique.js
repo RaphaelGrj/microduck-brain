@@ -55,6 +55,10 @@
       });
       corps.append(b);
     }
+    if ((p.fichiers || []).length && window.envoyerImpression) {      // G-code pret a imprimer (plus.js)
+      corps.append(el("button", { className: "essayer", textContent: "Envoyer à l'imprimante",
+        onclick: () => window.envoyerImpression(p) }));
+    }
     return el("li", { className: "piece" }, photos, corps);
   }
 

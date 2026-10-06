@@ -6,7 +6,9 @@ HTML + JS sans framework) et une API JSON. Sur le telephone : ouvrir http://<ip-
 d'accueil".
 
 Regles du projet respectees :
-  - le telephone AFFICHE des etats et ENVOIE des commandes ; aucune image, aucun son ne lui est envoye ;
+  - le telephone AFFICHE des etats et ENVOIE des commandes ; aucun son ne lui est envoye, et une image seulement si on
+    l'a voulu (journal photo : reglage « photos », desactive par defaut ; mode photo) - gardee SUR le canard, montree
+    au seul code parent, jamais envoyee ailleurs (ni Home Assistant, ni Internet) ;
   - acces protege par un code d'appairage (`[appli] code` dans ha.toml), et seulement depuis le reseau local ;
   - le cerveau garde la main : les commandes sont des EVENEMENTS mis en file (comme ceux de Home Assistant), traites
     par le cerveau dans sa boucle avec ses garde-fous (jamais de marche sans capteur de distance ni vers un vide...).
@@ -29,6 +31,18 @@ API :
   POST /api/regard          {"lacet", "tangage"} : regard a une position (pave tactile), borne par le cerveau
   POST /api/mise-a-jour     {"action": "installer", "branche": ...} ou {"action": "revenir"} : au prochain demarrage
   GET  /api/rapport         rapport de diagnostic a partager (versions, sante, alertes) ; aucune donnee personnelle
+  GET  /api/photos          le journal photo (photos.py) ; GET /api/photo?id=... une image ; POST /api/photo
+                            {"action": "prendre" | "supprimer" (id) | "tout_supprimer"}
+  GET  /api/messages        messages laisses au canard (messages.py) ; POST /api/message {"pour", "texte", "de"} ou
+                            {"action": "annuler", "id"}
+  GET  /api/parcours        parcours d'obstacles : records et dernieres courses ; POST {"points": [[x, y]...],
+                            "genre": "parcours" | "balle"} (points de sa carte, repere de l'odometrie)
+  GET  /api/usure           courbes d'usure des servos et autonomie de chaque batterie, jour par jour
+  GET  /api/carnet          carnet d'entretien (carnet.py) ; POST {"action": "ajouter", ...} ou {"action": "supprimer", "id"}
+  POST /api/imprimer        un G-code (corps brut) pour une imprimante Prusa du reseau local ; en-tetes X-Imprimante
+                            (son nom), X-Fichier (nom .bgcode/.gcode), X-Lancer (1 : imprimer tout de suite). Le
+                            telephone le telecharge (catalogue) : le canard ne sort jamais sur Internet.
+  GET  /api/invites         codes invites ; POST {"heures": 24, "nom": ...} pour en creer un, {"action": "revoquer", "code"}
   GET  /api/sante           test de vie, sans code (pour savoir si le canard repond)
 Le code se passe dans l'en-tete `X-Microduck-Code` (ou `?code=` pour le flux).
 """
@@ -105,6 +119,7 @@ def instantane(brain, state, version=None):
         "tete": [round(float(x), 2) for x in (getattr(brain.ctx, "tete_cmd", None) or (0.0, 0.0, 0.0, 0.0))][:4],
         "modes": {"calme": bool(brain.mode_calme), "garde": bool(brain.ctx.extras.get("garde")),
                   "discret": bool(getattr(brain, "discret", False)), "vacarme": bool(getattr(brain, "vacarme", False)),
+                  "vacances": bool(getattr(brain, "vacances", False)),
                   "timidite": round(brain.timidite(), 2) if hasattr(brain, "timidite") else 0.0,
                   "taquineries_coupees": brain.t_global < getattr(getattr(brain, "malice", None), "stop_jusqua", -1)},
         "presents": sorted(getattr(brain, "presents", ())),
@@ -160,6 +175,8 @@ def carte(brain, state):
         "coins": coins,
         "chargeur": None if getattr(brain, "chargeur", None) is None else [round(brain.chargeur[0], 2), round(brain.chargeur[1], 2)],
         "objets": [[round(o[1], 2), round(o[2], 2)] for o in list(getattr(brain, "objets_au_sol", []))[-20:]],
+        # « ou l'a-t-il vu ? » : SA position quand il a vu le chat, la balle, un objet (heure murale)
+        "vus": {k: {"t": v[0], "x": v[1], "y": v[2]} for k, v in dict(getattr(brain, "vus", {}) or {}).items()},
     }
 
 
@@ -178,8 +195,8 @@ BATTERIE_FAIBLE_PCT, BATTERIE_REMONTEE_PCT = 20.0, 30.0
 INSTALLATION_S = 30 * 60             # sans code : l'installation reste ouverte 30 min apres le demarrage
 # profil enfant (code enfant) : regarder, jouer, le retrouver ; ni reglages, ni telecommande des pas, ni sauvegarde
 ENFANT_LECTURE = {"/api/role", "/api/etat", "/api/flux", "/api/carte", "/api/alertes", "/api/design", "/api/lieux", "/api/lieu-carte",
-                  "/api/imprimantes", "/api/choregraphies", "/api/comportements"}
-ENFANT_ECRITURE = {"/api/commande"}
+                  "/api/imprimantes", "/api/choregraphies", "/api/comportements", "/api/messages", "/api/parcours"}
+ENFANT_ECRITURE = {"/api/commande", "/api/message", "/api/parcours"}
 COMMANDES_ENFANT = {"jouer_balle", "jouer_cache", "jouer_soleil", "fin_jeu", "salut", "toupie", "danse", "stop",
                     "stop_taquinerie", "ou_es_tu", "regard_gauche", "regard_droite", "regard_haut", "regard_bas",
                     "regard_centre"}
@@ -211,11 +228,13 @@ def valider_design(d):
 
 def fichiers_sauvegardes(appli):
     """Ce qu'une sauvegarde contient : nom -> chemin. Jamais ha.toml (jeton Home Assistant)."""
+    import carnet
     import lieux
     import memoire
     import reglages
     return {"memoire.json": memoire.CHEMIN_DEFAUT, "lieux.json": lieux.CHEMIN_DEFAUT,
-            "design.json": appli.fichier_design, "reglages.json": appli.fichier_reglages or reglages.CHEMIN_DEFAUT}
+            "design.json": appli.fichier_design, "reglages.json": appli.fichier_reglages or reglages.CHEMIN_DEFAUT,
+            "carnet.json": carnet.chemin_defaut(), "jeux.json": appli.fichier_jeux()}
 
 
 def appliquer_restaurations(chemins, log=print):
@@ -237,6 +256,8 @@ class Appli:
             raise ValueError("[appli] code : au moins 6 caracteres (c'est la cle de ton canard sur le reseau)")
         self.code, self.port, self.hote, self.log, self.version = (str(code) if code else None), port, hote, log, version
         self.code_enfant = str(code_enfant) if code_enfant and len(str(code_enfant)) >= 6 else None
+        self.fichier_invites = Path(os.environ.get("MICRODUCK_INVITES", Path.home() / ".local/share/microduck/invites.json"))
+        self.invites = self._lire_invites()     # code -> {"nom", "jusqua"} : droits « enfant », pour un temps
         self.installation_jusqua = time.monotonic() + INSTALLATION_S if self.code is None else None
         self.brut = {}                          # configuration (ha.toml + configuration.json), page Connexions
         self.imprimantes = None
@@ -257,6 +278,14 @@ class Appli:
         self.fichier_reglages = None
         self._reglages_a_appliquer = None
         self.lieux = None                       # lieux.Lieux, branche par canard.py (sinon : pas de section Lieux)
+        self.photos = None                      # photos.Photos (journal photo, mode photo), branche par canard.py
+        self.usure = {}                         # courbes d'usure (servos, batteries), photographiees toutes les 30 s
+        self._t_usure = -1e9
+        import messages as messages_mod
+        self.messages = messages_mod.Messages()
+        self._messages_rejoues = False
+        self._jour_resume = None                # vacances : resume du jour deja envoye ce jour-la
+        self.horloge = time.localtime
         self._t_photo = self._t_carte = -1e9
         self._echecs = {}                       # ip -> instant du dernier code faux (freine les essais)
         self.serveur = None
@@ -276,11 +305,24 @@ class Appli:
         if self._ecoute is not brain and hasattr(brain, "ecouteurs"):
             self._ecoute = brain
             brain.ecouteurs.append(self.sur_evenement)
+            if self.photos is not None:
+                brain.ecouteurs.append(self.photos.sur_evenement)
+        if not self._messages_rejoues:          # (re)demarrage : les messages en attente sont redonnes au cerveau
+            self._messages_rejoues = True
+            for m in self.messages.en_attente():
+                self.evenements.put(f"message:{m['id']}|{m['pour']}")
+        if self.photos is not None:
+            self.photos.actif = bool((self.cerveau or {}).get("photos"))
+        self._resume_vacances(self.etat)
         self._surveiller(self.etat)
         nouveaux, self._reglages_a_appliquer = self._reglages_a_appliquer, None
         if nouveaux is not None:
             import reglages
             reglages.appliquer(brain, nouveaux)
+        dg = getattr(brain, "diagnostic", None)
+        if dg is not None and now - self._t_usure >= 30.0:
+            self._t_usure = now
+            self.usure = {"servos": dg.servos.courbes(), "batteries": dg.batterie.courbes()}
         if now - self._t_carte >= PERIODE_CARTE_S:
             self._t_carte = now
             self.carte = carte(brain, state)
@@ -303,6 +345,78 @@ class Appli:
         elif base in ALERTES_EVENEMENTS:
             titre, texte, importante = ALERTES_EVENEMENTS[base]
             self.alerter(base, titre, texte.format(detail=detail).strip(), importante)
+        elif base == "parcours_fini":
+            self._fin_parcours(detail)
+        elif base == "message_transmis":
+            m = self.messages.transmis(detail)
+            if m is not None:
+                self.alerter("message", "Message transmis", f"{m['pour']} est là : il le lui a signalé.", False)
+
+    def fichier_jeux(self):
+        return Path(os.environ.get("MICRODUCK_JEUX", Path.home() / ".local/share/microduck/jeux.json"))
+
+    def jeux(self):
+        try:
+            d = json.loads(self.fichier_jeux().read_text())
+            return d if isinstance(d, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def _fin_parcours(self, detail):
+        """« genre|issue|duree|atteints/total » : historique, record par nombre de points, notification."""
+        try:
+            genre, issue, duree, score = detail.split("|")
+            atteints, total = (int(v) for v in score.split("/"))
+            duree = float(duree)
+        except ValueError:
+            return
+        if genre == "balle":
+            if issue == "refuse":
+                self.alerter("parcours", "Il ne peut pas y aller", "Debout, au calme, et pas trop loin (4 m).", False)
+            return                              # la suite, c'est le jeu de balle (ses statistiques)
+        d = self.jeux()
+        record = False
+        if issue == "reussi":
+            records = d.setdefault("records", {})
+            if str(total) not in records or duree < records[str(total)]:
+                records[str(total)], record = round(duree, 1), True
+        d["historique"] = (d.get("historique", []) + [{"t": round(time.time()), "issue": issue, "duree": round(duree, 1),
+                                                         "atteints": atteints, "total": total}])[-20:]
+        try:
+            self.fichier_jeux().parent.mkdir(parents=True, exist_ok=True)
+            self.fichier_jeux().write_text(json.dumps(d))
+        except OSError:
+            pass
+        titres = {"reussi": "Parcours réussi", "bloque": "Parcours : bloqué", "trop_long": "Parcours : trop long",
+                  "interrompu": "Parcours interrompu", "refuse": "Il ne peut pas faire ce parcours"}
+        texte = (f"{duree:.1f} s".replace(".", ",") + (" : record !" if record else "") if issue == "reussi"
+                 else f"{atteints} point(s) sur {total}" if issue != "refuse"
+                 else "Debout, au calme, avec des étapes de 4 m au plus.")
+        self.alerter("parcours", titres.get(issue, "Parcours"), texte, False)
+
+    RESUME_VACANCES_H = 20
+    POSE_ATTENTE_S = 1.6
+
+    def _resume_vacances(self, e):
+        """Mode vacances : un resume par jour (20 h), en notification : batterie, alertes de garde, chutes."""
+        if not e.get("modes", {}).get("vacances"):
+            return
+        h = self.horloge()
+        jour = (h.tm_year, h.tm_yday)
+        if h.tm_hour < self.RESUME_VACANCES_H or self._jour_resume == jour:
+            return
+        self._jour_resume = jour
+        depuis = time.time() - 86400
+        with self._verrou_alertes:
+            garde = sum(1 for a in self.alertes if a["type"] == "garde" and a["t"] > depuis)
+            chutes = sum(1 for a in self.alertes if a["type"] == "chute" and a["t"] > depuis)
+        p = (e.get("batterie") or {}).get("pourcent")
+        morceaux = [f"batterie {round(p)} %" if p is not None else None,
+                    "rien d'anormal entendu" if not garde else f"{garde} alerte(s) de garde",
+                    f"{chutes} chute(s)" if chutes else None]
+        debut = "À voir : " if garde or chutes else "Tout va bien : "
+        self.alerter("vacances", "Nouvelles du canard", debut + ", ".join(m for m in morceaux if m) + ".",
+                     bool(garde or chutes))
 
     def _surveiller(self, e):
         """Changements d'etat qui meritent une notification : chute, batterie faible, diagnostic, batterie a nommer."""
@@ -321,6 +435,9 @@ class Appli:
         diag, diag0 = e["maintenance"]["diagnostic"], avant["maintenance"]["diagnostic"]
         if diag.get("ok") is False and diag.get("le") != diag0.get("le"):
             self.alerter("diagnostic", "Diagnostic : problème détecté", "Détails dans Santé.", True)
+        nouveaux = set(e["maintenance"]["servos"].get("derives") or []) - set(avant["maintenance"]["servos"].get("derives") or [])
+        if nouveaux:
+            self.alerter("servo", "Servo à surveiller", ", ".join(sorted(nouveaux)) + " : détails dans Santé.", True)
         if e["maintenance"]["batterie"].get("a_nommer") and not avant["maintenance"]["batterie"].get("a_nommer"):
             self.alerter("batterie_echange", "Batterie changée", "Laquelle as-tu mise ? Réponds dans Santé.", False)
 
@@ -403,9 +520,45 @@ class Appli:
             role = "parent"
         elif isinstance(essai, str) and self.code_enfant and hmac.compare_digest(essai.encode(), self.code_enfant.encode()):
             role = "enfant"
+        elif isinstance(essai, str) and essai in self.invites and self.invites[essai]["jusqua"] > time.time():
+            role = "invite"
         if role is None:
             self._echecs[ip] = time.monotonic()
         return role
+
+    # -- codes invites (un ami, les grands-parents...) : droits du profil enfant, pour quelques heures -----------------
+    INVITE_MAX_H = 24 * 7
+
+    def _lire_invites(self):
+        try:
+            d = json.loads(self.fichier_invites.read_text())
+            return {k: v for k, v in d.items() if isinstance(v, dict) and v.get("jusqua", 0) > time.time()}
+        except (OSError, ValueError, AttributeError):
+            return {}
+
+    def _ecrire_invites(self):
+        try:
+            self.fichier_invites.parent.mkdir(parents=True, exist_ok=True)
+            self.fichier_invites.write_text(json.dumps(self.invites, ensure_ascii=False))
+            os.chmod(self.fichier_invites, 0o600)
+        except OSError:
+            pass
+
+    def creer_invite(self, heures, nom=""):
+        import secrets
+        heures = max(1, min(self.INVITE_MAX_H, int(heures)))
+        code = "-".join("".join(secrets.choice("abcdefghjkmnpqrstuvwxyz23456789") for _ in range(4)) for _ in range(2))
+        nom = "".join(c for c in str(nom or "") if c.isprintable()).strip()[:30] or "Invité"
+        self.invites = {k: v for k, v in self.invites.items() if v["jusqua"] > time.time()}
+        self.invites[code] = {"nom": nom, "jusqua": round(time.time() + heures * 3600)}
+        self._ecrire_invites()
+        return code
+
+    def revoquer_invite(self, code):
+        if self.invites.pop(str(code), None) is None:
+            return False
+        self._ecrire_invites()
+        return True
 
     def en_installation(self):
         return self.code is None and self.installation_jusqua is not None and time.monotonic() < self.installation_jusqua
@@ -443,7 +596,7 @@ class Appli:
                     self._json(401, {"erreur": "code d'appairage"})
                     return False
                 chemin = urlparse(self.path).path
-                if self.role == "enfant" and chemin not in (ENFANT_LECTURE if self.command == "GET" else ENFANT_ECRITURE):
+                if self.role in ("enfant", "invite") and chemin not in (ENFANT_LECTURE if self.command == "GET" else ENFANT_ECRITURE):
                     self._json(403, {"erreur": "reserve aux parents"})
                     return False
                 return True
@@ -494,6 +647,45 @@ class Appli:
                         except ValueError:
                             depuis = 0.0
                         self._json(200, {"maintenant": time.time(), "alertes": appli.alertes_depuis(depuis)})
+                    return
+                if url.path == "/api/invites":
+                    if self._autorise():
+                        self._json(200, {"liste": [{"code": k, **v} for k, v in appli.invites.items()
+                                                   if v["jusqua"] > time.time()]})
+                    return
+                if url.path == "/api/usure":
+                    if self._autorise():
+                        self._json(200, appli.usure)
+                    return
+                if url.path == "/api/carnet":
+                    if self._autorise():
+                        import carnet
+                        self._json(200, {"liste": carnet.Carnet().lire(), "types": carnet.TYPES})
+                    return
+                if url.path == "/api/parcours":
+                    if self._autorise():
+                        self._json(200, appli.jeux())
+                    return
+                if url.path == "/api/messages":
+                    if self._autorise():
+                        self._json(200, {"liste": list(reversed(appli.messages.liste))})
+                    return
+                if url.path in ("/api/photos", "/api/photo"):
+                    if not self._autorise():
+                        return
+                    if appli.photos is None:
+                        return self._json(404, {"erreur": "camera absente"})
+                    if url.path == "/api/photos":
+                        return self._json(200, {"actif": appli.photos.actif, "liste": appli.photos.liste()})
+                    lu = appli.photos.lire_photo(parse_qs(url.query).get("id", [""])[0])
+                    if lu is None:
+                        return self._json(404, {"erreur": "photo inconnue"})
+                    self.send_response(200)
+                    self.send_header("Content-Type", lu[1])
+                    self.send_header("Cache-Control", "private, max-age=86400")
+                    self.send_header("Content-Length", str(len(lu[0])))
+                    self.end_headers()
+                    self.wfile.write(lu[0])
                     return
                 if url.path == "/api/rapport":
                     if self._autorise():
@@ -556,12 +748,15 @@ class Appli:
                 if chemin not in ("/api/commande", "/api/lieu", "/api/design", "/api/reglages", "/api/presence",
                                   "/api/restauration", "/api/installation", "/api/configuration", "/api/tester-ha",
                                   "/api/tester-imprimante", "/api/redemarrer", "/api/choregraphies", "/api/comportement",
-                                  "/api/regard", "/api/mise-a-jour"):
+                                  "/api/regard", "/api/mise-a-jour", "/api/photo", "/api/message", "/api/parcours", "/api/carnet",
+                                  "/api/imprimer", "/api/invites"):
                     return self._json(404, {"erreur": "inconnu"})
                 if chemin == "/api/installation":
                     return self._installation()
                 if not self._autorise():
                     return
+                if chemin == "/api/imprimer":
+                    return self._imprimer()
                 try:
                     n = min(int(self.headers.get("Content-Length", "0")),
                             {"/api/design": 65536, "/api/restauration": 8 * 1024 * 1024}.get(chemin, 4096))
@@ -649,6 +844,68 @@ class Appli:
                         return self._json(500, {"erreur": "enregistrement impossible"})
                     appli.redemarrage_demande = True            # systemd lance mettre_a_jour.sh puis le cerveau
                     return self._json(200, {"ok": True})
+                if chemin == "/api/photo":
+                    if appli.photos is None:
+                        return self._json(404, {"erreur": "camera absente"})
+                    action = corps.get("action")
+                    if action == "prendre":
+                        import etats_appli
+                        pose = corps.get("pose")
+                        if pose in etats_appli.PosePhoto.POSES:          # mode photo : il prend la pose, puis clic
+                            appli.evenements.put(f"pose_photo:{pose}")
+                            time.sleep(appli.POSE_ATTENTE_S)
+                        ident = appli.photos.prendre("pose" if pose else "photo", attendre=True)
+                        return self._json(200 if ident else 503, {"ok": bool(ident), "id": ident})
+                    if action in ("supprimer", "tout_supprimer"):
+                        appli.photos.supprimer(corps.get("id") if action == "supprimer" else None)
+                        return self._json(200, {"ok": True})
+                    return self._json(400, {"erreur": "action inconnue"})
+                if chemin == "/api/invites":
+                    if corps.get("action") == "revoquer":
+                        return self._json(200 if appli.revoquer_invite(corps.get("code")) else 404, {"ok": True})
+                    try:
+                        code = appli.creer_invite(corps.get("heures", 24), corps.get("nom"))
+                    except (TypeError, ValueError):
+                        return self._json(400, {"erreur": "duree en heures attendue"})
+                    return self._json(200, {"ok": True, "code": code, **appli.invites[code]})
+                if chemin == "/api/carnet":
+                    import carnet
+                    c = carnet.Carnet()
+                    try:
+                        if corps.get("action") == "supprimer":
+                            return self._json(200 if c.supprimer(str(corps.get("id"))) else 404, {"ok": True})
+                        e = c.ajouter(corps)
+                    except OSError:
+                        return self._json(500, {"erreur": "enregistrement impossible"})
+                    if e is None:
+                        return self._json(400, {"erreur": "entree incomplete"})
+                    if e["type"] == "servo":
+                        appli.evenements.put(f"servo_remplace:{e['servo']}")
+                    elif e["type"] == "batterie":
+                        appli.evenements.put(f"batterie_remplacee:{e['batterie']}")
+                    return self._json(200, {"ok": True, "entree": e})
+                if chemin == "/api/parcours":
+                    pts = corps.get("points")
+                    try:
+                        pts = [(float(p[0]), float(p[1])) for p in pts][:6] if isinstance(pts, list) else []
+                    except (TypeError, ValueError, IndexError):
+                        pts = []
+                    if not pts or any(v != v or abs(v) > 100 for p in pts for v in p):
+                        return self._json(400, {"erreur": "points de sa carte attendus"})
+                    genre = "va_balle" if corps.get("genre") == "balle" else "parcours"
+                    appli.evenements.put(f"{genre}:" + ";".join(f"{x:.2f},{y:.2f}" for x, y in pts[:1 if genre == "va_balle" else 6]))
+                    return self._json(200, {"ok": True})
+                if chemin == "/api/message":
+                    if corps.get("action") == "annuler":
+                        if self.role != "parent" or not appli.messages.annuler(str(corps.get("id"))):
+                            return self._json(400, {"erreur": "message inconnu"})
+                        appli.evenements.put(f"message_annule:{corps.get('id')}")
+                        return self._json(200, {"ok": True})
+                    m = appli.messages.ajouter(corps.get("pour"), corps.get("texte"), corps.get("de"))
+                    if m is None:
+                        return self._json(400, {"erreur": "destinataire et texte attendus"})
+                    appli.evenements.put(f"message:{m['id']}|{m['pour']}")
+                    return self._json(200, {"ok": True, "message": m})
                 if chemin == "/api/redemarrer":
                     appli.redemarrage_demande = True            # canard.py sort proprement, systemd le relance
                     return self._json(200, {"ok": True})
@@ -657,13 +914,13 @@ class Appli:
                     nom = "".join(c for c in nom if c.isprintable() and c not in "|:").strip()[:40] if isinstance(nom, str) else ""
                     if not nom:
                         return self._json(400, {"erreur": "nom attendu"})
-                    appli.evenements.put(f"presence:{nom}|home")    # comme Home Assistant : il arrive, on l'accueille
+                    appli.evenements.put(f"arrivee:{nom}")      # il arrive : accueil, sauf s'il etait deja compte present
                     return self._json(200, {"ok": True})
                 if chemin == "/api/restauration":
                     fichiers = corps.get("fichiers") if corps.get("format") == "microduck-sauvegarde" else None
                     connus = fichiers_sauvegardes(appli)
                     if not isinstance(fichiers, dict) or not fichiers or any(
-                            k not in connus or not isinstance(v, dict) for k, v in fichiers.items()):
+                            k not in connus or not isinstance(v, (dict, list)) for k, v in fichiers.items()):
                         return self._json(400, {"erreur": "ce n'est pas une sauvegarde de Microduck"})
                     try:
                         for nom, contenu in fichiers.items():
@@ -706,11 +963,34 @@ class Appli:
                     ok, raison = appli.lieux.action(str(corps.get("action")), texte(corps.get("id")), texte(corps.get("nom")))
                     return self._json(200 if ok else 400, {"ok": True} if ok else {"erreur": raison})
                 nom = corps.get("commande")
-                if self.role == "enfant" and nom not in COMMANDES_ENFANT:
+                if self.role in ("enfant", "invite") and nom not in COMMANDES_ENFANT:
                     return self._json(403, {"erreur": "reserve aux parents"})
                 if not appli.commande(nom):
                     return self._json(400, {"erreur": f"commande inconnue : {nom}"})
                 self._json(200, {"ok": True, "commande": nom})
+
+            def _imprimer(self):
+                """Un G-code vers une Prusa du reseau local (PrusaLink) : la cle API reste sur le canard."""
+                import imprimantes
+                nom = self.headers.get("X-Imprimante", "")
+                cible = next((i for i in appli.brut.get("imprimante_directe") or []
+                              if i.get("nom") == nom and i.get("type") == "prusalink"), None)
+                try:
+                    n = int(self.headers.get("Content-Length", "0"))
+                except ValueError:
+                    n = 0
+                if cible is None:
+                    return self._json(404, {"erreur": "imprimante Prusa inconnue (Connexions)"})
+                if not 0 < n <= imprimantes.FICHIER_MAX or imprimantes.nom_de_fichier(self.headers.get("X-Fichier")) is None:
+                    return self._json(400, {"erreur": "fichier .bgcode ou .gcode attendu (64 Mo au plus)"})
+                octets = self.rfile.read(n)
+                try:
+                    imprimantes.envoyer_prusalink(cible["adresse"], cible.get("cle_api"), self.headers.get("X-Fichier"),
+                                                  octets, imprimer=self.headers.get("X-Lancer") == "1")
+                except (OSError, ValueError) as e:
+                    return self._json(502, {"erreur": str(e)[:160]})
+                appli.log(f"application : {self.headers.get('X-Fichier')} envoye a {nom}")
+                return self._json(200, {"ok": True})
 
             def _installation(self):
                 """Premier demarrage, sans code : le telephone choisit le code, le nom du canard et les habitants."""

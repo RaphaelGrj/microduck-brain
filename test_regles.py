@@ -96,10 +96,11 @@ def test_seul_pont_ha_parle_au_reseau():
     """Hors du pont Home Assistant, aucun module embarque n'ouvre de connexion reseau autre que locale."""
     reseau = re.compile(r"urlopen|websockets|paho|requests\.|socket\.AF_INET|http\.client|http\.server")
     for nom in MODULES:
-        if nom in ("pont_ha.py", "vision.py", "appli.py", "imprimantes.py"):
+        if nom in ("pont_ha.py", "vision.py", "appli.py", "imprimantes.py", "photos.py"):
             # vision : la camera en local seulement (canard.verifier_local) ; appli : serveur du RESEAU LOCAL seulement,
             # qui n'envoie que des etats (test_appli.test_reseau_local_seulement, et aucun appel sortant ci-dessous) ;
-            # imprimantes : LIT les imprimantes du reseau local seulement (test_imprimante_du_reseau_local_seulement)
+            # imprimantes : LIT les imprimantes du reseau local seulement (test_imprimante_du_reseau_local_seulement) ;
+            # photos : lit la camera du canard en boucle locale seulement (test_quotidien.test_camera_du_canard_seulement)
             continue
         code = (RACINE / nom).read_text()
         assert not reseau.search(code), f"{nom} ouvre une connexion reseau"

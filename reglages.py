@@ -12,7 +12,8 @@ from pathlib import Path
 import memoire
 
 CHEMIN_DEFAUT = Path(os.environ.get("MICRODUCK_REGLAGES", memoire.CHEMIN_DEFAUT.parent / "reglages.json"))
-CLES = ("heures_calmes", "bonjour", "bonjour_weekend", "repas", "autotest", "circadien", "routines", "caractere")
+CLES = ("heures_calmes", "bonjour", "bonjour_weekend", "repas", "autotest", "circadien", "routines", "caractere",
+        "photos", "vacances")
 CURSEURS = ("joueur", "bavard", "taquin")
 # routines programmables (liste fermee) : action de l'appli -> evenement du cerveau
 ROUTINES = {"vient_me_voir": "routine_compagnie", "salut": "tour_salut", "danse": "commande:danse",
@@ -52,7 +53,7 @@ def valider(d):
     if "repas" in d:
         repas = d["repas"] if isinstance(d["repas"], list) else []
         out["repas"] = sorted({texte_heure(heure(r)) for r in repas[:6] if heure(r) is not None})
-    for cle in ("autotest", "circadien"):
+    for cle in ("autotest", "circadien", "photos", "vacances"):
         if cle in d:
             out[cle] = bool(d[cle])
     if "routines" in d:
@@ -105,6 +106,8 @@ def pour_appli(cerveau):
         "circadien": bool(cerveau.get("circadien", True)),
         "routines": (valider({"routines": cerveau.get("routines") or []}) or {}).get("routines", []),
         "caractere": (valider({"caractere": cerveau.get("caractere") or {}}) or {}).get("caractere"),
+        "photos": bool(cerveau.get("photos", False)),          # journal photo : opt-in
+        "vacances": bool(cerveau.get("vacances", False)),
     }
 
 
@@ -119,3 +122,5 @@ def appliquer(brain, cerveau):
     brain.ctx.extras["circadien"] = v["circadien"]
     brain.routines = [(*heure(r["heure"]), tuple(r["jours"]), ROUTINES.get(r["action"], r["action"])) for r in v["routines"]]
     brain.perso.reglage = dict(v["caractere"])
+    if v["vacances"] != bool(getattr(brain, "vacances", False)) and hasattr(brain, "evenement"):
+        brain.evenement("vacances_on" if v["vacances"] else "vacances_off")

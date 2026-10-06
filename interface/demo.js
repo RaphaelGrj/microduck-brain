@@ -30,7 +30,28 @@
   let reglagesDemo = { heures_calmes: [23, 7], bonjour: "07:30", bonjour_weekend: "09:30", repas: ["12:30", "19:30"],
     autotest: true, circadien: true,
     routines: [{ heure: "18:30", jours: [0, 1, 2, 3, 4], action: "vient_me_voir" }, { heure: "10:00", jours: [6], action: "danse" }] };                      // « Effacer sa carte » : il repart de zero ici
-  let i = 0, finEtat = 0, force = null, tete = null, assis = false, calme = false, garde = false;
+  let i = 0, finEtat = 0, force = null, tete = null, assis = false, calme = false, garde = false, vacances = false;
+  // lots 5 a 8 : messages, photos, parcours, carnet, invites (imaginaires, dans ce telephone)
+  const H = Date.now() / 1000;
+  const messagesDemo = [{ id: "m1", pour: "Léa", texte: "Il reste des crêpes dans le frigo !", de: "Raphaël", t: H - 5400, transmis: H - 3000 }];
+  const photosDemo = [
+    { id: "d3", t: H - 1800, motif: "chat", src: "/microduck/debout-gauche.webp" },
+    { id: "d2", t: H - 7200, motif: "impression", src: "/microduck/debout-tete-basse.webp" },
+    { id: "d1", t: H - 86400, motif: "retour", src: "/microduck/debout.webp" }];
+  let photosActif = true;
+  const jeuxDemo = { records: { 3: 38.6, 4: 51.2 }, historique: [{ t: H - 4000, issue: "reussi", duree: 38.6, atteints: 3, total: 3 }] };
+  const carnetDemo = [{ id: "c1", type: "impression", texte: "Coque de tête noire, PLA Galaxy Black", date: "2026-10-02", piece: "coque-superieure-origine" },
+    { id: "c2", type: "nettoyage", texte: "Semelles dépoussiérées", date: "2026-10-05" }];
+  const invitesDemo = [{ code: "mamy-k7p2", nom: "Mamie", jusqua: H + 86400 }];
+  function courbe(n, base, pente, bruit) { return Array.from({ length: n }, (_, k) => Math.round(base + pente * k + bruit * Math.sin(k * 1.7))); }
+  const JOURS_USURE = Array.from({ length: 21 }, (_, k) => `2026-${String(259 + k).padStart(3, "0")}`);
+  const usureDemo = { servos: { jours: JOURS_USURE, servos: Object.fromEntries(["left_hip_yaw", "left_hip_roll", "left_hip_pitch",
+    "left_knee", "left_ankle", "neck_pitch", "head_pitch", "head_yaw", "head_roll", "right_hip_yaw", "right_hip_roll",
+    "right_hip_pitch", "right_knee", "right_ankle"].map((n, k) => [n, { courant: courbe(21, 60 + 9 * k, n === "right_knee" ? 3.2 : 0.2, 4),
+      ecart: [] }])), chaleur: courbe(21, 44, 0.1, 2), remplaces: {}, plus_chaud: { right_knee: 31 } },
+  batteries: { 1: courbe(9, 104, -0.6, 2).map((m, k) => ({ t: H - (9 - k) * 86400, autonomie_h: m / 60 })),
+    2: courbe(6, 98, -0.4, 2).map((m, k) => ({ t: H - (6 - k) * 86400, autonomie_h: m / 60 })),
+    3: courbe(3, 92, -0.3, 1).map((m, k) => ({ t: H - (3 - k) * 86400, autonomie_h: m / 60 })) } };
   let diag = { ok: true, le: "ce matin, 7 h 42", demande: false, finDemande: 0 };
   const journal = [], duJour = { promenades: 3, siestes: 1, jeux: 2, caresses: 4, accueils: 1 };
   let etat = "chill";
@@ -71,7 +92,7 @@
       batterie: { pourcent: Math.max(20, Math.round(82 - (t - debut) / 60)), volts: 7.9 },
       tombe: false, porte: false, assis: assis || etat === "nap",
       tete: tete || TETES[etat] || [0, 0, 0, 0],
-      modes: { calme, garde, discret: false, vacarme: false, timidite: 0, taquineries_coupees: false },
+      modes: { calme, garde, vacances, discret: false, vacarme: false, timidite: 0, taquineries_coupees: false },
       presents: garde ? [] : ["Raphaël"],
       du_jour: duJour, balle: { ...balle },
       semaine: SEMAINE.map((compte, k) => ({ date: new Date(Date.now() - (6 - k) * 86400000).toISOString().slice(0, 10),
@@ -142,9 +163,10 @@
     return {
       case: k, canard: { x, y, cap: Math.atan2(ys - y, xs - x) },
       cases: [...cases].map(([c, f]) => [...c.split(",").map(Number), +f.toFixed(2)]),
-      ...(fait < CHEMIN.length / 2 ? { obstacles: [], chutes: [], coins: {}, chargeur: null, objets: [] } : {
+      ...(fait < CHEMIN.length / 2 ? { obstacles: [], chutes: [], coins: {}, chargeur: null, objets: [], vus: {} } : {
         obstacles, chutes: [[14, -5]],
-        coins: { nap: [3.4, 0.6], chill: [1.2, 1.0], repas: [0.6, -1.4] }, chargeur: [0.3, 0.3], objets: [[2.9, -0.8]] }),
+        coins: { nap: [3.4, 0.6], chill: [1.2, 1.0], repas: [0.6, -1.4] }, chargeur: [0.3, 0.3], objets: [[2.9, -0.8]],
+        vus: { chat: { t: Math.round(t - 900), x: 3.0, y: -1.1 }, balle: { t: Math.round(t - 240), x: 1.6, y: 1.3 } } }),
     };
   }
 
@@ -248,7 +270,64 @@
       cerveau: "démo", fichiers: { "design.json": DESIGN, "reglages.json": reglagesDemo } };
     if (chemin === "/api/restauration") return { ok: true, redemarrer: true };
     if (chemin === "/api/presence") return { ok: true };
-    if (chemin === "/api/reglages") { if (corps) reglagesDemo = { ...reglagesDemo, ...corps }; return reglagesDemo; }
+    if (chemin === "/api/messages") return { liste: messagesDemo.slice().reverse() };
+    if (chemin === "/api/message") {
+      if (corps.action === "annuler") { messagesDemo.splice(messagesDemo.findIndex((m) => m.id === corps.id), 1); return { ok: true }; }
+      const m = { id: "m" + Date.now(), pour: corps.pour, texte: corps.texte, de: corps.de || null, t: Date.now() / 1000, transmis: null };
+      messagesDemo.push(m);
+      setTimeout(() => { m.transmis = Date.now() / 1000; alertes.push({ t: Date.now() / 1000, type: "message", titre: "Message transmis",
+        texte: `${m.pour} est là : il le lui a signalé.`, importante: false }); changer("messager", 4); }, 12000);
+      return { ok: true, message: m };
+    }
+    if (chemin === "/api/photos") return { actif: photosActif, liste: photosDemo };
+    if (chemin === "/api/photo") {
+      if (corps.action === "tout_supprimer") photosDemo.length = 0;
+      else if (corps.action === "supprimer") photosDemo.splice(photosDemo.findIndex((p) => p.id === corps.id), 1);
+      else {
+        if (corps.pose) { changer("pose_photo", 4); tete = { fier: [0, -0.25, 0, 0], curieux: [0, 0.1, 0, 0.3], content: [0, -0.1, 0.2, 0.1] }[corps.pose] || [0, 0, 0, 0]; }
+        const p = { id: "d" + Date.now(), t: Date.now() / 1000, motif: corps.pose ? "pose" : "photo",
+          src: corps.pose === "curieux" ? "/microduck/debout-penche.webp" : corps.pose ? "/microduck/debout-tete-haute.webp" : "/microduck/debout.webp" };
+        photosDemo.unshift(p);
+        return { ok: true, ...p };
+      }
+      return { ok: true };
+    }
+    if (chemin === "/api/parcours") {
+      if (!corps) return jeuxDemo;
+      const n = corps.points.length;
+      changer(corps.genre === "balle" ? "parcours" : "parcours", corps.genre === "balle" ? 6 : 6 + 3 * n);
+      if (corps.genre === "balle") setTimeout(() => changer("balle", 20), 6000);
+      else setTimeout(() => {
+        const d = +(8 + 9 * n + Math.random() * 4).toFixed(1), rec = !jeuxDemo.records[n] || d < jeuxDemo.records[n];
+        if (rec) jeuxDemo.records[n] = d;
+        jeuxDemo.historique.push({ t: Date.now() / 1000, issue: "reussi", duree: d, atteints: n, total: n });
+        alertes.push({ t: Date.now() / 1000, type: "parcours", titre: "Parcours réussi", texte: `${String(d).replace(".", ",")} s` + (rec ? " : record !" : ""), importante: false });
+      }, (6 + 3 * n) * 1000);
+      return { ok: true };
+    }
+    if (chemin === "/api/usure") return usureDemo;
+    if (chemin === "/api/carnet") {
+      if (!corps) return { liste: carnetDemo, types: [] };
+      if (corps.action === "supprimer") { carnetDemo.splice(carnetDemo.findIndex((e) => e.id === corps.id), 1); return { ok: true }; }
+      const e = { ...corps, id: "c" + Date.now() }; delete e.action;
+      if (e.type === "servo") usureDemo.servos.remplaces[e.servo] = `2026-${String(new Date().getDate() + 273).padStart(3, "0")}`;
+      carnetDemo.push(e); carnetDemo.sort((a, b) => a.date.localeCompare(b.date));
+      return { ok: true, entree: e };
+    }
+    if (chemin === "/api/invites") {
+      if (!corps) return { liste: invitesDemo };
+      if (corps.action === "revoquer") { invitesDemo.splice(invitesDemo.findIndex((i) => i.code === corps.code), 1); return { ok: true }; }
+      const c = { code: Math.random().toString(36).slice(2, 6) + "-" + Math.random().toString(36).slice(2, 6), nom: corps.nom || "Invité",
+        jusqua: Date.now() / 1000 + corps.heures * 3600 };
+      invitesDemo.push(c);
+      return { ok: true, ...c };
+    }
+    if (chemin === "/api/reglages") {
+      if (corps && "vacances" in corps) { vacances = !!corps.vacances; calme = vacances; garde = vacances; finEtat = 0; }
+      if (corps && "photos" in corps) photosActif = !!corps.photos;
+      if (corps) reglagesDemo = { ...reglagesDemo, ...corps };
+      return reglagesDemo;
+    }
     if (chemin === "/api/design") {                   // schemas et filaments : dans ce telephone, en demo
       if (corps) { try { localStorage.setItem("microduck-demo-design", JSON.stringify(corps)); } catch (e) { /* prive */ } return { ok: true }; }
       try { return JSON.parse(localStorage.getItem("microduck-demo-design")) || DESIGN; } catch (e) { return DESIGN; }

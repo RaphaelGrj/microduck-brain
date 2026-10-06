@@ -163,7 +163,7 @@
 
   // ---------- apres la connexion : profil, impressions ----------
   window.apresConnexion = async () => {
-    try { const r = await window.api("/api/role"); document.body.classList.toggle("enfant", r.role === "enfant"); } catch (x) { /* parent */ }
+    try { const r = await window.api("/api/role"); document.body.classList.toggle("enfant", r.role === "enfant" || r.role === "invite"); } catch (x) { /* parent */ }
     impressions();
   };
 })();
