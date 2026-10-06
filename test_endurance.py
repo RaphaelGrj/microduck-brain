@@ -16,7 +16,8 @@ EVENEMENTS = ["bruit", "chat", "personne", "main", "caresse", "appel", "applaudi
               "commande:debout", "commande:stop", "commande:bravo", "commande:danse", "commande:ecoute",
               "commande:pas_compris", "commande:reveil", "son_bref", "voix", "jeu_cache", "commande:trouve", "jeu_balle",
               "telephone", "telephone_fin", "visiteur", "visiteur_fin", "jour_special:Anniversaire", "compagnie",
-              "compagnie_fin", "baillement_entendu", "sonnette:Entree"]
+              "compagnie_fin", "baillement_entendu", "sonnette:Entree", "vacarme", "vacarme_fin",
+              "bips_appareil", "presence:Raphael|home"]
 
 
 class Client:
@@ -153,7 +154,7 @@ class Leurre:
 
 # Ce test verifie la securite de la MARCHE : on retire du flux ce qui l'immobilise durablement (mode calme, "assis"),
 # deja couvert par test_endurance_deux_heures_invariants - sinon une graine malchanceuse dort toute l'heure.
-EVENEMENTS_MARCHE = [e for e in EVENEMENTS if e not in ("calme_on", "tour_assis", "commande:assis")]
+EVENEMENTS_MARCHE = [e for e in EVENEMENTS if e not in ("calme_on", "tour_assis", "commande:assis", "vacarme")]
 
 
 def test_endurance_tous_capteurs_jamais_vers_un_vide():

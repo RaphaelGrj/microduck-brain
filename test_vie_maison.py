@@ -289,3 +289,42 @@ def test_luminosite_d_une_image():
     from vision import luminosite
     assert luminosite(np.zeros((64, 36, 3), np.uint8)) == 0.0
     assert abs(luminosite(np.full((64, 36, 3), 255, np.uint8)) - 1.0) < 1e-9
+
+
+# -- ambiance, appareils, aspirateur -------------------------------------------------------------------------------
+def test_vacarme_il_se_retire_puis_revient():
+    b, c, _ = cerveau()
+    vivre(b, 120, evenements=[(1.0, "vacarme")])
+    noms = [e[1] for e in b.journal]
+    assert "retrait" in noms and set(noms[noms.index("retrait") + 1:]) <= {"nap"}, noms
+    assert b.ctx.sitting
+    vivre(b, 60, evenements=[(1.0, "vacarme_fin")])
+    assert not b.vacarme and not b.ctx.sitting, "le calme revenu, il se releve"
+
+
+def test_bips_d_appareil_curiosite_rare():
+    b, c, _ = cerveau()
+    vivre(b, 30, evenements=[(1.0, "bips_appareil"), (15.0, "bips_appareil")])
+    assert [e[1] for e in b.journal].count("bips") == 1 and "inquire" in sons(c)
+
+
+def test_aspirateur_mefiance_puis_curiosite_puis_indifference():
+    class Mem:
+        def __init__(self):
+            self.n = 0
+
+        def familiarite(self, nom):
+            return 1 - 0.85 ** self.n
+
+        def rencontre(self, nom):
+            self.n += 1
+    m = Mem()
+    b, _, _ = cerveau(memoire=m)
+    reactions = []
+    for k in range(10):
+        b._bascule("chill")
+        b.fin_etat = 1e9
+        n = len(b.journal)
+        vivre(b, 6, evenements=[(0.5, "aspirateur_on"), (5.0, "aspirateur_off")])
+        reactions.append(b.journal[n][1] if len(b.journal) > n else None)
+    assert reactions[0] == "mefiant" and "curious" in reactions and reactions[-1] is None, reactions

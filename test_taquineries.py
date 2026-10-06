@@ -15,7 +15,7 @@ class FausseMemoire:
         self.fam, self.b = fam, {}
 
     def familiarite(self, qui):
-        return self.fam
+        return 0.5 if qui == "aspirateur" else self.fam      # l'aspirateur : deja vu, pas encore familier
 
     def blague(self, nom):
         self.b[nom] = self.b.get(nom, 0) + 1

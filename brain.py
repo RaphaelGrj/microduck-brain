@@ -195,7 +195,10 @@ class Brain:
             "baillement_contagieux": BaillementContagieux(),                       # on a baille pres de lui
             "timide": Timide(),                                                    # visiteur inconnu
             "apprivoise": Sequence("apprivoise", [("curieux", "inquire")]),        # la timidite s'est dissipee
-            "coup_oeil": CoupOeil(),                                               # mouvement a la peripherie
+            "coup_oeil": CoupOeil(),
+            "mefiant": Sequence("mefiant", [("surpris", "inquire"), ("gene", None)]),   # l'aspirateur, les 1res fois
+            "bips": Sequence("bips", [("curieux", "inquire")]),                    # bips d'un appareil
+            "retrait": Sequence("retrait", [("gene", None)]),                      # trop de bruit : il s'en va                                               # mouvement a la peripherie
             "va_repas": VaAuCoin("va_repas", "look", "trainer la ou l'on mange, comme chaque jour a cette heure"),
             "va_compagnie": VaAuCoin("va_compagnie", "compagnie", "tenir compagnie la ou l'on s'occupe de lui"),
             "compagnie": Compagnie(),
@@ -264,6 +267,8 @@ class Brain:
         self.presents = set()                   # habitants actuellement a la maison (presence HA, retour/depart)
         self.derniere_interaction = 0.0         # dernier evenement externe notable (hors bascule calme/ecoute)
         self.discret = False                    # quelqu'un telephone (audio.py) : ni son ni initiative bruyante
+        self.vacarme = False                    # ambiance tres bruyante (audio.py) : il reste a l'ecart, assis
+        self._t_vacarme = 0.0
         self._t_discret = 0.0
         self.visite = None                      # t_global de l'arrivee d'un visiteur inconnu (timidite)
         self._apprivoise = True
@@ -324,6 +329,9 @@ class Brain:
             if base in ("compagnie", "compagnie_fin") and self.courant.nom != "compagnie":
                 if base == "compagnie":
                     self._sur_compagnie()
+                continue
+            if base in ("vacarme", "vacarme_fin"):
+                self._sur_vacarme(base == "vacarme")   # meme pendant la sieste : la fin du vacarme doit etre vue
                 continue
             if base == "baillement_entendu":
                 if (self.courant.nom in ("chill", "look", "wander") and not self.mode_calme
@@ -474,8 +482,23 @@ class Brain:
                 self._bascule(self._taquinerie(("faux_endormi", "sourde_oreille"), humain=True) or "appel")
             elif base in ("aspirateur_on", "aspirateur_off"):
                 avant, self.aspirateur_actif = self.aspirateur_actif, base == "aspirateur_on"
-                if self.aspirateur_actif and not avant and self.courant.nom in ("chill", "look"):
-                    self._bascule("curious")             # tiens, le voila : un regard curieux, un peu mefiant
+                if self.aspirateur_actif and not avant:
+                    # Relation avec l'aspirateur (ROADMAP "Interaction avec le reste de la maison") : mefiant les
+                    # premieres fois (comme avec un visiteur), curieux ensuite, puis il l'ignore une fois familier.
+                    mem = self.ctx.extras.get("memoire")
+                    fam = mem.familiarite("aspirateur") if mem is not None and hasattr(mem, "familiarite") else None
+                    if mem is not None and hasattr(mem, "rencontre"):
+                        mem.rencontre("aspirateur")
+                    if self.courant.nom in ("chill", "look"):
+                        if fam is not None and fam < self.ASPI_MEFIANT:
+                            self._bascule("mefiant")
+                        elif fam is None or fam < self.ASPI_FAMILIER:
+                            self._bascule("curious")     # tiens, le voila : un regard curieux
+            elif base == "bips_appareil":
+                if (self.courant.nom in ("chill", "look", "wander") and not self.discret
+                        and self.t_global - self.derniere_fois.get("bips", -1e9) >= 300.0):
+                    self.derniere_fois["bips"] = self.t_global
+                    self._bascule("bips")                # le four, le micro-ondes : "c'est quoi ?"
             elif base == "objet_approche":
                 asp = self.etats["aspirateur"]
                 asp.taquine = bool(self._taquinerie(("barre_aspirateur",), humain=True, proba=0.5))
@@ -688,6 +711,8 @@ class Brain:
             return "nap"                        # sieste prolongee, assis : interrupteur calme, ou veille apres des chutes
         h = self.humeur
         batterie_basse = self._batterie_pct is not None and self._batterie_pct < self.BATTERIE_BASSE_PCT
+        if self.vacarme and self.courant.nom != "va_au_coin":
+            return "nap"                        # tant que dure le vacarme, il reste assis a l'ecart
         if h.energie < self.SEUIL_SIESTE or batterie_basse:
             # fatigue "jouee" OU vraie batterie basse : meme reponse (repos) - dans son coin favori s'il est connu et
             # pas trop loin (sauf batterie basse : on ne gaspille pas les derniers pourcents a marcher)
@@ -909,6 +934,22 @@ class Brain:
                 veille.pause = self.cpu_chaud
 
     P_BAILLEMENT_CONTAGIEUX = 0.6
+    ASPI_MEFIANT, ASPI_FAMILIER = 0.3, 0.7     # familiarite (memoire.py) avec l'aspirateur
+
+    def _sur_vacarme(self, fort):
+        """Ambiance tres bruyante et prolongee (fete, dispute, travaux ; audio.py) : il se retire dans son coin de sieste
+        s'il le connait, sinon il s'assoit sur place, et y reste tant que dure le vacarme - ses propres limites."""
+        if fort == self.vacarme:
+            return
+        self.vacarme, self._t_vacarme = fort, self.t_global
+        print(f"[{self.t_global:6.1f}s] {'trop de bruit : il se retire' if fort else 'le calme revient'}", flush=True)
+        if not fort or self.mode_calme or self.courant.nom in ("nap", "alarme", "porte", "ecoute", "va_au_coin"):
+            return
+        coin = self._coin_atteignable()
+        if coin is not None:
+            self.etats["va_au_coin"].cible = coin
+        self.suivant_force = "va_au_coin" if coin is not None else "nap"
+        self._bascule("retrait")
     VISITEUR_APRES_SONNETTE_S = 180.0
     TIMIDE_S = 1200.0                   # la timidite se dissipe en 20 min de visite
     DISCRET_MAX_S = 3600.0              # garde-fou : un "telephone_fin" perdu ne le rend pas muet pour toujours
@@ -1312,6 +1353,8 @@ class Brain:
         self.humeur.avance(dt, self.courant.nom, self.vivacite())
         if self.discret and self.t_global - self._t_discret > self.DISCRET_MAX_S:
             self._discretion(False)
+        if self.vacarme and self.t_global - self._t_vacarme > self.DISCRET_MAX_S:
+            self._sur_vacarme(False)            # garde-fou : un "vacarme_fin" perdu ne le cloue pas au sol
         self._babille(dt)
         self._surveille_peripherie()
         self._verifie_lumiere()
