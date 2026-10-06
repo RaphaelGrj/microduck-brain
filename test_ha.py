@@ -762,3 +762,32 @@ def test_action_hors_de_sa_plage_horaire():
     pont._sur_canard("etat:nap")
     h = time.localtime().tm_hour
     assert pont._actions.qsize() == (1 if (h >= 22 or h < 6) else 0)
+
+
+def test_mode_garde_maison_vide():
+    from test_brain import FauxClient
+    ha = mock_ha.MockHA(JETON)
+    cfg = {"surveillance": [], "publier_toutes_les_s": 30, "url": ha.url, "url_ws": ha.url_ws, "cerveau": {"garde": True}}
+    pont = pont_ha.PontHA(cfg, JETON, log=lambda m: None)
+    pont.demarrer()
+    try:
+        b = brain.Brain(FauxClient(), brain.Humeur(energie=0.9), seed=4, extras={"garde": True})
+        pont.photographier(b, faux_etat())
+        tick = [0]
+
+        def vivre(evts):
+            for e in evts:
+                b.evenement(e)
+            for _ in range(5):
+                b.tick({"t": tick[0] * 0.02, "safety": {"fallen": False}, "policy": "stand"}, 0.02)
+                tick[0] += 1
+        vivre(["voix"])                                           # presence inconnue : rien
+        vivre(["presence:Raphael|home", "voix"])                  # quelqu'un est la : rien
+        vivre(["depart:Raphael", "voix", "intonation", "toc_porte"])   # maison vide
+        assert attendre(lambda: len(ha.appels) >= 2, 3.0)
+        time.sleep(0.3)
+        assert sorted(ha.appels, key=str) == sorted([("evenement", "microduck_garde", {"type": "voix"}),
+                                                    ("evenement", "microduck_garde", {"type": "porte"})], key=str)
+    finally:
+        pont.stop()
+        ha.arreter()

@@ -432,3 +432,23 @@ def test_voix_personnelle_renforcee_par_les_reactions_et_qui_derive():
     poids = b.perso.d.setdefault("sons", {"coo": 1.0, "chirp": 1.0, "peck": 1.0})["coo"]
     vivre(b, 1, evenements=[(0.2, "caresse")])
     assert b.perso.d["sons"]["coo"] > poids, "une caresse juste apres un roucoulement : il le retient"
+
+
+def test_journal_de_bord_du_jour_et_journal_borne():
+    import pont_ha
+    b, _, h = cerveau()
+    for etat in ("wander", "nap", "balle", "caresse", "feinte_bec", "wander", "chill"):
+        b._bascule(etat)
+    assert b.du_jour == {"promenades": 2, "siestes": 1, "jeux": 1, "caresses": 1, "blagues": 1}
+    pont = pont_ha.PontHA.__new__(pont_ha.PontHA)
+    pont._derniere_vue_chat = None
+    pont.photographier(b, {})
+    etat, attrs = pont.entites_du_canard()["sensor.microduck_journal"]
+    assert etat == 6 and attrs["promenades"] == 2 and attrs["danses"] == 0
+    h.jour += 1
+    b._bascule("nap")
+    assert b.du_jour == {"siestes": 1}, "nouveau jour, nouveau journal"
+    b.JOURNAL_MAX = 100
+    for k in range(500):
+        b._bascule("chill" if k % 2 else "look")
+    assert len(b.journal) <= 100

@@ -529,6 +529,11 @@ class PontHA:
     # canard -> maison : actions (scenes, services) ------------------------------------------------------------------
     def _sur_canard(self, evenement):
         """Ecouteur du cerveau (Brain.ecouteurs) : appele dans le fil du tick, il ne fait que mettre en file."""
+        if evenement.startswith("garde:"):
+            # mode garde : un evenement HA "microduck_garde" {type: voix|choc|bruit|porte} - a tes automatisations
+            # d'en faire une notification ; aucun son ne quitte le canard
+            self._actions.put(("@evenement", "microduck_garde", {"type": evenement[6:]}, evenement))
+            return
         now = self.horloge()
         heure = time.localtime().tm_hour
         for i, a in enumerate(self.cfg.get("actions") or ()):
@@ -543,6 +548,10 @@ class PontHA:
             self._derniere_action[i] = now
             self._actions.put((a["domaine"], a["service"], a["donnees"], evenement))
 
+    def _ecoute_le_canard(self):
+        cfg = getattr(self, "cfg", None) or {}
+        return bool(cfg.get("actions") or (cfg.get("cerveau") or {}).get("garde"))
+
     def _executer_actions(self):
         while not self.arret.is_set():
             try:
@@ -550,6 +559,10 @@ class PontHA:
             except queue.Empty:
                 continue
             try:
+                if domaine == "@evenement":
+                    self.client._post(f"/api/events/{service}", donnees)
+                    self.log(f"[HA] evenement {service} {donnees}")
+                    continue
                 self.client.appeler_service(domaine, service, donnees)
                 self.log(f"[HA] {pourquoi} -> {domaine}.{service} {donnees.get('entity_id', '')}")
             except Exception as e:                  # HA injoignable : le canard continue sa vie
@@ -596,8 +609,7 @@ class PontHA:
     # canard -> maison
     def photographier(self, brain, state):
         """A passer a brain.run(a_chaque_tick=...) : memorise l'etat courant (rapide, sans reseau)."""
-        if (getattr(self, "cfg", None) or {}).get("actions") and \
-                self._sur_canard not in getattr(brain, "ecouteurs", [self._sur_canard]):
+        if self._ecoute_le_canard() and self._sur_canard not in getattr(brain, "ecouteurs", [self._sur_canard]):
             brain.ecouteurs.append(self._sur_canard)        # a la premiere trame : actions domotiques du canard
         # veille camera du chat (chat.py, extras du cerveau) : optionnelle, absente dans les tests qui n'en ont pas besoin.
         chat = (getattr(brain, "ctx", None) and (brain.ctx.extras or {}).get("chat"))
@@ -616,6 +628,7 @@ class PontHA:
             "blagues": brain.malice.compte() if hasattr(brain, "malice") else None,
             "diagnostic": self._resume_diagnostic(brain),
             "objets_au_sol": list(getattr(brain, "objets_au_sol", None) or []),
+            "du_jour": dict(getattr(brain, "du_jour", None) or {}),
             "lumiere_oubliee": getattr(brain, "lumiere_oubliee", False), "lumiere": getattr(brain, "lumiere", None),
             "derniere_blague": (brain.malice.historique[-1][1] if getattr(getattr(brain, "malice", None), "historique", None)
                                 else None),
@@ -700,6 +713,11 @@ class PontHA:
                 ent["binary_sensor.microduck_autotest"] = ("off" if dg["autotest_ok"] else "on", {
                     "friendly_name": "Microduck - auto-test du matin", "device_class": "problem",
                     "echecs": ", ".join(dg["autotest_echecs"]) or None})
+        dj = i.get("du_jour") or {}
+        ent["sensor.microduck_journal"] = (sum(dj.values()), {
+            "friendly_name": "Microduck - journal de bord du jour", "icon": "mdi:notebook-outline",
+            **{k: dj.get(k, 0) for k in ("promenades", "siestes", "jeux", "danses", "caresses", "accueils",
+                                         "folles_courses", "blagues")}})
         objets = [o for o in (i.get("objets_au_sol") or []) if time.time() - o[0] <= 86400]
         ent["sensor.microduck_objets_au_sol"] = (len(objets), {
             "friendly_name": "Microduck - objets nouveaux au sol (24 h)", "icon": "mdi:shoe-sneaker",
@@ -739,7 +757,7 @@ class PontHA:
             self.mqtt = PublieurMQTT(mq, self.log, sur_evenement=self.evenements.put)
         self.lire_calme_initial()
         self.lire_presence_initiale()
-        if self.cfg.get("actions"):
+        if self._ecoute_le_canard():
             threading.Thread(target=self._executer_actions, daemon=True).start()
         entites = set(self.surveillance)
         for cible in (lambda: self.client.ecouter(entites, self._sur_changement, self.arret), self._publier):

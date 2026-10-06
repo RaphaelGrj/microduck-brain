@@ -57,6 +57,10 @@ class MockHA:
                                               "attributes": corps.get("attributes", {})}
                         rep = mock.etats[entite]
                     return self._rep(200, rep)
+                if self.path.startswith("/api/events/"):
+                    with mock.verrou:
+                        mock.appels.append(("evenement", self.path[len("/api/events/"):], corps))
+                    return self._rep(200, {"message": "Event fired."})
                 if self.path.startswith("/api/services/"):
                     domaine, _, service = self.path[len("/api/services/"):].partition("/")
                     with mock.verrou:

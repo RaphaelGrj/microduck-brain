@@ -314,6 +314,7 @@ class Brain:
                     print(f"[{self.t_global:6.1f}s] mode calme {'ACTIVE' if actif else 'desactive'}", flush=True)
                     self._bascule("nap" if actif else ("etirement" if self.courant.nom == "nap" else "chill"))
                 continue
+            self._veille_garde(base)
             if base in ("temperature_ext", "presence"):
                 # informations de la maison, pas une manifestation humaine : traitees AVANT la remise a zero de l'ennui
                 self._sur_info_maison(base, detail)
@@ -909,6 +910,9 @@ class Brain:
         self.fin_etat = self.courant.duree(self)
         self.journal.append((round(self.t_global, 1), nom,
                              round(self.humeur.energie, 2), round(self.humeur.eveil, 2)))
+        if len(self.journal) > self.JOURNAL_MAX:
+            del self.journal[:self.JOURNAL_MAX // 2]    # des mois de vie : la memoire du canard n'est pas infinie
+        self._compte_du_jour(nom)
         print(f"[{self.t_global:6.1f}s] -> {nom:8s} energie={self.humeur.energie:.2f} "
               f"eveil={self.humeur.eveil:.2f}", flush=True)
 
@@ -984,6 +988,35 @@ class Brain:
                 veille.pause = self.cpu_chaud
 
     P_BAILLEMENT_CONTAGIEUX = 0.6
+    JOURNAL_MAX = 20000
+    # Journal de bord du jour (Home Assistant : sensor.microduck_journal) : ce qu'il a fait depuis minuit
+    CATEGORIES_JOUR = {"wander": "promenades", "va_au_coin": "promenades", "nap": "siestes",
+                       "balle": "jeux", "soleil": "jeux", "cache_cache": "jeux", "jeu_solitaire": "jeux",
+                       "danse": "danses", "caresse": "caresses", "accueil": "accueils", "zoomies": "folles_courses"}
+
+    # Mode garde (opt-in : [cerveau] garde = true) : maison VIDE d'apres HA, il entend une voix, un choc, on frappe ->
+    # "garde:<type>" pour pont_ha, qui envoie l'evenement HA "microduck_garde". Rien que le TYPE de son, jamais le son.
+    SONS_GARDE = {"voix": "voix", "intonation": "voix", "discussion_longue": "voix", "silence_conversation": "voix",
+                  "bruit": "choc", "petarades": "choc", "son_bref": "bruit", "toc_porte": "porte"}
+    GARDE_DELAI_S = 600.0
+
+    def _veille_garde(self, base):
+        type_son = self.SONS_GARDE.get(base)
+        if (type_son is None or not self.ctx.extras.get("garde") or not self.presence_suivie or self.presents
+                or self.t_global - self.derniere_fois.get(f"garde:{type_son}", -1e9) < self.GARDE_DELAI_S):
+            return
+        self.derniere_fois[f"garde:{type_son}"] = self.t_global
+        print(f"[{self.t_global:6.1f}s] garde : {type_son} entendu, personne a la maison", flush=True)
+        for f in self.ecouteurs:
+            f(f"garde:{type_son}")
+
+    def _compte_du_jour(self, nom):
+        jour = getattr(self.horloge(), "tm_yday", None)
+        if getattr(self, "_jour_compte", None) != jour:
+            self._jour_compte, self.du_jour = jour, {}
+        cat = self.CATEGORIES_JOUR.get(nom) or ("blagues" if getattr(self.etats[nom], "taquinerie", False) else None)
+        if cat:
+            self.du_jour[cat] = self.du_jour.get(cat, 0) + 1
     ABRI_PETARDS_S = 600.0
     ASPI_MEFIANT, ASPI_FAMILIER = 0.3, 0.7     # familiarite (memoire.py) avec l'aspirateur
 

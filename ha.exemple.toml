@@ -197,6 +197,9 @@ entite = "A_REMPLIR"                # ex. "light.salon"
 # autotest = false                  # auto-test au premier réveil du jour (actif par défaut) : robotd, ToF, caméra,
                                     # tête ; résultat dans binary_sensor.microduck_autotest
 # circadien = false                 # vivacité selon l'heure et la saison (actif par défaut)
+# garde = true                      # maison vide (présence HA) et il entend une voix, un choc, on frappe : événement
+                                    # HA "microduck_garde" {type: voix|choc|bruit|porte} pour tes automatisations
+                                    # (notification...). Seul le TYPE de son est envoyé, jamais le son.
 
 # ---- 8. Tes notes (ignorées par le programme) ------------------------------------------------------
 [notes]
