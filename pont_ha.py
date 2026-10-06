@@ -317,7 +317,8 @@ class PublieurMQTT:
                ("stop_taquinerie", "arrete de me taquiner", "mdi:hand-back-left", "stop_taquinerie"),
                ("tour_salut", "tour : salut", "mdi:hand-wave", "tour_salut"),
                ("tour_toupie", "tour : toupie", "mdi:rotate-360", "tour_toupie"),
-               ("tour_assis", "tour : assis / debout", "mdi:seat", "tour_assis"))
+               ("tour_assis", "tour : assis / debout", "mdi:seat", "tour_assis"),
+               ("diagnostic", "lancer le diagnostic", "mdi:stethoscope", "diagnostic"))
 
     def __init__(self, mq, log=print, sur_evenement=None):
         import paho.mqtt.client as mqtt
@@ -711,8 +712,9 @@ class PontHA:
                 "activite_risquee": dg["activite_risquee"], "lieux_a_risque": dg["lieux_a_risque"]})
             if dg["autotest_ok"] is not None:
                 ent["binary_sensor.microduck_autotest"] = ("off" if dg["autotest_ok"] else "on", {
-                    "friendly_name": "Microduck - auto-test du matin", "device_class": "problem",
-                    "echecs": ", ".join(dg["autotest_echecs"]) or None})
+                    "friendly_name": "Microduck - diagnostic", "device_class": "problem",
+                    "echecs": ", ".join(dg["autotest_echecs"]) or None,
+                    "le": dg.get("autotest_le"), **(dg.get("autotest_detail") or {})})
         dj = i.get("du_jour") or {}
         ent["sensor.microduck_journal"] = (sum(dj.values()), {
             "friendly_name": "Microduck - journal de bord du jour", "icon": "mdi:notebook-outline",

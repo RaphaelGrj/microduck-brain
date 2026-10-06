@@ -257,3 +257,18 @@ def test_batterie_un_rebond_de_tension_durable_ne_coupe_pas_le_cycle():
         j.note(t, pct + rebond)
         t += 60
     assert not j.en_charge and j.d["cycles"] == [], "un rebond qui plafonne n'est pas une charge"
+
+
+def test_diagnostic_lance_a_la_main_avec_la_batterie():
+    c = ClientRobot(sante={"healthy": True, "bus": {}, "imu": {"ready": True},
+                           "battery": {"percent": 64.0, "volts": 7.6}})
+    b = cerveau(c)
+    b.ctx.extras["autotest"] = False            # meme sans l'auto-test quotidien
+    b._jour_autotest = 100                      # et meme s'il a deja eu lieu aujourd'hui
+    b.evenement("diagnostic")
+    faire_vivre(b, c, 10)
+    assert "autotest" in [e[1] for e in b.journal]
+    r = b.diagnostic.autotest.resultats
+    assert r["batterie"][0] and "64 %" in r["batterie"][1] and "7.60 V" in r["batterie"][1]
+    det = b.diagnostic.resume()["autotest_detail"]
+    assert det["batterie"].startswith("OK ") and b.diagnostic.resume()["autotest_le"]

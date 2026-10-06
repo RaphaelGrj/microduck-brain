@@ -226,6 +226,7 @@ class Brain:
         self.diagnostic = Diagnostic(mem, mur=self.ctx.extras.get("mur", time.time))
         self.derniere_sante = None              # derniere reponse de robot.health
         self._jour_autotest = None
+        self.diag_demande = False               # diagnostic demande a la main (Home Assistant, interface)
         self.objet_nouveau = None               # distance (m) devant de l'objet nouvellement remarque
         self.objets_au_sol = []                 # (heure murale, x, y odom) des objets nouveaux remarques : vers HA
         self.presence_suivie = False            # presence initiale lue dans HA : "personne a la maison" a un sens
@@ -315,6 +316,10 @@ class Brain:
                     self._bascule("nap" if actif else ("etirement" if self.courant.nom == "nap" else "chill"))
                 continue
             self._veille_garde(base)
+            if base == "diagnostic":
+                self.diag_demande = True        # une demande de maintenance, pas une interaction : avant l'ennui
+                print(f"[{self.t_global:6.1f}s] diagnostic demande : au prochain moment de repos", flush=True)
+                continue
             if base in ("temperature_ext", "presence"):
                 # informations de la maison, pas une manifestation humaine : traitees AVANT la remise a zero de l'ennui
                 self._sur_info_maison(base, detail)
@@ -1329,8 +1334,18 @@ class Brain:
             self.diagnostic.servos.note_repos(jour, state.get("joints"), state.get("targets"), state.get("currents_ma"))
 
     def _verifie_autotest(self):
-        """Une fois par jour, au premier moment de repos apres le demarrage (opt-in : extras["autotest"], canard.py)."""
+        """Une fois par jour, au premier moment de repos apres le demarrage (opt-in : extras["autotest"], canard.py) ;
+        ou A LA DEMANDE (bouton HA "lancer le diagnostic", evenement "diagnostic"), meme si c'est deja fait aujourd'hui."""
         jour = getattr(self.horloge(), "tm_yday", None)
+        if self.diag_demande:
+            if self.mode_calme or self.tombe or self.courant.nom not in ("chill", "look", "jeu_solitaire"):
+                return                          # au prochain moment de repos (jamais en plein jeu ni assis en calme)
+            self.diag_demande = False
+            self._jour_autotest = jour
+            self._bascule("autotest")
+            return
+        if not self.ctx.extras.get("autotest"):
+            return
         if (jour == self._jour_autotest or self.t_global < 20.0 or self.mode_calme
                 or self.horloge().tm_hour < 6 or self.courant.nom not in ("chill", "look")):
             return
@@ -1524,8 +1539,7 @@ class Brain:
         self._traite_evenements()
         if self.bonjour is not None:
             self._verifie_bonjour()                 # apres les evenements : un "calme_on" en attente passe d'abord
-        if self.ctx.extras.get("autotest"):
-            self._verifie_autotest()
+        self._verifie_autotest()
         self._verifie_jour_special()
         self.humeur.avance(dt, self.courant.nom, self.vivacite())
         if self.discret and self.t_global - self._t_discret > self.DISCRET_MAX_S:

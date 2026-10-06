@@ -249,6 +249,21 @@ class JournalChutes:
 
 
 # -- auto-test --------------------------------------------------------------------------------------------------------
+def verdict_batterie(sante, journal):
+    """La batterie dans le diagnostic : niveau et tension (robot.health), sante et autonomie (historique des cycles).
+    En echec seulement si elle est a remplacer ; un niveau bas n'est pas une panne."""
+    b = (sante or {}).get("battery") if isinstance(sante, dict) else None
+    detail = []
+    if isinstance(b, dict):
+        detail.append(f"{b.get('percent', 0):.0f} % ({b.get('volts', 0):.2f} V)")
+    s, a = journal.sante_pct(), journal.autonomie_h()
+    if s is not None:
+        detail.append(f"sante {s:.0f} %")
+    if a is not None:
+        detail.append(f"autonomie {a:.1f} h")
+    return {"batterie": (not journal.a_remplacer(), ", ".join(detail) or "pas encore de mesure")}
+
+
 def verdict_sante(sante):
     """robot.health -> {verification: (ok, detail)} pour ce que robotd sait de lui-meme."""
     out = {}
@@ -312,4 +327,8 @@ class Diagnostic:
             "chutes_7j": len(self.chutes.recentes(t)), "activite_risquee": self.chutes.activite_risquee(t),
             "lieux_a_risque": len(lieux),
             "autotest_ok": self.autotest.ok(), "autotest_echecs": self.autotest.echecs(),
+            "autotest_le": (time.strftime("%Y-%m-%d %H:%M", time.localtime(self.autotest.t))
+                            if self.autotest.t else None),
+            "autotest_detail": {k: ("OK " if v[0] else "ECHEC ") + str(v[1])
+                                for k, v in (self.autotest.resultats or {}).items()},
         }

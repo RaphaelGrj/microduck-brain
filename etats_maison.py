@@ -98,7 +98,9 @@ class AutoTestReveil(Etat):
     def entre(self, brain):
         import threading
         import diagnostic
-        self.res = dict(diagnostic.verdict_sante(brain.lit_sante()))
+        sante = brain.lit_sante()
+        self.res = dict(diagnostic.verdict_sante(sante))
+        self.res.update(diagnostic.verdict_batterie(sante, brain.diagnostic.batterie))
         tof = brain.ctx.extras.get("tof")
         if tof is None:
             self.res["tof"] = (False, "absent")
