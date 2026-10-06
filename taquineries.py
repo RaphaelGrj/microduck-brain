@@ -55,6 +55,8 @@ class Malice:
         t = brain.t_global
         if brain.mode_calme or brain.reste_assis() or brain.tombe or brain.courant.nom in ("ecoute", "nap"):
             return False
+        if getattr(brain, "discret", False) or (hasattr(brain, "timidite") and brain.timidite() > 0.0):
+            return False        # quelqu'un telephone ; un visiteur inconnu : pas de blague
         if t < self.stop_jusqua or self._nuit(brain):
             return False
         if t - getattr(brain, "t_dernier_accueil", -1e9) < APRES_ACCUEIL_S:

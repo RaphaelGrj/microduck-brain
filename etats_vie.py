@@ -518,3 +518,92 @@ class Picore(Etat):
             brain.ctx.move()
             if t - self.fini >= 1.4:
                 brain.fin_etat = t
+
+
+class Timide(Etat):
+    """Visiteur inconnu (ROADMAP "Timidite initiale avec un visiteur inconnu") : il garde ses distances - tete un peu
+    baissee et detournee, et de temps en temps un coup d'oeil furtif vers la piece. Aucun pas, aucun son (au plus un
+    tout petit "peck" une fois). La timidite se dissipe au fil de la visite (Brain._choisit_suivant : de moins en moins
+    souvent timide, puis un "inquire" curieux)."""
+    nom = "timide"
+
+    def entre(self, brain):
+        self.cote = brain.rng.choice((-1.0, 1.0))
+
+    def duree(self, brain):
+        return 8.0
+
+    def pas(self, brain, t):
+        coup_oeil = (t % 3.0) >= 2.2                     # 0,8 s toutes les 3 s : il jette un oeil
+        k = gestures._smooth(t, 0.0, 0.8) * (1.0 - gestures._smooth(t, 7.2, 8.0))
+        yaw = 0.0 if coup_oeil else 0.45 * self.cote * k
+        brain.ctx.head((0.0, 0.25 * k, yaw, 0.0))
+        if 4.0 <= t and brain.rng.random() < 0.002:
+            brain.son_une_fois("peck", "peck")
+        brain.ctx.move()
+
+
+class CoupOeil(Etat):
+    """Mouvement peripherique sans cible (ombre, rideau, oiseau a la fenetre ; mouvement.py au bord de l'image) : un
+    bref regard dans cette direction, sans poursuite ni son - l'air "distrait", pas un radar qui balaie."""
+    nom = "coup_oeil"
+
+    def __init__(self):
+        self.lacet = 0.5
+
+    def duree(self, brain):
+        return 2.2
+
+    def pas(self, brain, t):
+        k = gestures._smooth(t, 0.0, 0.35) * (1.0 - gestures._smooth(t, 1.5, 2.1))
+        brain.ctx.head((0.0, -0.05 * k, self.lacet * k, 0.0))
+        brain.ctx.move()
+
+
+class Compagnie(Etat):
+    """Tenir compagnie pendant une activite longue et immobile (ROADMAP "Actions spontanees vers l'humain") : il s'est
+    rendu la ou l'on interagit le plus avec lui (navigation.py, Brain.va_compagnie) et s'y pose, ASSIS, sans rien
+    demander - ni son, ni geste, juste de rares regards. Une presence, pas une alerte. Fin : au bout de 20 min, sur
+    n'importe quel evenement de la personne, ou si l'activite se termine."""
+    nom = "compagnie"
+    DUREE = 1200.0
+
+    def entre(self, brain):
+        if not brain.ctx.sitting:
+            brain.ctx.toggle_sit()
+
+    def duree(self, brain):
+        return self.DUREE
+
+    def sur_evenement(self, brain, base):
+        if base == "compagnie_fin":
+            brain.fin_etat = brain.t_etat + 1.0
+            return True
+        return False
+
+    def pas(self, brain, t):
+        regard = 0.35 * math.sin(2 * math.pi * t / 90.0) if int(t / 45.0) % 3 == 2 else 0.0
+        brain.ctx.head((0.0, 0.05, regard, 0.0))
+        brain.ctx.move()
+
+    def sort(self, brain):
+        brain.ctx.calme()
+        if brain.ctx.sitting and not brain.reste_assis():
+            brain.ctx.toggle_sit()
+
+
+class BaillementContagieux(Sequence):
+    """Quelqu'un a baille pres de lui (audio.py, "baillement_entendu") : il baille a son tour, bec grand ouvert, sans
+    un son - comme un animal. Le geste de tete est celui de gestures.baillement."""
+
+    def __init__(self):
+        super().__init__("baillement_contagieux", [("baillement", None)])
+
+    def pas(self, brain, t):
+        super().pas(brain, t)
+        k = gestures._smooth(t, 0.5, 1.1) * (1.0 - gestures._smooth(t, 2.0, 2.6))
+        brain.ctx.bouche(0.6 * k)
+
+    def sort(self, brain):
+        brain.ctx.bouche(0.0)
+        super().sort(brain)

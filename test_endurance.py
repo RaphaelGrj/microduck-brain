@@ -14,7 +14,9 @@ EVENEMENTS = ["bruit", "chat", "personne", "main", "caresse", "appel", "applaudi
               "tour_salut", "tour_toupie", "tour_assis", "ecoute_on", "ecoute_off", "calme_on", "calme_off",
               "alarme_fumee:Salon", "orage", "info", "toc_porte", "alarme_fumee:son", "commande:assis",
               "commande:debout", "commande:stop", "commande:bravo", "commande:danse", "commande:ecoute",
-              "commande:pas_compris", "commande:reveil", "son_bref", "voix", "jeu_cache", "commande:trouve", "jeu_balle"]
+              "commande:pas_compris", "commande:reveil", "son_bref", "voix", "jeu_cache", "commande:trouve", "jeu_balle",
+              "telephone", "telephone_fin", "visiteur", "visiteur_fin", "jour_special:Anniversaire", "compagnie",
+              "compagnie_fin", "baillement_entendu", "sonnette:Entree"]
 
 
 class Client:

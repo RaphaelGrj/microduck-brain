@@ -36,12 +36,26 @@ def verifier_local(url_camera):
                          "(MICRODUCK_FRAME_URL=http://127.0.0.1:8080/frame) ; aucune image ne quitte le robot.")
 
 
+def lire_heure(v):
+    """12 ou "12:30" -> (12, 0) / (12, 30) ; None si illisible."""
+    if isinstance(v, int) and 0 <= v < 24:
+        return (v, 0)
+    h, _, m = str(v).partition(":")
+    if h.strip().isdigit() and (m.strip().isdigit() or not m) and 0 <= int(h) < 24 and 0 <= int(m or 0) < 60:
+        return (int(h), int(m or 0))
+    return None
+
+
 def assembler(client, args, log=print, cfg=None, cerveau=None):
     """-> dict(extras, sources, crochets, options, pont, fils) ; `cfg` = config HA deja lue (ou None), `cerveau` =
     section [cerveau] du fichier de config (lue meme sans Home Assistant : le canard vit sans lui)."""
     cerveau = cerveau if cerveau is not None else ((cfg or {}).get("cerveau") or {})
     extras, sources, crochets, fils = {"memoire": memoire.Memoire()}, [], [], []
     extras["autotest"] = cerveau.get("autotest", True)     # auto-test au premier reveil de la journee (diagnostic.py)
+    extras["circadien"] = cerveau.get("circadien", True)   # vivacite selon l'heure du jour (Brain.vivacite)
+    repas = [h for h in (lire_heure(r) for r in cerveau.get("repas", [])) if h is not None]
+    if repas:
+        extras["repas"] = repas                             # heures des repas : il apprend ou l'on mange
     if tof_mod.SOCK_TOF.exists():
         capteur = tof_mod.Tof(tof_mod.beams_du_robot(client))
         extras["tof"], fils = capteur, fils + [capteur]

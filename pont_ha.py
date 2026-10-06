@@ -55,6 +55,7 @@ REACTIONS_PAR_TYPE = {       # etats connus par type d'integration ; pour les au
     "fumee": {"on": "alarme_fumee"},                # binary_sensor de detecteur de fumee / CO (device_class smoke)
     "aspirateur": {"cleaning": "aspirateur_on", "docked": "aspirateur_off", "idle": "aspirateur_off",   # vacuum.*
                    "returning": "aspirateur_off", "paused": "aspirateur_off", "error": "aspirateur_off"},
+    "calendrier": {"on": "jour_special"},           # calendar.* : un evenement du calendrier du foyer commence
     "machine": {"finished": "machine_finie", "end": "machine_finie", "complete": "machine_finie",   # Home Connect,
                 "completed": "machine_finie", "error": "machine_echec", "failure": "machine_echec"},  # ThinQ, SmartThings...
 }

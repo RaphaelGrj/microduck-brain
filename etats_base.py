@@ -18,11 +18,15 @@ class Humeur:
         self.energie = energie
         self.eveil = eveil
 
-    def avance(self, dt, etat):
+    def avance(self, dt, etat, vivacite=1.0):
+        """`vivacite` (rythme circadien, Brain.vivacite) : < 1 le soir et la nuit, l'activite fatigue plus vite et
+        l'eveil retombe plus vite ; > 1 en fin d'apres-midi, l'inverse."""
         taux = {"chill": +0.004, "nap": +0.03, "wander": -0.02,
                 "turn": -0.01, "look": -0.004, "startle": -0.01, "curious": -0.003}
-        self.energie += taux.get(etat, 0.0) * dt
-        self.eveil -= 0.05 * dt
+        t = taux.get(etat, 0.0)
+        frein = min(1.5, max(0.8, 2.0 - vivacite))
+        self.energie += (t * frein if t < 0 else t) * dt
+        self.eveil -= 0.05 * frein * dt
         self.energie = min(1.0, max(0.0, self.energie))
         self.eveil = min(1.0, max(0.0, self.eveil))
 

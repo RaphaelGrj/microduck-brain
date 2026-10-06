@@ -92,6 +92,7 @@ class VeilleMouvement(threading.Thread):
         self.actif = True
         self.dernier_mouvement = None          # instant (monotonic) du dernier mouvement vu depuis l'armement
         self.historique = collections.deque(maxlen=200)   # (instant, fraction) depuis l'armement : rythme visible
+        self.dernier_centre = None             # (instant, x, fraction) du dernier mouvement : mouvement peripherique
         self._periode_normale = periode_s
 
     def armer(self, periode_s=None):
@@ -100,6 +101,7 @@ class VeilleMouvement(threading.Thread):
         with self.verrou:
             self.detecteur.reinitialiser()
             self.dernier_mouvement = None
+            self.dernier_centre = None
             self.historique.clear()
             self.periode_s = periode_s or self._periode_normale
             self.arme = True
@@ -117,9 +119,10 @@ class VeilleMouvement(threading.Thread):
                     image = self.grab()
                     with self.verrou:
                         if self.arme:
-                            bouge, fraction, _ = self.detecteur.mise_a_jour(image)
+                            bouge, fraction, centre = self.detecteur.mise_a_jour(image)
                             self.historique.append((time.monotonic(), fraction))
                             if bouge:
+                                self.dernier_centre = (time.monotonic(), centre[0], fraction)
                                 self.dernier_mouvement = time.monotonic()
                 except Exception:
                     pass                       # une image ratee ne doit pas arreter la veille

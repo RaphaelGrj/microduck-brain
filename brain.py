@@ -35,7 +35,7 @@ from etats_taquineries import (Aspirateur, Baillement, CompteEternuements, Derni
                                FausseNotif, FauxEndormi, FeinteBec, Fier, MimeTon, MimeVol, PousseBalle, RegardMystere,
                                SourdeOreille)
 from etats_vie import (Picore, Remarque, Zoomies, Accueil, Bonjour, Caresse, Danse, JeuSolitaire, MainTendue, Porte, RechercheAttention,
-                       RegardeChat, VaAuCoin)
+                       RegardeChat, VaAuCoin, Timide, CoupOeil, Compagnie, BaillementContagieux)
 
 class Brain:
     SEUIL_SIESTE = 0.25
@@ -189,6 +189,15 @@ class Brain:
             "meteo_curieux": Sequence("meteo_curieux", [("curieux", "inquire")]),      # tiens, il pleut
             "meteo_neige": Sequence("meteo_neige", [("curieux", "inquire"), ("content", "wheee")]),
             "meteo_orage": Sequence("meteo_orage", [("surpris", "inquire")]),         # inquiet, puis va se blottir
+            # vie de la maison (ROADMAP "Pistes supplementaires", "Actions spontanees vers l'humain")
+            "jour_special": Sequence("jour_special", [("content", "wheee"), ("oui", "greet")]),   # calendrier HA
+            "baillement_contagieux": BaillementContagieux(),                       # on a baille pres de lui
+            "timide": Timide(),                                                    # visiteur inconnu
+            "apprivoise": Sequence("apprivoise", [("curieux", "inquire")]),        # la timidite s'est dissipee
+            "coup_oeil": CoupOeil(),                                               # mouvement a la peripherie
+            "va_repas": VaAuCoin("va_repas", "look", "trainer la ou l'on mange, comme chaque jour a cette heure"),
+            "va_compagnie": VaAuCoin("va_compagnie", "compagnie", "tenir compagnie la ou l'on s'occupe de lui"),
+            "compagnie": Compagnie(),
         }
         self.etats["taquin"].taquinerie = True
         self.malice = Malice(self.ctx.extras.get("memoire"))
@@ -248,6 +257,18 @@ class Brain:
         self.tombe = False
         self.presents = set()                   # habitants actuellement a la maison (presence HA, retour/depart)
         self.derniere_interaction = 0.0         # dernier evenement externe notable (hors bascule calme/ecoute)
+        self.discret = False                    # quelqu'un telephone (audio.py) : ni son ni initiative bruyante
+        self._t_discret = 0.0
+        self.visite = None                      # t_global de l'arrivee d'un visiteur inconnu (timidite)
+        self._apprivoise = True
+        self._t_sonnette = None                 # derniere sonnette sans retour d'habitant : un visiteur ?
+        self.jour_special = None                # (jour de l'annee, nom) : evenement du calendrier HA aujourd'hui
+        self._jour_special_vu = set()           # habitants deja salues "jour special" aujourd'hui
+        self._repas_faits = set()               # (jour, repas) deja rejoints
+        self._rng_babil = random.Random(None if seed is None else seed + 7)   # sons gratuits : hasard a part
+        self._t_babil = -1e9
+        self._peri_arme = False                 # veille mouvement armee pendant chill (mouvement peripherique)
+        self._t_peri_arme = 0.0
 
     # -- evenements externes (plus tard : micro, camera, HA...) --
     def evenement(self, nom):
@@ -268,7 +289,7 @@ class Brain:
                 actif = base == "calme_on"
                 if actif != self.mode_calme:
                     self.mode_calme = actif
-                    self.ctx.silence = actif
+                    self.ctx.silence = actif or self.discret
                     print(f"[{self.t_global:6.1f}s] mode calme {'ACTIVE' if actif else 'desactive'}", flush=True)
                     self._bascule("nap" if actif else ("etirement" if self.courant.nom == "nap" else "chill"))
                 continue
@@ -276,6 +297,31 @@ class Brain:
             # qu'il soit ou non traite immediatement (differe pendant une conversation, ignore pendant la sieste...).
             self.derniere_interaction = self.t_global
             self.ignores = 0                    # quelqu'un s'est manifeste : le decouragement s'efface
+            if base in ("telephone", "telephone_fin"):
+                self._discretion(base == "telephone")
+                continue
+            if base in ("visiteur", "visiteur_fin"):
+                self._sur_visiteur(base == "visiteur")
+                continue
+            if base in ("voix", "intonation", "silence_conversation", "discussion_longue"):
+                self._apprend_repas()
+                if self._t_sonnette is not None and self.t_global - self._t_sonnette <= self.VISITEUR_APRES_SONNETTE_S:
+                    self._t_sonnette = None
+                    self._sur_visiteur(True)    # on a sonne, on parle, et aucun habitant n'est rentre : un visiteur
+            if base == "jour_special":
+                self._sur_jour_special(detail)
+                continue
+            if base in ("compagnie", "compagnie_fin") and self.courant.nom not in ("compagnie", "va_compagnie"):
+                if base == "compagnie":
+                    self._sur_compagnie()
+                continue
+            if base == "baillement_entendu":
+                if (self.courant.nom in ("chill", "look", "wander") and not self.mode_calme
+                        and self.t_global - self.derniere_fois.get("baillement_contagieux", -1e9) >= 600.0
+                        and self.rng.random() < self.P_BAILLEMENT_CONTAGIEUX):
+                    self.derniere_fois["baillement_contagieux"] = self.t_global
+                    self._bascule("baillement_contagieux")
+                continue
             if base in ("ecoute_on", "ecoute_off"):
                 # conversation vocale (satellite Assist) : on se tait ; a la fin, on reprend et on rejoue ce qui attendait
                 if base == "ecoute_on" and self.courant.nom != "ecoute":
@@ -303,6 +349,7 @@ class Brain:
                         self._bascule("rituel_depart")
                     continue
                 self.presents.add(qui)
+                self._t_sonnette = None             # c'etait un habitant qui rentrait, pas un visiteur
                 absence = float(absence) if absence else (mem.absence_s(qui) if mem is not None else None)
                 longue = absence is not None and absence >= Accueil.ABSENCE_LONGUE_S
                 if self.mode_calme or (self.courant.nom == "nap" and not longue):
@@ -315,7 +362,12 @@ class Brain:
                 self.etats["accueil"].qui, self.etats["accueil"].absence_s = qui, absence
                 self.humeur.eveil = min(1.0, self.humeur.eveil + (0.6 if longue else 0.3))
                 self._bascule("accueil")
+                if self._jour_special_aujourdhui() and qui not in self._jour_special_vu:
+                    self._jour_special_vu.add(qui)
+                    self.suivant_force = "jour_special"     # c'est un jour special : il le lui dit aussi
                 continue
+            if base == "sonnette":
+                self._t_sonnette = self.t_global
             if base in self.REACTIONS_MAISON:
                 # une notification que l'habitant a demandee n'est pas un caprice : elle interrompt la sieste
                 etat, eveil = self.REACTIONS_MAISON[base]
@@ -375,6 +427,9 @@ class Brain:
                 else:
                     self._bascule("soleil")
                 continue
+            if base in ("caresse", "main") and self._derniere_position is not None:
+                # la ou l'on s'occupe de lui : la que l'on viendra tenir compagnie (Compagnie)
+                self.exploration.preference(*self._derniere_position, "social", 10.0, self.t_global)
             if base == "caresse":
                 if self.courant.nom == "nap" or self.mode_calme:
                     self.ctx.sound("coo")       # caresse pendant le sommeil : un roucoulement, sans se reveiller
@@ -613,6 +668,8 @@ class Brain:
             return "nap"                        # servos trop chauds : repos assis, jamais de marche, jusqu'a refroidir
         if self.mode_calme or self.t_global < self.veille_jusqua:
             return "nap"                        # sieste prolongee, assis : interrupteur calme, ou veille apres des chutes
+        if self.discret:
+            return self.rng.choice(("chill", "chill", "look"))   # quelqu'un telephone : il reste tranquille, sans bruit
         h = self.humeur
         batterie_basse = self._batterie_pct is not None and self._batterie_pct < self.BATTERIE_BASSE_PCT
         if h.energie < self.SEUIL_SIESTE or batterie_basse:
@@ -674,6 +731,15 @@ class Brain:
             self.derniere_fois["silence"] = self.t_global
             self.suivant_force = "wander"       # que se passe-t-il ? un petit tour pour aller voir
             return "silence_curieux"
+        timide = self.timidite()
+        if timide > 0.0 and self.rng.random() < 0.7 * timide:
+            return "timide"                     # visiteur inconnu : de moins en moins souvent au fil de la visite
+        if self.visite is not None and timide == 0.0 and not self._apprivoise:
+            self._apprivoise = True
+            return "apprivoise"                 # la timidite s'est dissipee : un "inquire" curieux
+        repas = self._repas_maintenant()
+        if repas is not None:
+            return repas
         if self.rng.random() < self.P_ATTENTE and self.t_global - self.derniere_fois.get("attente", -1e9) >= 1800.0:
             if self._quelqu_un_tarde():
                 self.derniere_fois["attente"] = self.t_global
@@ -691,9 +757,9 @@ class Brain:
             return "cache_cache"
         chat = self.ctx.extras.get("chat")
         chat_la = chat is not None and getattr(getattr(chat, "suivi", None), "visible", False)
-        if (h.energie > 0.85 and h.eveil > 0.5 and not chat_la and not self.surchauffe
+        if (h.energie > 0.85 and h.eveil > 0.5 and not chat_la and not self.surchauffe and timide == 0.0
                 and self.ctx.extras.get("tof") is not None and self.horloge().tm_hour in range(8, 22)
-                and self.rng.random() < self.P_ZOOMIES * (1.5 - self.perso.trait("prudence"))):
+                and self.rng.random() < self.P_ZOOMIES * (1.5 - self.perso.trait("prudence")) * self.vivacite()):
             return "zoomies"                    # trop-plein d'energie
         if self.rng.random() < self.P_PICORE:
             return "picore"
@@ -732,6 +798,7 @@ class Brain:
         if nom in self.RARES:
             self.derniere_fois[nom] = self.t_global
         self.courant.sort(self)
+        self._desarme_peripherie()              # avant l'entree : un jeu peut armer la veille mouvement pour lui
         if nom == "accueil":
             self.t_dernier_accueil = self.t_global
         if getattr(self.etats[nom], "taquinerie", False):
@@ -821,6 +888,150 @@ class Brain:
             if veille is not None:
                 veille.pause = self.cpu_chaud
 
+    P_BAILLEMENT_CONTAGIEUX = 0.6
+    VISITEUR_APRES_SONNETTE_S = 180.0
+    TIMIDE_S = 1200.0                   # la timidite se dissipe en 20 min de visite
+    DISCRET_MAX_S = 3600.0              # garde-fou : un "telephone_fin" perdu ne le rend pas muet pour toujours
+    BABIL_MOYEN_S = 900.0               # un petit son gratuit toutes les ~15 min au repos
+    PERI_DELAI_S = 300.0
+    REPAS_AVANT_MIN, REPAS_APRES_MIN = 10, 30
+
+    def _discretion(self, on):
+        """Quelqu'un telephone (audio.py) : il se tait et ne lance rien de bruyant ; fin au "telephone_fin"."""
+        if on == self.discret:
+            return
+        self.discret, self._t_discret = on, self.t_global
+        self.ctx.silence = on or self.mode_calme
+        print(f"[{self.t_global:6.1f}s] {'quelqu un telephone : discret' if on else 'fin de l appel'}", flush=True)
+        if on and self.courant.nom not in ("chill", "look", "nap", "alarme", "porte", "compagnie"):
+            self._bascule("chill")
+
+    def _sur_visiteur(self, arrive):
+        if arrive and (self.visite is None or self.t_global - self.visite > self.TIMIDE_S):
+            self.visite, self._apprivoise = self.t_global, False
+            print(f"[{self.t_global:6.1f}s] un visiteur inconnu : timide", flush=True)
+        elif not arrive:
+            self.visite, self._apprivoise = None, True
+
+    def timidite(self):
+        """1 a l'arrivee d'un visiteur inconnu, 0 au bout de TIMIDE_S."""
+        if self.visite is None:
+            return 0.0
+        return max(0.0, 1.0 - (self.t_global - self.visite) / self.TIMIDE_S)
+
+    def _jour_special_aujourdhui(self):
+        return self.jour_special is not None and self.jour_special[0] == getattr(self.horloge(), "tm_yday", None)
+
+    def _sur_jour_special(self, nom):
+        """Calendrier HA du foyer (pont_ha, type "calendrier") : un signe reconnaissable, une fois par jour, puis a
+        chaque habitant qui rentre ce jour-la. Pas de fete scriptee lourde."""
+        jour = getattr(self.horloge(), "tm_yday", None)
+        if self.jour_special is not None and self.jour_special[0] == jour:
+            return
+        self.jour_special, self._jour_special_vu = (jour, nom), set(self.presents)
+        print(f"[{self.t_global:6.1f}s] jour special : {nom}", flush=True)
+        if not self.mode_calme and self.courant.nom not in ("nap", "alarme", "porte", "ecoute"):
+            self._bascule("jour_special")
+
+    def _sur_compagnie(self):
+        """Quelqu'un est pris par une longue activite immobile (declencheur HA, ex. "bureau occupe depuis 1 h") : il
+        va se poser la ou l'on s'occupe le plus de lui, s'il le connait et peut y aller."""
+        if self.mode_calme or self.discret or self.courant.nom in ("nap", "alarme", "porte", "ecoute", "balle"):
+            return
+        coin = self.exploration.coin_favori("social", self.t_global)
+        if coin is None or self.ctx.extras.get("tof") is None:
+            return
+        if self._atteignable(coin, (0.0, 0.5)):
+            self._bascule("compagnie")
+        elif self._atteignable(coin, (0.5, 4.0)):
+            self.etats["va_compagnie"].cible = coin
+            self._bascule("va_compagnie")
+
+    def _repas_horaires(self):
+        return [(r, 0) if isinstance(r, int) else tuple(r) for r in (self.ctx.extras.get("repas") or ())]
+
+    def _proche_repas(self, avant, apres):
+        h = self.horloge()
+        m = h.tm_hour * 60 + getattr(h, "tm_min", 0)
+        for r in self._repas_horaires():
+            if -avant <= m - (r[0] * 60 + r[1]) <= apres:
+                return r
+        return None
+
+    def _apprend_repas(self):
+        """Autour des repas (+-45 min), on parle : il note ou il se trouve. A la longue, la case la plus "repas" est la
+        piece ou l'on mange - une routine apprise par habitude, pas un point programme."""
+        if self._derniere_position is not None and self._proche_repas(45, 45) is not None:
+            self.exploration.preference(*self._derniere_position, "repas", 5.0, self.t_global)
+
+    def _repas_maintenant(self):
+        r = self._proche_repas(self.REPAS_AVANT_MIN, self.REPAS_APRES_MIN)
+        cle = (getattr(self.horloge(), "tm_yday", None), r)
+        if (r is None or cle in self._repas_faits or not self.presents or self.humeur.energie < 0.3
+                or self.ctx.extras.get("tof") is None):
+            return None
+        self._repas_faits.add(cle)
+        coin = self.exploration.coin_favori("repas", self.t_global)
+        if coin is None or not self._atteignable(coin, (0.5, 4.0)):
+            return None
+        self.etats["va_repas"].cible = coin
+        return "va_repas"
+
+    def _babille(self, dt):
+        """Vocalisations gratuites (ROADMAP) : de temps en temps, au repos, un petit son sans raison."""
+        if (self.courant.nom not in ("chill", "look", "wander") or getattr(self.ctx, "silence", False) or self.discret
+                or self.timidite() > 0.0 or self.t_global - self._t_babil < 180.0):
+            return
+        if self._rng_babil.random() < dt * self.vivacite() / self.BABIL_MOYEN_S:
+            self._t_babil = self.t_global
+            self.ctx.sound(self._rng_babil.choice(("coo", "chirp", "chirp", "peck")))
+
+    def _surveille_peripherie(self):
+        """Pendant chill (tete immobile), la veille mouvement tourne doucement ; un mouvement AU BORD de l'image (petite
+        tache : pas son propre mouvement, qui fait bouger toute l'image) -> un coup d'oeil de ce cote."""
+        veille = self.ctx.extras.get("mouvement")
+        if veille is None or not hasattr(veille, "dernier_centre"):
+            return
+        if (self.courant.nom != "chill" or self.t_etat < 1.5 or self.mode_calme or self.discret
+                or self.t_global - self.derniere_fois.get("coup_oeil", -1e9) < self.PERI_DELAI_S):
+            self._desarme_peripherie()
+            return
+        if not self._peri_arme:
+            veille.armer(periode_s=0.3)
+            self._peri_arme, self._t_peri_arme = True, self.t_global
+            return
+        c = veille.dernier_centre
+        if c is None or self.t_global - self._t_peri_arme < 1.0:
+            return
+        _, x, fraction = c
+        if (x < 0.2 or x > 0.8) and fraction < 0.05:
+            self._desarme_peripherie()
+            self.derniere_fois["coup_oeil"] = self.t_global
+            self.etats["coup_oeil"].lacet = 0.5 if x < 0.5 else -0.5   # image : gauche = sa gauche (lacet positif)
+            self._bascule("coup_oeil")
+
+    def _desarme_peripherie(self):
+        if self._peri_arme:
+            self._peri_arme = False
+            veille = self.ctx.extras.get("mouvement")
+            if veille is not None:
+                veille.desarmer()
+
+    # Rythme circadien reel (ROADMAP "Pistes supplementaires") : vivacite selon l'heure LOCALE - endormi la nuit, creux
+    # apres le dejeuner, plus vif en fin d'apres-midi, qui se calme seul le soir sans mode calme. Opt-in
+    # (extras["circadien"], active par canard.py) : sans lui, vivacite = 1 et rien ne change.
+    CIRCADIEN = ((0, 0.55), (6, 0.6), (8, 0.9), (12, 1.0), (14, 0.9), (17, 1.15), (20, 1.0), (22, 0.7), (24, 0.55))
+
+    def vivacite(self):
+        if not self.ctx.extras.get("circadien"):
+            return 1.0
+        h = self.horloge()
+        x = h.tm_hour + getattr(h, "tm_min", 0) / 60.0
+        for (h0, v0), (h1, v1) in zip(self.CIRCADIEN, self.CIRCADIEN[1:]):
+            if h0 <= x <= h1:
+                return v0 + (v1 - v0) * (x - h0) / (h1 - h0)
+        return 1.0
+
     def lit_sante(self):
         """robot.health (robotd) -> dict, ou None si pas de reponse."""
         try:
@@ -879,7 +1090,7 @@ class Brain:
             if nom.startswith("alarme_fumee"):
                 self.ctx.silence = False
                 self.ctx.sound("alarm")
-                self.ctx.silence = self.mode_calme
+                self.ctx.silence = self.mode_calme or self.discret
             elif nom == "caresse":
                 self.ctx.sound("coo")
                 self.derniere_interaction = self.t_global
@@ -1032,7 +1243,11 @@ class Brain:
             self._verifie_bonjour()                 # apres les evenements : un "calme_on" en attente passe d'abord
         if self.ctx.extras.get("autotest"):
             self._verifie_autotest()
-        self.humeur.avance(dt, self.courant.nom)
+        self.humeur.avance(dt, self.courant.nom, self.vivacite())
+        if self.discret and self.t_global - self._t_discret > self.DISCRET_MAX_S:
+            self._discretion(False)
+        self._babille(dt)
+        self._surveille_peripherie()
         self.t_etat += dt
         self.courant.pas(self, self.t_etat)
         if self.t_etat >= self.fin_etat:

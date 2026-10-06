@@ -16,6 +16,11 @@ le pipeline micro qui manquait (journal du 2026-10-05 : "aucun pipeline micro/FF
     3 bips, pause, 3 bips...) -> l'alarme du canard, PRIORITAIRE, meme sans Home Assistant ;
   - "toc_porte"        : 2 a 5 chocs brefs et GRAVES (centroide spectral < 1,5 kHz), espaces de 0,1 a 0,45 s -> on
     frappe a la porte (un claquement de mains est aigu : il reste un "appel") ;
+  - "telephone" / "telephone_fin" : quelqu'un parle AU TELEPHONE dans la piece : une seule voix (hauteur mediane des
+    enonces stable, a 3 demi-tons pres), coupee de blancs reguliers (l'autre parle dans le combine) -> le canard se
+    fait discret. Deux personnes de voix proches donnent le meme motif : consequence benigne (il se tait un moment) ;
+  - "baillement_entendu" : un son voise et CONTINU de 1,6 a 3,5 s (une phrase qui descend dure rarement autant), qui descend d'au moins 5 demi-tons, apres un
+    silence (pas au milieu d'une phrase) -> baillement contagieux ;
   - "eternuement"      : bruit large bande (platitude spectrale), attaque nette, 0,12 a 0,6 s, tres au-dessus du fond.
     Heuristique a etalonner : une chute d'objet peut y ressembler (consequence benigne : il "compte" au lieu de sursauter).
 Methode : niveau par bloc (dB), bruit de fond suivi par le bas (monte lentement, descend tout de suite), transitoires =
@@ -86,12 +91,12 @@ def hauteurs(son, trame=640, pas=320):
     return out
 
 
-def intonation(son):
+def intonation(son, h=None):
     """"monte" / "descend" si la hauteur du dernier tiers de l'enonce differe d'au moins 3 demi-tons de celle du premier
-    tiers ; None sinon (enonce trop court, trop peu voise, ou plat)."""
+    tiers ; None sinon (enonce trop court, trop peu voise, ou plat). `h` : hauteurs(son) deja calculees."""
     if not 0.4 * TAUX <= len(son) <= 3.5 * TAUX:
         return None
-    h = hauteurs(son)
+    h = hauteurs(son) if h is None else h
     if len(h) < 6:
         return None
     n = len(h) // 3
@@ -99,6 +104,29 @@ def intonation(son):
     fin = np.mean([np.log2(f) for _, f in h[-n:]])
     dt = 12.0 * (fin - debut)
     return "monte" if dt >= 3.0 else "descend" if dt <= -3.0 else None
+
+
+def baillement(son, h):
+    """Un baillement : 1,6 a 3,5 s (heuristique a etalonner), voise sur au moins 60 % des trames (pas de pause au milieu), et une hauteur qui
+    descend d'au moins 5 demi-tons du premier au dernier quart."""
+    duree = len(son) / TAUX
+    if not 1.6 <= duree <= 3.5 or len(h) < 0.6 * (len(son) - 640) / 320:
+        return False
+    n = max(2, len(h) // 4)
+    debut = np.mean([np.log2(f) for _, f in h[:n]])
+    fin = np.mean([np.log2(f) for _, f in h[-n:]])
+    return 12.0 * (debut - fin) >= 5.0
+
+
+TEL_FENETRE_S = 60.0            # telephone : on juge sur la derniere minute
+TEL_ENONCES_MIN = 6
+TEL_DEMI_TONS = 3.0             # une seule voix : hauteurs medianes des enonces a +-3 demi-tons
+TEL_FIN_S = 25.0                # plus aucune voix depuis 25 s : l'appel est fini
+
+
+def une_seule_voix(f0s):
+    m = float(np.median(np.log2(f0s)))
+    return all(abs(12.0 * (np.log2(f) - m)) <= TEL_DEMI_TONS for f in f0s)
 
 
 class AnalyseurSon:
@@ -121,6 +149,9 @@ class AnalyseurSon:
         self.platitudes = []                     # platitude spectrale des blocs du transitoire en cours
         self.bip_debut = None                    # debut du bip aigu en cours
         self.bips = []                           # instants des bips d'alarme reconnus (15 s)
+        self.enonces = []                        # (fin, duree, hauteur mediane) des enonces voises (telephone)
+        self.telephone = False
+        self.silence_avant_enonce = 0.0          # silence (s) juste avant l'enonce en cours (baillement)
 
     def _peut(self, nom, delai):
         if self.t - self.dernier.get(nom, -1e9) < delai:
@@ -208,17 +239,35 @@ class AnalyseurSon:
 
         # 2 ter. enonces : on garde le son tant que la voix continue (pauses < 0,3 s), on juge l'intonation a la fin
         if actif:
-            self.enonce = (self.enonce + [x])[-150:]
+            if not self.enonce:                  # debut d'enonce : combien de silence juste avant (1,5 s au plus) ?
+                n = 0
+                for v in reversed(self.voix[-76:-1]):
+                    if v:
+                        break
+                    n += 1
+                self.silence_avant_enonce = n * BLOC / TAUX
+            self.enonce = (self.enonce + [x])[-175:]
             self.calme_enonce = 0
         elif self.enonce:
             self.calme_enonce += 1
             if self.calme_enonce < 15:
                 self.enonce.append(x)
             else:
-                son, self.enonce = np.concatenate(self.enonce), []
-                sens = intonation(son)
-                if sens and self._peut("intonation", 8.0):
+                son, self.enonce = np.concatenate(self.enonce[:-14]), []      # sans le silence de fin
+                h = hauteurs(son) if len(son) <= 3.5 * TAUX else []
+                sens = intonation(son, h)
+                if (self.silence_avant_enonce >= 1.0 and baillement(son, h)
+                        and self._peut("baillement_entendu", 60.0)):
+                    out.append("baillement_entendu")
+                elif sens and self._peut("intonation", 8.0):
                     out.append(f"intonation:{sens}")
+                if len(h) >= 4:
+                    self.enonces = [e for e in self.enonces if self.t - e[0] <= TEL_FENETRE_S] + [
+                        (self.t, len(son) / TAUX, float(np.median([f for _, f in h])))]
+                    out += self._juge_telephone()
+        if self.telephone and self.silence_depuis is not None and self.t - self.silence_depuis >= TEL_FIN_S:
+            self.telephone = False
+            out.append("telephone_fin")
 
         # 2. groupe de claquements : on juge quand il n'en vient plus depuis 0,8 s
         if self.claps and self.t - self.claps[-1][0] > 0.8:
@@ -228,6 +277,20 @@ class AnalyseurSon:
         if len(self.attaques) >= 300 and int(self.t / 0.02) % 25 == 0:
             out += self._juge_rythme()
         return out
+
+    def _juge_telephone(self):
+        """Une seule voix sur la derniere minute, des enonces nombreux mais une parole qui n'occupe pas tout le temps
+        (les blancs = l'autre au bout du fil). Dans une discussion a deux dans la piece, les hauteurs se melangent."""
+        e = [x for x in self.enonces if self.t - x[0] <= TEL_FENETRE_S]
+        if self.telephone or len(e) < TEL_ENONCES_MIN:
+            return []
+        parole = sum(d for _, d, _ in e)
+        if not 0.15 * TEL_FENETRE_S <= parole <= 0.7 * TEL_FENETRE_S or not une_seule_voix([f for _, _, f in e]):
+            return []
+        if self.t - e[0][0] < 0.6 * TEL_FENETRE_S:
+            return []                             # pas encore une minute d'observation
+        self.telephone = True
+        return ["telephone"]
 
     def _montee(self, debut):
         """Temps (s) pour passer de -20 dB sous le pic au pic, sur l'enveloppe fine autour du transitoire."""

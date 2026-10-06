@@ -218,3 +218,35 @@ def test_eternuements_ni_claquement_ni_parole():
     clap(s, 2.0)
     clap(s, 2.35)
     assert noms(analyse(s)) == ["appel"], "un claquement n'est pas un eternuement"
+
+
+def test_baillement_entendu_mais_pas_une_phrase_qui_descend():
+    s = fond(6)
+    voix(s, 2.0, 2.4, 260, 120, amplitude=0.05)          # long, continu, qui descend d'une octave, apres un silence
+    evts = noms(analyse(s))
+    assert "baillement_entendu" in evts and not any(e.startswith("intonation") for e in evts), evts
+    s = fond(6)
+    voix(s, 1.0, 0.8, 200, 210)                          # en pleine conversation (0,5 s apres une phrase) :
+    voix(s, 2.3, 2.4, 260, 120)                          # pas un baillement
+    assert "baillement_entendu" not in noms(analyse(s))
+
+
+def appel(voix_f0, duree_s=80.0, enonce_s=1.4, blanc_s=2.6):
+    """Une personne au telephone : enonces voises, coupes de blancs (l'autre parle dans le combine)."""
+    s = fond(duree_s)
+    t, k = 1.0, 0
+    while t + enonce_s < duree_s - 30:
+        f0 = voix_f0[k % len(voix_f0)]
+        voix(s, t, enonce_s, f0, f0 * 1.05)
+        t += enonce_s + blanc_s
+        k += 1
+    return s
+
+
+def test_telephone_une_seule_voix_avec_des_blancs():
+    evts = noms(analyse(appel([180, 190, 175])))
+    assert "telephone" in evts and evts.index("telephone_fin") > evts.index("telephone"), evts
+
+
+def test_pas_telephone_quand_deux_personnes_parlent():
+    assert "telephone" not in noms(analyse(appel([120, 230])))           # deux voix bien differentes en alternance
