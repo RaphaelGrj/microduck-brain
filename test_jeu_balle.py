@@ -2,6 +2,7 @@
 """Jeu de balle autonome (etats_jeux.JeuBalle) avec un faux controleur d'approche : fete si la balle part, depit puis
 regain de motivation si elle reste la, arret net devant un vide, jamais sans capteur de distance."""
 import math
+import time
 
 from brain import Brain, Humeur
 from test_brain import FauxClient, simule
@@ -42,6 +43,11 @@ class VeilleBalle:
 
     def position(self, age_max=1.5):
         return self.pos
+
+    @property
+    def estimation(self):
+        """(t, x, y) comme balle.VeilleBalle : toujours une image plus recente que le tir."""
+        return None if self.pos is None else (time.monotonic() + 1e6, self.pos[0], self.pos[1])
 
 
 def cerveau(pos_apres_tir, seed=900):

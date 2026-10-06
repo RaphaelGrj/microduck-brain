@@ -114,11 +114,12 @@ class MainTendue(Etat):
         tete = list(self.tete)
         if t >= 1.0:                             # une seconde a la regarder, puis les coups de bec
             phase = (t - 1.0) % self.PERIODE_PICORE
+            k = int((t - 1.0) / self.PERIODE_PICORE)       # numero du coup de bec en cours (robuste a 10-50 Hz)
+            if k >= self.n_coups:
+                self.n_coups = k + 1
+                if self.n_coups <= 3:
+                    brain.ctx.sound("peck")
             if phase < self.COUP:
-                if phase < 0.03 and int((t - 1.0) / self.PERIODE_PICORE) >= self.n_coups:
-                    self.n_coups += 1
-                    if self.n_coups <= 3:
-                        brain.ctx.sound("peck")
                 tete[1] += self.AMPLITUDE * math.sin(math.pi * phase / self.COUP)
         brain.ctx.head(tuple(tete))
         brain.ctx.move()
@@ -241,8 +242,8 @@ class Porte(Etat):
         return 300.0
 
     def pas(self, brain, t):
-        if 3.0 <= t % 12.0 < 3.03:
-            brain.ctx.sound("inquire")
+        if t >= 3.0:
+            brain.son_une_fois(f"inquire{int((t - 3.0) / 12.0)}", "inquire")    # toutes les 12 s
         brain.ctx.head((0.0, 0.2 * math.sin(2 * math.pi * t / 7.0), 0.6 * math.sin(2 * math.pi * t / 5.0), 0.0))
         brain.ctx.move()
 
@@ -441,11 +442,15 @@ class Zoomies(Etat):
         u = 0.0
         for genre, d, signe in self.segments:
             if t < u + d:
-                brain.ctx.head((0.0, -0.15, 0.2 * signe, 0.0))
                 if genre == "tourne":
+                    brain.ctx.head((0.0, 0.0, 0.2 * signe, 0.0))   # tete haute : la rotation est morte tete baissee
                     brain.ctx.move(vyaw=1.5 * signe)
                 else:
-                    brain.ctx.move(vx=self.V_SPRINT if lib["devant"] >= self.LIBRE_SPRINT else 0.0)
+                    # tete baissee comme en promenade (sinon le ToF voit les bords de marche trop tard), placee 0,3 s
+                    # avant de sprinter ; plus de marge qu'en promenade, il va plus vite
+                    brain.ctx.head((0.0, TETE_PROMENADE, 0.0, 0.0))
+                    pret = t - u >= 0.3 and lib["devant"] >= self.LIBRE_SPRINT and lib.get("vide", math.inf) >= 0.6
+                    brain.ctx.move(vx=self.V_SPRINT if pret else 0.0)
                 return
             u += d
         brain.ctx.head((0.0, 0.0, 0.0, 0.0))

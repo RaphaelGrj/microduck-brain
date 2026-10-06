@@ -100,6 +100,9 @@ class Ctx:
             print(f"  (son {tag} impossible : {e})", flush=True)
             return
         self.bec_t0, self.bec_fin = time.monotonic(), time.monotonic() + self.BEC_S.get(tag, 0.4)
+        voix = (getattr(self, "extras", None) or {}).get("voix")
+        if voix is not None:
+            voix.parle(tag)                     # le micro ne s'ecoute pas lui-meme (audio.VoixPropre)
 
     def bec(self):
         """A chaque trame : bec qui bat pendant le son (~8 Hz), puis refermé une fois. robot.mouth est une consigne

@@ -128,6 +128,13 @@ class AnalyseurSon:
         self.dernier[nom] = self.t
         return True
 
+    def bloc_muet(self, n):
+        """Le canard parle pendant ce bloc (VoixPropre) : le temps avance, mais rien n'est analyse ni appris (ni le
+        fond, ni un transitoire, un claquement, un enonce ou un bip en cours)."""
+        self.t += n / TAUX
+        self.transitoire, self.bip_debut = None, None
+        self.claps, self.enonce, self.calme_enonce = [], [], 0
+
     def bloc(self, echantillons):
         """Un bloc de BLOC echantillons (np.ndarray float, -1..1). Renvoie la liste des evenements (souvent vide)."""
         x = np.asarray(echantillons, dtype=np.float64)
@@ -274,15 +281,34 @@ class AnalyseurSon:
         return []
 
 
+class VoixPropre:
+    """Le canard ne doit pas s'entendre lui-meme : sa propre alarme ressemble a une alarme incendie, son "wheee" a un
+    bruit fort. Le cerveau signale chaque son qu'il joue (Ctx.sound -> parle) ; pendant sa duree (+ une marge d'echo),
+    le micro n'est pas analyse."""
+    DUREES_S = {"alarm": 1.2, "greet": 1.0, "inquire": 1.0, "peck": 0.6, "chirp": 0.8, "coo": 1.5, "wheee": 2.5}
+    MARGE_S = 0.4
+
+    def __init__(self, horloge=time.monotonic):
+        self.horloge = horloge
+        self.jusqua = 0.0
+
+    def parle(self, tag):
+        self.jusqua = max(self.jusqua, self.horloge() + self.DUREES_S.get(tag, 1.5) + self.MARGE_S)
+
+    def muet(self):
+        return self.horloge() < self.jusqua
+
+
 class MicroAlsa(threading.Thread):
     """Lit le micro (arecord, 16 kHz mono 16 bits) et passe chaque bloc a l'analyseur et, si elles sont configurees, aux
     commandes vocales locales (commandes.py) : une seule lecture du micro pour les deux. `peripherique` : nom ALSA
     (MICRODUCK_MICRO ; sur le robot, le PCM dsnoop partage avec robotd, deploy/robot/asound.conf). NON TESTE sur le robot."""
 
-    def __init__(self, analyseur=None, peripherique=None, commandes=None):
+    def __init__(self, analyseur=None, peripherique=None, commandes=None, voix=None):
         super().__init__(daemon=True)
         self.analyseur = analyseur or AnalyseurSon()
         self.commandes = commandes
+        self.voix = voix                               # VoixPropre : rien n'est analyse pendant que le canard parle
         self.peripherique = peripherique
         self.evenements, self.verrou, self.actif = [], threading.Lock(), True
 
@@ -297,6 +323,9 @@ class MicroAlsa(threading.Thread):
                         brut = p.stdout.read(BLOC * 2)
                         if len(brut) < BLOC * 2:
                             break
+                        if self.voix is not None and self.voix.muet():
+                            self.analyseur.bloc_muet(len(brut) // 2)
+                            continue
                         evts = self.analyseur.bloc(np.frombuffer(brut, dtype="<i2") / 32768.0)
                         if self.commandes is not None:
                             evts = evts + self.commandes.bloc_brut(brut)

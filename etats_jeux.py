@@ -2,6 +2,7 @@
 """Jeux : 1-2-3 soleil, cache-cache lance par le canard, jeu de balle autonome (M9 BallPlay).
 """
 import math
+import time
 
 import gestures
 from etats_base import Etat, V_ROTATION
@@ -196,6 +197,11 @@ class CacheCache(Etat):
         if self.phase == "cache" and base in ("caresse", "main"):
             self._trouve(brain, brain.t_etat)
             return True
+        if base == "fin_jeu" and self.phase != "fin":       # "fin du jeu" / "stop" : il sort de sa cachette
+            brain.ctx.move()
+            self.resultat = "arrete"
+            self._phase("fin", brain.t_etat)
+            return True
         return False
 
     def _trouve(self, brain, t):
@@ -304,6 +310,7 @@ class JeuBalle(Etat):
             self.ap.etape(s)
             if self.ap.etat == "FINI":
                 self._arreter_vision()
+                self.t_tir = time.monotonic()    # horloge de VeilleBalle.estimation
                 self._phase(t, "regarde")
             elif dt >= self.MANCHE_MAX_S:
                 ctx.move()
@@ -313,8 +320,10 @@ class JeuBalle(Etat):
             ctx.head((0.0, 0.0, 0.0, 0.0))
             ctx.move()
             if dt >= 2.5:
+                # seulement une image prise au moins 1,5 s APRES le tir : avant, la balle etait encore a ses pieds
                 veille = ctx.extras.get("balle")
-                b = veille.position(age_max=2.5) if veille is not None else None
+                e = getattr(veille, "estimation", None) if veille is not None else None
+                b = (e[1], e[2]) if e is not None and e[0] >= self.t_tir + 1.5 else None
                 reussi = b is None or b[0] >= self.PARTIE_M    # plus visible devant lui : partie au loin
                 if reussi:
                     ctx.sound("wheee")
@@ -344,6 +353,15 @@ class JeuBalle(Etat):
 
     def _phase(self, t, nom):
         self.phase, self.t_phase = nom, t
+
+    def sur_evenement(self, brain, base):
+        """"fin du jeu" (bouton HA, "stop" a la voix) : on arrete net."""
+        if base == "fin_jeu" and self.phase != "fin":
+            brain.ctx.move()
+            self._arreter_vision()
+            self._fin(brain, brain.t_etat, "arrete")
+            return True
+        return False
 
     def _fin(self, brain, t, resultat):
         self.resultat = resultat

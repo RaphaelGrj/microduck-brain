@@ -30,8 +30,7 @@ class FeinteBec(Etat):
             brain.ctx.head((n, p + 0.3 * k, y, r))
             brain.ctx.move()
             return
-        if t < 1.45:
-            brain.ctx.sound("chirp")
+        brain.son_une_fois("ecart", "chirp")
         k = 1.0 - gestures._smooth(t, 2.4, 3.1)  # ecart brusque, tenu, puis retour
         brain.ctx.head((0.0, -0.2 * k, 0.6 * self.cote * k, -0.2 * self.cote * k))
         brain.ctx.move(vx=-0.4 if t < 1.9 else 0.0)
@@ -71,8 +70,7 @@ class FauxEndormi(Etat):
         if t < self.reveil:
             brain.ctx.head(gestures.fatigue(min(t, 2.0)))
         else:
-            if t - self.reveil < 0.03:
-                brain.ctx.sound("wheee")
+            brain.son_une_fois("reveil", "wheee")
             d, fn = gestures.GESTES["surpris"]
             brain.ctx.head(fn(t - self.reveil) if t - self.reveil < d else (0, 0, 0, 0))
         brain.ctx.move()
@@ -97,8 +95,7 @@ class SourdeOreille(Etat):
             k = 1.0 - (t - 3.4) / 0.2
             brain.ctx.head((0.0, -0.2 * k, 0.75 * self.cote * k, 0.0))
         else:
-            if t - 3.6 < 0.03:
-                brain.ctx.sound("inquire")
+            brain.son_une_fois("reponse", "inquire")
             u = t - 3.6
             brain.ctx.head(gestures.surpris(u) if u < 1.2 else gestures.oui(u - 1.2) if u < 2.4 else (0, 0, 0, 0))
         brain.ctx.move()
@@ -134,8 +131,8 @@ class Baillement(Etat):
 
     def pas(self, brain, t):
         brain.ctx.head(gestures.baillement(t))
-        if 0.4 <= t < 0.43:
-            brain.ctx.sound("coo")
+        if t >= 0.4:
+            brain.son_une_fois("soupir", "coo")
         if 0.7 <= t < 2.2:
             brain.ctx.bouche(0.9 * math.sin(math.pi * (t - 0.7) / 1.5))
         elif 2.2 <= t < 2.25:
@@ -171,25 +168,30 @@ class PousseBalle(Etat):
 
     def entre(self, brain):
         brain.ctx.sound("chirp")
-        tof = brain.ctx.extras.get("tof")
-        lib = tof.libre(brain.ctx.state) if tof is not None and brain.ctx.state is not None else None
-        self.annule = lib is None or lib.get("vide", math.inf) < 0.3
+        self.annule = False
 
     def duree(self, brain):
-        return 0.6 if self.annule else 2.8
+        return 3.2
 
     def pas(self, brain, t):
         if self.annule:
             brain.ctx.head((0.0, 0.0, 0.0, 0.0))
             brain.ctx.move()
             return
-        if t < 1.0:
-            brain.ctx.head((0.0, 0.0, 0.0, 0.0))     # tete au neutre : la marche est franche (ZONE_MORTE.md)
-            brain.ctx.move(vx=0.4 if 0.3 <= t < 0.9 else 0.0)
+        if t < 1.4:
+            # tete baissee comme en promenade : le ToF voit le sol et les bords ; verification du vide A CHAQUE trame
+            brain.ctx.head((0.0, TETE_PROMENADE, 0.0, 0.0))
+            tof = brain.ctx.extras.get("tof")
+            lib = tof.libre(brain.ctx.state) if tof is not None and brain.ctx.state is not None else None
+            if t >= 0.4 and (lib is None or lib.get("vide", math.inf) < 0.35):
+                self.annule = True               # un vide (ou un capteur muet) : on ne pousse pas
+                brain.ctx.move()
+                brain.fin_etat = min(brain.fin_etat, t + 0.5)
+                return
+            brain.ctx.move(vx=0.4 if 0.7 <= t < 1.3 else 0.0)
             return
-        if t < 1.03:
-            brain.ctx.sound("wheee")
-        k = gestures._smooth(t, 1.0, 1.4) * (1.0 - gestures._smooth(t, 2.2, 2.8))
+        brain.son_une_fois("content", "wheee")
+        k = gestures._smooth(t, 1.4, 1.8) * (1.0 - gestures._smooth(t, 2.6, 3.2))
         brain.ctx.head((0.0, -0.3 * k, 0.0, 0.15 * k * math.sin(2 * math.pi * t / 0.8)))
         brain.ctx.move()
 
@@ -226,8 +228,7 @@ class MimeVol(Etat):
             brain.ctx.head((0.0, 0.0, 0.0, 0.0))
             brain.ctx.move(vyaw=V_ROTATION)
         else:
-            if u < 3.03:
-                brain.ctx.sound("wheee")
+            brain.son_une_fois("butin", "wheee")
             brain.ctx.head((0.0, -0.2, 0.0, 0.1))
             brain.ctx.move()
             if u >= 4.0:
@@ -294,8 +295,8 @@ class MimeTon(Etat):
         return 2.0
 
     def pas(self, brain, t):
-        if 0.6 <= t < 0.63:
-            brain.ctx.sound(self.sons[1])
+        if t >= 0.6:
+            brain.son_une_fois("ton2", self.sons[1])
         k = gestures._smooth(t, 0.0, 1.2) * (1.0 - gestures._smooth(t, 1.5, 2.0))
         signe = -1.0 if self.sens == "monte" else 1.0          # head_pitch negatif = tete vers le haut
         brain.ctx.head((0.0, signe * 0.4 * k, 0.0, 0.2 * k))
@@ -344,8 +345,8 @@ class FausseChute(Etat):
             k = gestures._smooth(t, 0.0, 1.2)
             ctx.pose((0.0, self.ROULIS * k * math.sin(2 * math.pi * 2.0 * t), 0.0))
             ctx.head((0.0, -0.2 * k, 0.35 * k * math.sin(2 * math.pi * 3.0 * t), -0.3 * k * math.sin(2 * math.pi * 2.0 * t)))
-            if 1.2 <= t < 1.23:
-                ctx.sound("wheee")
+            if t >= 1.2:
+                brain.son_une_fois("cascade", "wheee")
         elif not self.assis:
             ctx.pose(None)
             ctx.toggle_sit()                     # "plop"
@@ -384,15 +385,14 @@ class FausseNotif(Etat):
         return 5.2
 
     def pas(self, brain, t):
-        if 0.3 <= t < 0.33:
-            brain.ctx.sound("chirp")
+        if t >= 0.3:
+            brain.son_une_fois("ding2", "chirp")
         if t < 3.4:
             k = gestures._smooth(t, 0.6, 1.2)
             brain.ctx.head((0.0, -0.25 * k, 0.6 * self.cote * k, 0.0))
             brain.ctx.move()
             return
-        if t < 3.43:
-            brain.ctx.sound("wheee")
+        brain.son_une_fois("file", "wheee")
         brain.ctx.head((0.0, 0.0, 0.0, 0.0))
         brain.ctx.move(vyaw=V_ROTATION * self.cote if t < 4.6 else 0.0)
 

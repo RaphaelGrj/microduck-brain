@@ -319,12 +319,27 @@ def test_pousse_la_balle_hors_de_portee_deux_fois_au_plus():
     for k in range(3):
         b.detecteur_main.main = (b.t_global, 0.14, 0.02, 0.05)       # la main descend vers la balle
         b.evenement("main")
-        simule(b, 4)
+        simule(b, 6)            # 3,2 s de poussee puis la tete doit etre stable pour que le detecteur de main garde la main
         b.t_esquive = -1e9
     noms = [e[1] for e in b.journal]
     assert noms.count("pousse_balle") == 2, noms
     rafales = [p["vx"] for m, p in c.appels if m == "robot.move" and p["vx"] > 0]
     assert rafales and max(rafales) == 0.4 and len(rafales) <= 2 * 31, "deux rafales de 0,6 s, rien de plus"
+
+
+def test_poussee_annulee_si_un_vide_apparait_en_cours():
+    tof = FauxTofScene()
+    b, c, _ = cerveau(seed=112, extras={"tof": tof, "exploration": False, "balle": FausseVeilleBalle((0.12, 0.0))})
+    b.malice.permise = lambda brain, nom, humain=False: nom == "pousse_balle"
+    b.P_TAQUINE = b.P_POUSSE_BALLE = 1.0
+    b.detecteur_main.main = (b.t_global, 0.14, 0.02, 0.05)
+    b.evenement("main")
+    simule(b, 0.8)                                  # la poussee vient de commencer...
+    assert b.courant.nom == "pousse_balle"
+    n = len(c.appels)
+    tof.vide = 0.25                                 # ... et un bord de vide apparait
+    simule(b, 3)
+    assert not any(m == "robot.move" and p["vx"] > 0 for m, p in c.appels[n + 1:]), "arret des la trame suivante"
 
 
 def test_pas_de_poussee_au_bord_d_un_vide():

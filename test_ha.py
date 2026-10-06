@@ -294,8 +294,12 @@ entite = "A_REMPLIR"
     assert cfg["ignorees"] == ["Seche-linge"]
     t = [0.0]
     pont = pont_ha.PontHA(cfg, JETON, log=lambda m: None, horloge=lambda: t[0])
+    # premiere apparition (ancien None) et retour d'une entite indisponible : ce ne sont pas des appuis
     pont._sur_changement("event.sonnette_entree", None, "2026-10-05T10:00:00+00:00")
+    pont._sur_changement("event.sonnette_entree", "unavailable", "2026-10-05T10:00:00+00:00")
+    assert pont.source() == [], "un etat retrouve n'est pas un appui"
     pont._sur_changement("event.sonnette_entree", "2026-10-05T10:00:00+00:00", "2026-10-05T10:05:00+00:00")
+    pont._sur_changement("event.sonnette_entree", "2026-10-05T10:05:00+00:00", "2026-10-05T10:07:00+00:00")
     assert pont.source() == ["sonnette:Sonnette", "sonnette:Sonnette"], "chaque appui doit sonner"
     pont._sur_changement("input_button.microduck_soleil", "2026-10-05T10:00:00", "2026-10-05T10:01:00")
     assert pont.source() == ["jeu_soleil:input_button.microduck_soleil"]

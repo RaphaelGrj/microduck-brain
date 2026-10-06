@@ -222,6 +222,7 @@ class Brain:
         self._tete_prec, self._t_tete_change = None, 0.0     # derniere consigne de tete vue, et quand elle a change
         self.messages = []                      # notifications a redire au prochain habitant qui rentre
         self.suivant_force = None               # etat impose pour la prochaine bascule (un etat qui enchaine)
+        self._sons_etat = set()                 # sons "une fois" deja joues dans l'etat courant (son_une_fois)
         self.derniere_fois = {}                 # etat rare -> t_global de la derniere fois
         self.mode_calme = False                 # interrupteur "calme" de Home Assistant (regle de vie)
         self.exploration = Exploration()        # memoire des zones visitees (novelty grid du M9)
@@ -346,6 +347,7 @@ class Brain:
                 continue                        # l'etat en cours (un jeu) a pris l'evenement pour lui
             if base == "jeu_balle":
                 if (not self.mode_calme and self.ctx.extras.get("tof") is not None and not self.surchauffe
+                        and self.ctx.extras.get("balle") is not None          # camera locale branchee (canard.py)
                         and self.courant.nom not in ("balle", "nap", "alarme", "porte")):
                     self._bascule("balle")
                 continue
@@ -580,6 +582,14 @@ class Brain:
         self._prepare_cache_cache()
         self._bascule("cache_cache")
 
+    def son_une_fois(self, cle, tag):
+        """Joue `tag` au plus UNE fois par entree dans l'etat courant (cle libre) : les etats l'appellent des qu'un
+        instant est depasse, quelle que soit la cadence des trames (10 a 50 Hz), au lieu d'une fenetre de temps qui
+        sonnait 2-3 fois a 50 Hz et jamais a 10 Hz."""
+        if cle not in self._sons_etat:
+            self._sons_etat.add(cle)
+            self.ctx.sound(tag)
+
     def _taquinerie(self, noms, humain=False, proba=None):
         """Une taquinerie a la place de la reaction normale ? -> son nom, ou None (budget, familiarite, stop, hasard)."""
         p = (self.P_TAQUINE if proba is None else proba) * self.perso.envie_taquiner()
@@ -725,6 +735,7 @@ class Brain:
         if experience:
             self.perso.vit(experience)
         self.courant = self.etats[nom]
+        self._sons_etat = set()
         self.courant.entre(self)
         self.t_etat = 0.0
         self.fin_etat = self.courant.duree(self)
@@ -930,6 +941,7 @@ class Brain:
             # De nouveau debout (la sequence limp_fall de robotd l'a releve) : il s'ebroue, comme un canard qui se
             # remet d'une glissade, puis reprend sa vie. Pas en mode calme (silence et immobilite d'abord).
             self.tombe = False
+            self.ctx.sitting = False             # robotd l'a remis DEBOUT (policy stand) : on se recale dessus
             print(f"[{self.t_global:6.1f}s] releve apres la chute", flush=True)
             if self.t_global < self.veille_jusqua:
                 self._bascule("nap")             # serie de chutes : il s'assoit et ne recommence pas
@@ -938,6 +950,8 @@ class Brain:
                 self._bascule("gene")
             elif not self.mode_calme:
                 self._bascule("ebouriffe")
+            else:
+                self._bascule("nap")             # mode calme : il retourne a sa sieste, assis
         if self.tombe:
             return                              # pas encore la politique 'stand' : on attend sans rien commander
         if state.get("odom") and self.t_global - self._t_explo >= 0.5:

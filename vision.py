@@ -60,6 +60,10 @@ class Detection:
 
 
 def grab_frame(url: str = FRAME_URL, timeout: float = 5.0) -> np.ndarray:
+    # Regle du projet : la camera du canard est lue et analysee SUR le canard - jamais une camera distante.
+    from urllib.parse import urlparse
+    if urlparse(url).hostname not in ("127.0.0.1", "localhost", "::1"):
+        raise RuntimeError(f"camera distante refusee ({url}) : tout est analyse sur le canard")
     with urllib.request.urlopen(url, timeout=timeout) as r:
         data = np.frombuffer(r.read(), dtype=np.uint8)
     img = cv2.imdecode(data, cv2.IMREAD_COLOR)

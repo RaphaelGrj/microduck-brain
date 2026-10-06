@@ -80,7 +80,9 @@ def assembler(client, args, log=print, cfg=None, cerveau=None):
             log(f"commandes vocales locales : '{cerveau.get('nom', 'canard')} ...' (modele {modele}, hors ligne)")
         elif modele:
             log(f"commandes vocales : modele absent ({modele})")
-        micro = audio.MicroAlsa(peripherique=os.environ.get("MICRODUCK_MICRO"), commandes=commandes)
+        voix = audio.VoixPropre()
+        extras["voix"] = voix                   # le cerveau signale ses propres sons : le micro ne les analyse pas
+        micro = audio.MicroAlsa(peripherique=os.environ.get("MICRODUCK_MICRO"), commandes=commandes, voix=voix)
         fils.append(micro)
         sources.append(micro.source)
         log(f"micro : {os.environ.get('MICRODUCK_MICRO') or 'peripherique ALSA par defaut'} (reflexes sonores)")

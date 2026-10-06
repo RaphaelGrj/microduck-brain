@@ -352,6 +352,7 @@ class PontHA:
     def __init__(self, cfg, jeton, log=print, horloge=time.monotonic):
         self.cfg = cfg
         self.horloge = horloge
+        self._verrou_puissances = threading.Lock()   # _sur_puissance (fil WebSocket) / _verifie_puissances (cerveau)
         self._puissances = {}                   # entite -> {"debut": instant de mise en marche, "sous_seuil": instant}
         self.log = log
         self.client = HAClient(cfg["url"], jeton, log, cfg.get("url_ws"))
@@ -406,7 +407,11 @@ class PontHA:
             self.evenements.put(f"meteo:{nouveau.lower()}")
             return
         reactions = {k.lower(): v for k, v in s.get("reactions", {}).items()}
-        reaction = reactions.get(nouveau.lower(), reactions.get("*"))
+        reaction = reactions.get(nouveau.lower())
+        if reaction is None and "*" in reactions and ancien is not None and ancien.lower() not in ETATS_IGNORES:
+            # "tout nouvel etat" (sonnette event.*, input_button) : jamais au retour d'un "unavailable" (redemarrage de
+            # HA, reconnexion) ni a la premiere apparition - sinon fausse sonnette / jeu lance a chaque redemarrage
+            reaction = reactions["*"]
         self.log(f"[HA] {entite}: {ancien} -> {nouveau}" + (f"  => {reaction}" if reaction else ""))
         if reaction:
             self.evenements.put(reaction if entite == self.calme else f"{reaction}:{s.get('nom', entite)}")
@@ -417,6 +422,10 @@ class PontHA:
         except ValueError:
             return
         p, now = s["puissance"], self.horloge()
+        with self._verrou_puissances:
+            self._maj_puissance(entite, s, p, w, now)
+
+    def _maj_puissance(self, entite, s, p, w, now):
         suivi = self._puissances.setdefault(entite, {"debut": None, "sous_seuil": None})
         if w > p["seuil_w"]:
             if suivi["debut"] is None:
@@ -428,17 +437,18 @@ class PontHA:
 
     def _verifie_puissances(self):
         now = self.horloge()
-        for entite, suivi in self._puissances.items():
-            if suivi["debut"] is None or suivi["sous_seuil"] is None:
-                continue
-            p, nom = self.surveillance[entite]["puissance"], self.surveillance[entite]["nom"]
-            if now - suivi["sous_seuil"] < p["fin_apres_s"]:
-                continue
-            duree = suivi["sous_seuil"] - suivi["debut"]
-            suivi["debut"] = suivi["sous_seuil"] = None
-            if duree >= p["marche_min_s"]:
-                self.log(f"[HA] {nom} : cycle termine ({duree / 60:.0f} min)")
-                self.evenements.put(f"machine_finie:{nom}")
+        with self._verrou_puissances:            # le fil WebSocket peut ajouter une prise pendant qu'on parcourt
+            for entite, suivi in self._puissances.items():
+                if suivi["debut"] is None or suivi["sous_seuil"] is None:
+                    continue
+                p, nom = self.surveillance[entite]["puissance"], self.surveillance[entite]["nom"]
+                if now - suivi["sous_seuil"] < p["fin_apres_s"]:
+                    continue
+                duree = suivi["sous_seuil"] - suivi["debut"]
+                suivi["debut"] = suivi["sous_seuil"] = None
+                if duree >= p["marche_min_s"]:
+                    self.log(f"[HA] {nom} : cycle termine ({duree / 60:.0f} min)")
+                    self.evenements.put(f"machine_finie:{nom}")
 
     def lire_calme_initial(self):
         """Au demarrage, applique l'etat ACTUEL de l'interrupteur calme (sinon un canard relance la nuit ferait du bruit)."""
