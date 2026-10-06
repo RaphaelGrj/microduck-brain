@@ -20,6 +20,7 @@ import time
 
 from exploration import Exploration
 from habitudes import Habitudes
+from personnalite import Personnalite
 from caresse import DetecteurCaresse
 from main_tendue import DetecteurApproche, DetecteurMain
 from taquineries import Malice
@@ -191,6 +192,8 @@ class Brain:
         donnees = mem.donnees.setdefault("ambiance", {}) if mem is not None and hasattr(mem, "donnees") else None
         self.habitudes = Habitudes(donnees, horloge=self.horloge,   # sauvegarde avec la memoire (memoire.py)
                                    sauver=mem.sauver if donnees is not None and hasattr(mem, "sauver") else None)
+        perso = mem.donnees.setdefault("personnalite", {}) if donnees is not None else None
+        self.perso = Personnalite(perso, rng=random.Random(seed), sauver=mem.sauver if perso is not None else None)
         self._t_ecoute = None                   # premiere trame : debut de l'ecoute des habitudes sonores
         self.objet_nouveau = None               # distance (m) devant de l'objet nouvellement remarque
         self.surchauffe = False                 # servos trop chauds (robot.health.motors.max_c)
@@ -313,6 +316,7 @@ class Brain:
             if base in ("stop_taquinerie", "non"):
                 # signal "stop" (bouton HA, "non" vocal) : la taquinerie en cours s'arrete net, plus aucune pendant un moment
                 self.malice.stop(self)
+                self.perso.vit("stop")
                 print(f"[{self.t_global:6.1f}s] stop : plus de taquinerie pendant {self.malice.stop_jusqua - self.t_global:.0f} s",
                       flush=True)
                 if getattr(self.courant, "taquinerie", False) or self.courant.nom == "fier":
@@ -536,9 +540,14 @@ class Brain:
         elif groupe == "pluie":
             self._bascule("meteo_curieux")
 
+    # etat dans lequel il entre -> experience qui faconne sa personnalite (personnalite.py)
+    EXPERIENCES_PAR_ETAT = {"caresse": "caresse", "accueil": "accueil", "remarque": "remarque", "wander": "promenade",
+                            "startle": "sursaut", "soleil": "jeu"}
+
     def _taquinerie(self, noms, humain=False, proba=None):
         """Une taquinerie a la place de la reaction normale ? -> son nom, ou None (budget, familiarite, stop, hasard)."""
-        if self.rng.random() >= (self.P_TAQUINE if proba is None else proba):
+        p = (self.P_TAQUINE if proba is None else proba) * self.perso.envie_taquiner()
+        if self.rng.random() >= min(1.0, p):
             return None
         permises = [n for n in noms if self.malice.permise(self, n, humain=humain)]
         return self.rng.choice(permises) if permises else None
@@ -588,9 +597,10 @@ class Brain:
                 and self.t_global - self._t_tentative >= 60.0            # on lui a laisse une minute pour repondre
                 and self.derniere_interaction < self._t_tentative):
             self.ignores += 1                   # sa derniere demande d'attention est restee sans reponse
+            self.perso.vit("ignore")
             self._tentative_jugee = True
         delai = self.DELAI_ENNUI_S * 2 ** min(self.ignores, 3)      # decouragement progressif : il demande moins
-        if sans_interaction >= self.SEUIL_ENNUI_S and depuis_ennui >= delai:
+        if sans_interaction >= self.SEUIL_ENNUI_S * self.perso.patience_seul() and depuis_ennui >= delai:
             self.derniere_fois["ennui"] = self.t_global
             chat = self.ctx.extras.get("chat")
             chat_visible = chat is not None and getattr(chat.suivi, "visible", False)
@@ -621,7 +631,7 @@ class Brain:
             if coin is not None and self._atteignable(coin, (1.0, 4.0)):
                 self.etats["va_observer"].cible = coin       # en journee : il va regarder la piece depuis son coin
                 return "va_observer"
-        if self.rng.random() < self.P_GAG:
+        if self.rng.random() < self.P_GAG * self.perso.envie_taquiner():
             chat = self.ctx.extras.get("chat")
             gags = [g for g in ("fausse_chute", "fausse_notif") if self.malice.permise(self, g)
                     and not (g == "fausse_chute" and (h.energie < 0.5
@@ -634,7 +644,8 @@ class Brain:
                 and self.malice.permise(self, "mime_vol")):
             return "mime_vol"
         poids = {"look": 0.4, "turn": 0.2 + 0.3 * h.energie,
-                 "wander": (0.15 + 0.4 * h.energie * (0.5 + h.eveil)) * self.MARCHE_PAR_METEO.get(self.meteo, 1.0)}
+                 "wander": ((0.15 + 0.4 * h.energie * (0.5 + h.eveil)) * self.MARCHE_PAR_METEO.get(self.meteo, 1.0)
+                            * self.perso.envie_promenade())}
         # Initiative rare et surprenante (principe Pollen : un duo surprise est un plaisir, un juke-box non) :
         # faible probabilite, et jamais deux fois le meme geste en moins de DELAI_RARE secondes.
         for nom, p in self.RARES.items():
@@ -654,6 +665,10 @@ class Brain:
             self.t_dernier_accueil = self.t_global
         if getattr(self.etats[nom], "taquinerie", False):
             self.malice.noter(self, nom)
+            self.perso.vit("taquinerie")
+        experience = self.EXPERIENCES_PAR_ETAT.get(nom)
+        if experience:
+            self.perso.vit(experience)
         self.courant = self.etats[nom]
         self.courant.entre(self)
         self.t_etat = 0.0
@@ -846,6 +861,7 @@ class Brain:
                 if self._derniere_position is not None:
                     self.exploration.chute(*self._derniere_position, self.t_global)   # "zone noire" apprise
                 self.chutes = [t for t in self.chutes if self.t_global - t <= self.FENETRE_CHUTES_S] + [self.t_global]
+                self.perso.vit("chute")
                 if len(self.chutes) >= self.CHUTES_AGACE:
                     self.veille_jusqua = self.t_global + self.VEILLE_AGACE_S
                     chat = self.ctx.extras.get("chat")
@@ -900,6 +916,7 @@ class Brain:
             self._t_ecoute = self.t_global
         if int(self.t_global / 60.0) != int((self.t_global - dt) / 60.0):
             self.habitudes.avance()             # une fois par minute : changement d'heure
+            self.perso.avance(self.t_global)    # retour lent vers son temperament de base
         if self.courant.nom == "porte":
             self._traite_evenements_porte()
             self.t_etat += dt
