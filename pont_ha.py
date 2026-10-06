@@ -83,7 +83,11 @@ def est_vide(v):
 def lire_config(chemin):
     """Lit `ha.toml` (format a sections, ou l'ancien format plat) et renvoie un dict normalise."""
     with open(chemin, "rb") as f:
-        brut = tomllib.load(f)
+        return normaliser(tomllib.load(f))
+
+
+def normaliser(brut):
+    """Configuration brute (ha.toml, eventuellement completee par l'application : configuration.py) -> dict normalise."""
     ha = brut.get("home_assistant", {})
     cfg = {
         "url": ha.get("url") or brut.get("url"),
@@ -154,6 +158,22 @@ def lire_config(chemin):
     if est_vide(cfg["url"]):
         cfg["url"] = None
     return cfg
+
+
+def tester(url, jeton, delai=6.0):
+    """Page Connexions de l'application : Home Assistant repond-il a cette adresse avec ce jeton ? -> (ok, message)."""
+    import urllib.error
+    import urllib.request
+    if est_vide(url) or not str(url).startswith(("http://", "https://")):
+        return False, "adresse attendue : http://homeassistant.local:8123"
+    req = urllib.request.Request(str(url).rstrip("/") + "/api/", headers={"Authorization": f"Bearer {jeton}"})
+    try:
+        with urllib.request.urlopen(req, timeout=delai) as r:
+            return (r.status == 200), "Home Assistant répond"
+    except urllib.error.HTTPError as e:
+        return False, "jeton refusé" if e.code == 401 else f"erreur HTTP {e.code}"
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        return False, f"injoignable ({getattr(e, 'reason', e)})"
 
 
 def slug(texte):

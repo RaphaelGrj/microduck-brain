@@ -49,8 +49,10 @@ def test_assemblage_selon_disponibilite():
     a = _assemble(["--sans-camera"], sock_tof_existe=False)
     assert set(a["extras"]) == {"memoire", "autotest", "circadien", "garde", "lieu"}, "sans tofd ni camera : seulement la memoire"
     a = _assemble(["--sans-camera", "--micro"], sock_tof_existe=False)
-    assert len(a["sources"]) == 2 and len(a["fils"]) == 1, "le micro est une source d'evenements (avec les lieux)"
+    assert len(a["sources"]) == 3 and len(a["fils"]) == 1, "le micro est une source d'evenements (avec lieux et appli)"
     assert a["lieux"].source in a["sources"]
+    # sans code d'appli : l'appli s'ouvre quand meme, en installation (le telephone choisira le code)
+    assert a["appli"] is not None and a["appli"].en_installation()
 
 
 def test_assemblage_avec_home_assistant():

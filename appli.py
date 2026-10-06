@@ -169,6 +169,17 @@ GARDE = {"voix": "une voix", "choc": "un choc", "porte": "des coups à la porte"
 BATTERIE_FAIBLE_PCT, BATTERIE_REMONTEE_PCT = 20.0, 30.0
 
 
+INSTALLATION_S = 30 * 60             # sans code : l'installation reste ouverte 30 min apres le demarrage
+# profil enfant (code enfant) : regarder, jouer, le retrouver ; ni reglages, ni telecommande des pas, ni sauvegarde
+ENFANT_LECTURE = {"/api/role", "/api/etat", "/api/flux", "/api/carte", "/api/alertes", "/api/design", "/api/lieux", "/api/lieu-carte",
+                  "/api/imprimantes", "/api/choregraphies", "/api/comportements"}
+ENFANT_ECRITURE = {"/api/commande"}
+COMMANDES_ENFANT = {"jouer_balle", "jouer_cache", "jouer_soleil", "fin_jeu", "salut", "toupie", "danse", "stop",
+                    "stop_taquinerie", "ou_es_tu", "regard_gauche", "regard_droite", "regard_haut", "regard_bas",
+                    "regard_centre"}
+SECTIONS_A_REDEMARRER = {"home_assistant", "habitant", "imprimante_directe", "appareil", "cerveau"}
+
+
 COULEUR = re.compile(r"^#[0-9a-fA-F]{6}$")
 DESIGN_VIDE = {"filaments": [], "schemas": [], "actif": None}
 
@@ -214,10 +225,16 @@ def appliquer_restaurations(chemins, log=print):
 
 
 class Appli:
-    def __init__(self, code, port=PORT_DEFAUT, log=print, version=None, hote="0.0.0.0"):
-        if not code or len(str(code)) < 6:
+    def __init__(self, code, port=PORT_DEFAUT, log=print, version=None, hote="0.0.0.0", code_enfant=None):
+        """`code` None : mode INSTALLATION (INSTALLATION_S, reseau local) pour le choisir depuis le telephone."""
+        if code is not None and len(str(code)) < 6:
             raise ValueError("[appli] code : au moins 6 caracteres (c'est la cle de ton canard sur le reseau)")
-        self.code, self.port, self.hote, self.log, self.version = str(code), port, hote, log, version
+        self.code, self.port, self.hote, self.log, self.version = (str(code) if code else None), port, hote, log, version
+        self.code_enfant = str(code_enfant) if code_enfant and len(str(code_enfant)) >= 6 else None
+        self.installation_jusqua = time.monotonic() + INSTALLATION_S if self.code is None else None
+        self.brut = {}                          # configuration (ha.toml + configuration.json), page Connexions
+        self.imprimantes = None
+        self.redemarrage_demande = False
         self.evenements = queue.Queue()
         self.etat = {}
         self.carte = {}
@@ -314,12 +331,20 @@ class Appli:
 
     # -- cote reseau --------------------------------------------------------------------------------------------
     def code_valide(self, essai, ip):
+        """-> "parent" (code de l'appli), "enfant" (code enfant : jeux et regard seulement) ou None."""
         if self._echecs.get(ip, -1e9) > time.monotonic() - 1.0:
-            return False                        # au plus un essai par seconde apres un code faux
-        ok = isinstance(essai, str) and hmac.compare_digest(essai.encode(), self.code.encode())
-        if not ok:
+            return None                         # au plus un essai par seconde apres un code faux
+        role = None
+        if isinstance(essai, str) and self.code and hmac.compare_digest(essai.encode(), self.code.encode()):
+            role = "parent"
+        elif isinstance(essai, str) and self.code_enfant and hmac.compare_digest(essai.encode(), self.code_enfant.encode()):
+            role = "enfant"
+        if role is None:
             self._echecs[ip] = time.monotonic()
-        return ok
+        return role
+
+    def en_installation(self):
+        return self.code is None and self.installation_jusqua is not None and time.monotonic() < self.installation_jusqua
 
     def commande(self, nom):
         evt = COMMANDES.get(nom)
@@ -348,9 +373,14 @@ class Appli:
                 if not adresse_locale(self.client_address[0]):
                     self._json(403, {"erreur": "reseau local seulement"})
                     return False
-                if not appli.code_valide(code if code is not None else self.headers.get("X-Microduck-Code"),
-                                         self.client_address[0]):
+                self.role = appli.code_valide(code if code is not None else self.headers.get("X-Microduck-Code"),
+                                              self.client_address[0])
+                if self.role is None:
                     self._json(401, {"erreur": "code d'appairage"})
+                    return False
+                chemin = urlparse(self.path).path
+                if self.role == "enfant" and chemin not in (ENFANT_LECTURE if self.command == "GET" else ENFANT_ECRITURE):
+                    self._json(403, {"erreur": "reserve aux parents"})
                     return False
                 return True
 
@@ -359,7 +389,9 @@ class Appli:
                 if not adresse_locale(self.client_address[0]):
                     return self._json(403, {"erreur": "reseau local seulement"})
                 if url.path == "/api/sante":
-                    return self._json(200, {"ok": True, "appli": "microduck", "version": appli.version})
+                    return self._json(200, {"ok": True, "appli": "microduck", "version": appli.version,
+                                            "installation": appli.en_installation(),
+                                            "nom": ((appli.brut.get("cerveau") or {}).get("nom") or "Microduck")})
                 if url.path == "/api/etat":
                     if self._autorise():
                         self._json(200, appli.etat)
@@ -367,6 +399,19 @@ class Appli:
                 if url.path == "/api/carte":
                     if self._autorise():
                         self._json(200, appli.carte)
+                    return
+                if url.path == "/api/role":
+                    if self._autorise():
+                        self._json(200, {"role": self.role})
+                    return
+                if url.path == "/api/configuration":
+                    if self._autorise():
+                        import configuration
+                        self._json(200, configuration.pour_appli(appli.brut))
+                    return
+                if url.path == "/api/imprimantes":
+                    if self._autorise():
+                        self._json(200, appli.imprimantes.etat() if appli.imprimantes is not None else [])
                     return
                 if url.path == "/api/alertes":
                     if self._autorise():
@@ -431,8 +476,11 @@ class Appli:
                 if not adresse_locale(self.client_address[0]):
                     return self._json(403, {"erreur": "reseau local seulement"})
                 if chemin not in ("/api/commande", "/api/lieu", "/api/design", "/api/reglages", "/api/presence",
-                                  "/api/restauration"):
+                                  "/api/restauration", "/api/installation", "/api/configuration", "/api/tester-ha",
+                                  "/api/tester-imprimante", "/api/redemarrer", "/api/choregraphies", "/api/comportement"):
                     return self._json(404, {"erreur": "inconnu"})
+                if chemin == "/api/installation":
+                    return self._installation()
                 if not self._autorise():
                     return
                 try:
@@ -443,6 +491,46 @@ class Appli:
                         raise ValueError
                 except (ValueError, AttributeError):
                     return self._json(400, {"erreur": "JSON attendu"})
+                if chemin == "/api/configuration":
+                    import configuration
+                    section = corps.get("section")
+                    try:
+                        propre = configuration.ecrire(section, corps.get("valeur"))
+                    except OSError:
+                        return self._json(500, {"erreur": "enregistrement impossible"})
+                    if propre is None:
+                        return self._json(400, {"erreur": f"section {section} invalide"})
+                    appli.brut = configuration.fusion(appli.brut, {section: propre})
+                    if section == "appli":                      # nouveaux codes : tout de suite
+                        appli.code, appli.code_enfant = propre["code"], propre.get("code_enfant")
+                    return self._json(200, {"ok": True, "redemarrer": section in SECTIONS_A_REDEMARRER,
+                                            "configuration": configuration.pour_appli(appli.brut)})
+                if chemin == "/api/tester-ha":
+                    import configuration
+                    import pont_ha
+                    jeton = corps.get("token")
+                    if jeton in (None, "", configuration.SECRET):
+                        jeton = (appli.brut.get("home_assistant") or {}).get("token") or ""
+                    ok, message = pont_ha.tester(corps.get("url"), jeton)
+                    return self._json(200, {"ok": ok, "message": message})
+                if chemin == "/api/tester-imprimante":
+                    import configuration
+                    import imprimantes
+                    if corps.get("type") not in configuration.TYPES_IMPRIMANTE or not configuration.adresse_locale(corps.get("adresse")):
+                        return self._json(400, {"erreur": "imprimante du reseau local attendue"})
+                    cle = corps.get("cle_api")
+                    if cle in (None, "", configuration.SECRET):
+                        cle = next((i.get("cle_api") for i in appli.brut.get("imprimante_directe", [])
+                                    if i.get("adresse") == corps.get("adresse")), None)
+                    try:
+                        lu = (imprimantes.lire_prusalink(corps["adresse"], cle) if corps["type"] == "prusalink"
+                              else imprimantes.lire_sdcp(corps["adresse"]))
+                        return self._json(200, {"ok": True, "etat": lu["etat"], "progression": lu.get("progression")})
+                    except Exception as e:
+                        return self._json(200, {"ok": False, "message": str(e)[:120]})
+                if chemin == "/api/redemarrer":
+                    appli.redemarrage_demande = True            # canard.py sort proprement, systemd le relance
+                    return self._json(200, {"ok": True})
                 if chemin == "/api/presence":
                     nom = corps.get("nom")
                     nom = "".join(c for c in nom if c.isprintable() and c not in "|:").strip()[:40] if isinstance(nom, str) else ""
@@ -497,9 +585,38 @@ class Appli:
                     ok, raison = appli.lieux.action(str(corps.get("action")), texte(corps.get("id")), texte(corps.get("nom")))
                     return self._json(200 if ok else 400, {"ok": True} if ok else {"erreur": raison})
                 nom = corps.get("commande")
+                if self.role == "enfant" and nom not in COMMANDES_ENFANT:
+                    return self._json(403, {"erreur": "reserve aux parents"})
                 if not appli.commande(nom):
                     return self._json(400, {"erreur": f"commande inconnue : {nom}"})
                 self._json(200, {"ok": True, "commande": nom})
+
+            def _installation(self):
+                """Premier demarrage, sans code : le telephone choisit le code, le nom du canard et les habitants."""
+                if not adresse_locale(self.client_address[0]):
+                    return self._json(403, {"erreur": "reseau local seulement"})
+                if not appli.en_installation():
+                    return self._json(403, {"erreur": "installation fermee (redemarre le canard pour la rouvrir)"})
+                try:
+                    n = min(int(self.headers.get("Content-Length", "0")), 4096)
+                    corps = json.loads(self.rfile.read(n) or b"{}")
+                except (ValueError, AttributeError):
+                    return self._json(400, {"erreur": "JSON attendu"})
+                import configuration
+                code = corps.get("code") if isinstance(corps, dict) else None
+                if not isinstance(code, str) or len(code) < 6:
+                    return self._json(400, {"erreur": "code : 6 caracteres au moins"})
+                try:
+                    configuration.ecrire("appli", {"code": code})
+                    cerveau = configuration.ecrire("cerveau", {"nom": corps.get("nom"), "garde": False})
+                    habitants = configuration.ecrire("habitant", [{"nom": h} for h in (corps.get("habitants") or [])
+                                                                  if isinstance(h, str)])
+                except OSError:
+                    return self._json(500, {"erreur": "enregistrement impossible"})
+                appli.brut = configuration.fusion(appli.brut, {"cerveau": cerveau, "habitant": habitants or []})
+                appli.code, appli.installation_jusqua = code, None
+                appli.log("application : installation faite depuis le telephone")
+                return self._json(200, {"ok": True})
 
             def _fichier(self, chemin):
                 nom = "index.html" if chemin in ("/", "") else chemin.lstrip("/")

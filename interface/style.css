@@ -322,3 +322,19 @@ input {
 .fiche ul { margin: 0; padding-left: 20px; }
 .fiche li { margin: 3px 0; }
 .fiche a { color: var(--orange-fonce); }
+
+/* Installation, connexions, profil enfant */
+.champ { display: block; text-align: left; margin: 10px 0; font-weight: 600; }
+.champ small { font-weight: 400; color: var(--discret); }
+.champ input, .ligne input, .ligne select { display: block; width: 100%; margin-top: 6px; font: inherit; color: var(--texte);
+  background: var(--carte); border: 1px solid var(--bord); border-radius: 10px; min-height: 44px; padding: 0 10px; }
+.lignes { display: grid; gap: 10px; margin: 8px 0 10px; }
+.ligne { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; align-items: end; padding: 8px;
+  border: 1px solid var(--bord); border-radius: 12px; }
+.ligne input, .ligne select { margin-top: 0; min-width: 0; }
+.ligne .large-ligne { grid-column: 1 / -1; }
+.ligne > button { min-height: 44px; padding: 4px 10px; }
+.ligne .etat-ligne { grid-column: 1 / -1; font-size: .82rem; color: var(--discret); }
+.barre-impression { height: 6px; border-radius: 3px; background: var(--barre); overflow: hidden; margin-top: 4px; }
+.barre-impression i { display: block; height: 100%; background: var(--orange); }
+body.enfant [data-parent] { display: none !important; }

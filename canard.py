@@ -58,7 +58,7 @@ def version_du_cerveau():
         return None
 
 
-def assembler(client, args, log=print, cfg=None, cerveau=None, appli_cfg=None):
+def assembler(client, args, log=print, cfg=None, cerveau=None, appli_cfg=None, brut=None):
     """-> dict(extras, sources, crochets, options, pont, fils) ; `cfg` = config HA deja lue (ou None), `cerveau` =
     section [cerveau] du fichier de config (lue meme sans Home Assistant : le canard vit sans lui)."""
     cerveau = cerveau if cerveau is not None else ((cfg or {}).get("cerveau") or {})
@@ -127,15 +127,19 @@ def assembler(client, args, log=print, cfg=None, cerveau=None, appli_cfg=None):
         log(f"micro : {os.environ.get('MICRODUCK_MICRO') or 'peripherique ALSA par defaut'} (reflexes sonores)")
     appli = None
     appli_cfg = appli_cfg if appli_cfg is not None else ((cfg or {}).get("appli") or {})
-    if appli_cfg.get("code") and not pont_ha.est_vide(appli_cfg.get("code")):
+    if appli_cfg.get("actif", True) is not False:
+        # sans code : l'appli s'ouvre en « installation » (quelques minutes, reseau local) pour le choisir depuis le
+        # telephone, avec le nom du canard et les habitants - sans jamais editer ha.toml
         import appli as appli_mod
+        code = None if pont_ha.est_vide(appli_cfg.get("code")) else appli_cfg.get("code")
         try:
-            appli = appli_mod.Appli(appli_cfg["code"], port=int(appli_cfg.get("port", appli_mod.PORT_DEFAUT)), log=log,
-                                    version=version_du_cerveau())
+            appli = appli_mod.Appli(code, port=int(appli_cfg.get("port", appli_mod.PORT_DEFAUT)), log=log,
+                                    version=version_du_cerveau(), code_enfant=appli_cfg.get("code_enfant"))
             sources.append(appli.source)
             crochets.append(appli.photographier)
             appli.cerveau = dict(cerveau)
             appli._reglages_a_appliquer = dict(cerveau)     # routines programmees : actives des le demarrage
+            appli.brut = brut if brut is not None else {}
         except ValueError as e:
             log(f"application Microduck desactivee : {e}")
     lieux = None
@@ -147,6 +151,13 @@ def assembler(client, args, log=print, cfg=None, cerveau=None, appli_cfg=None):
         if appli is not None:
             appli.lieux = lieux
             lieux.carte_actuelle = lambda: appli.carte
+    imprimantes = None
+    if (brut or {}).get("imprimante_directe"):
+        import imprimantes as imprimantes_mod              # Prusa / Elegoo suivies en direct, sans Home Assistant
+        imprimantes = imprimantes_mod.Imprimantes(brut["imprimante_directe"], log=log)
+        sources.append(imprimantes.source)
+        if appli is not None:
+            appli.imprimantes = imprimantes
     pont, options = None, pont_ha.options_cerveau({"cerveau": cerveau})
     if cfg is not None:
         pont = pont_ha.PontHA(cfg, pont_ha.lire_jeton(cfg), log=log)
@@ -156,7 +167,7 @@ def assembler(client, args, log=print, cfg=None, cerveau=None, appli_cfg=None):
     if options:
         log(f"routines : {options}")
     return {"extras": extras, "sources": sources, "crochets": crochets, "options": options, "pont": pont, "fils": fils,
-            "appli": appli, "lieux": lieux}
+            "appli": appli, "lieux": lieux, "imprimantes": imprimantes}
 
 
 def main():
@@ -164,21 +175,29 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     chemin = Path(args[0]) if args else Path(__file__).parent / "ha.toml"
     duree = float(args[1]) if len(args) > 1 else 10 * 365 * 86400.0
-    cfg, cerveau, appli_cfg = None, {}, {}
-    if chemin.exists():
+    import tomllib
+    import configuration
+    brut = {}
+    if chemin.exists():                                # ha.toml est facultatif : l'appli sait tout configurer
         pont_ha.avertir_si_non_ignore(chemin)
-        cfg = pont_ha.lire_config(chemin)
-        cerveau = cfg.get("cerveau") or {}
-        appli_cfg = cfg.get("appli") or {}
-        if "--sans-ha" in sys.argv:
-            cfg = None
-        elif cfg["url"] is None:
-            print(f"{chemin} : pas d'URL Home Assistant, pont desactive", flush=True)
-            cfg = None
+        with open(chemin, "rb") as f:
+            brut = tomllib.load(f)
+    brut = configuration.fusion(brut, configuration.lire())
+    cfg = pont_ha.normaliser(brut)
+    cerveau, appli_cfg = cfg.get("cerveau") or {}, cfg.get("appli") or {}
+    if "--sans-ha" in sys.argv:
+        cfg = None
+    elif cfg["url"] is None:
+        print("pas d'adresse Home Assistant : le canard vit sans (a activer dans l'appli, page Connexions)", flush=True)
+        cfg = None
+    elif not (cfg.get("token") or cfg.get("token_file") or os.environ.get("HA_TOKEN")):
+        print("Home Assistant sans jeton : pont desactive (a renseigner dans l'appli, page Connexions)", flush=True)
+        cfg = None
     c = RobotdClient(SOCK_PATH)
     hz = ((cfg or {}).get("reseau") or {}).get("etat_hz")
     c.request("robot.subscribe", {"hz": int(hz)} if isinstance(hz, int) and 10 <= hz <= 50 else {})
-    a = assembler(c, sys.argv[1:], log=lambda m: print(m, flush=True), cfg=cfg, cerveau=cerveau, appli_cfg=appli_cfg)
+    a = assembler(c, sys.argv[1:], log=lambda m: print(m, flush=True), cfg=cfg, cerveau=cerveau, appli_cfg=appli_cfg,
+                  brut=brut)
     for f in a["fils"]:
         f.start()
     if a["pont"] is not None:
@@ -186,6 +205,7 @@ def main():
     if a["appli"] is not None:
         a["appli"].demarrer()
     arret_lieux = a["lieux"].demarrer() if a["lieux"] is not None else None
+    arret_imprimantes = a["imprimantes"].demarrer() if a["imprimantes"] is not None else None
 
     def source():
         return [e for s in a["sources"] for e in s()]
@@ -198,6 +218,10 @@ def main():
     def crochet(b, state):
         for f in a["crochets"]:
             f(b, state)
+        if a["appli"] is not None and a["appli"].redemarrage_demande:
+            # depuis l'appli (nouvelle configuration) : sortie propre, systemd le relance (Restart=always)
+            print("redemarrage demande par l'application", flush=True)
+            raise SystemExit(0)
     try:
         brain.run(c, duree, source=source, a_chaque_tick=crochet, extras=a["extras"], **a["options"])
     finally:
@@ -209,6 +233,8 @@ def main():
             a["appli"].arreter()
         if arret_lieux is not None:
             arret_lieux.set()
+        if arret_imprimantes is not None:
+            arret_imprimantes.set()
         mem = a["extras"].get("memoire")
         if mem is not None and hasattr(mem, "fermer"):
             mem.fermer()

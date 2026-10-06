@@ -96,9 +96,10 @@ def test_seul_pont_ha_parle_au_reseau():
     """Hors du pont Home Assistant, aucun module embarque n'ouvre de connexion reseau autre que locale."""
     reseau = re.compile(r"urlopen|websockets|paho|requests\.|socket\.AF_INET|http\.client|http\.server")
     for nom in MODULES:
-        if nom in ("pont_ha.py", "vision.py", "appli.py"):
+        if nom in ("pont_ha.py", "vision.py", "appli.py", "imprimantes.py"):
             # vision : la camera en local seulement (canard.verifier_local) ; appli : serveur du RESEAU LOCAL seulement,
-            # qui n'envoie que des etats (test_appli.test_reseau_local_seulement, et aucun appel sortant ci-dessous)
+            # qui n'envoie que des etats (test_appli.test_reseau_local_seulement, et aucun appel sortant ci-dessous) ;
+            # imprimantes : LIT les imprimantes du reseau local seulement (test_imprimante_du_reseau_local_seulement)
             continue
         code = (RACINE / nom).read_text()
         assert not reseau.search(code), f"{nom} ouvre une connexion reseau"
@@ -108,3 +109,14 @@ def test_l_application_ne_fait_aucun_appel_sortant():
     """appli.py repond au telephone ; il n'ouvre lui-meme aucune connexion vers l'exterieur."""
     code = (RACINE / "appli.py").read_text()
     assert not re.search(r"urlopen|websockets|paho|requests\.|http\.client|socket\.AF_INET", code)
+
+
+def test_imprimante_du_reseau_local_seulement():
+    """Les imprimantes suivies en direct sont sur le reseau local : une adresse Internet est refusee."""
+    import configuration
+    import imprimantes
+    assert configuration.adresse_locale("192.168.1.30") and configuration.adresse_locale("prusa-mk4.local")
+    assert not configuration.adresse_locale("8.8.8.8") and not configuration.adresse_locale("prusa.example.com")
+    i = imprimantes.Imprimantes([{"nom": "A", "type": "prusalink", "adresse": "8.8.8.8"},
+                                 {"nom": "B", "type": "sdcp", "adresse": "10.0.0.5"}], log=lambda m: None)
+    assert [x["nom"] for x in i.liste] == ["B"]

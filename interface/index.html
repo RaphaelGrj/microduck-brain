@@ -18,13 +18,34 @@
     <div class="carte appairage">
       <img src="/icone.png" alt="" width="88" height="88" class="icone">
       <h1>Micro<span>duck</span></h1>
-      <p>Entre le code d'appairage de ton Microduck (section <code>[appli]</code> de <code>ha.toml</code>).</p>
+      <p>Entre le code d'appairage de ton Microduck (choisi à son installation).</p>
       <form id="form-code">
         <input id="code" type="password" autocomplete="current-password" inputmode="text" placeholder="Code"
                aria-label="Code d'appairage" required minlength="6">
         <button type="submit" class="principal">Se connecter</button>
       </form>
       <p id="erreur-code" class="erreur" role="alert"></p>
+    </div>
+  </section>
+
+  <!-- Installation : premier demarrage, sans code (30 min apres son allumage, reseau local) -->
+  <section id="installation" class="ecran" hidden>
+    <div class="carte appairage">
+      <img src="/icone.png" alt="" width="88" height="88" class="icone">
+      <h1>Bienvenue !</h1>
+      <p>Ton Microduck est neuf. Trois choses et c'est parti.</p>
+      <form id="form-installation">
+        <label class="champ">Son nom<input id="i-nom" maxlength="40" placeholder="Microduck" required></label>
+        <label class="champ">Qui vit avec lui ? <small>(prénoms, séparés par des virgules)</small>
+          <input id="i-habitants" maxlength="200" placeholder="Raphaël, Léa"></label>
+        <label class="champ">Code de l'appli <small>(6 caractères au moins : la clé de ton canard)</small>
+          <input id="i-code" type="password" minlength="6" required autocomplete="new-password"></label>
+        <label class="champ">Encore une fois<input id="i-code2" type="password" minlength="6" required autocomplete="new-password"></label>
+        <button type="submit" class="principal">C'est parti</button>
+      </form>
+      <p id="erreur-installation" class="erreur" role="alert"></p>
+      <p class="discret petit">Home Assistant, imprimantes, appareils : plus tard, dans Réglages → Connexions. Tout est
+        facultatif.</p>
     </div>
   </section>
 
@@ -70,6 +91,10 @@
           <div class="carte jauge"><span class="libelle">Batterie</span><div class="barre"><i id="b-batterie"></i></div><b id="v-batterie">—</b></div>
           <div class="carte"><span class="libelle">À la maison</span><b id="presents">—</b></div>
         </div>
+        <div class="carte" id="carte-impressions" hidden>
+          <h2>Impressions</h2>
+          <ul id="impressions" class="liste-choix"></ul>
+        </div>
         <div class="carte" id="carte-alertes" hidden>
           <h2>Alertes</h2>
           <ul id="alertes-liste" class="liste alertes"></ul>
@@ -113,7 +138,7 @@
 
       <!-- Télécommande -->
       <div class="page" data-page="commande" hidden>
-        <div class="carte">
+        <div class="carte" data-parent>
           <h2>Marcher</h2>
           <p class="discret">Petits pas guidés : il refuse d'avancer s'il y a un obstacle ou un vide. Pas de marche arrière (il ne voit pas derrière).</p>
           <div class="croix">
@@ -137,7 +162,7 @@
 
       <!-- Maintenance -->
       <div class="page" data-page="sante" hidden>
-        <details class="carte mise-en-route" id="mise-en-route">
+        <details class="carte mise-en-route" id="mise-en-route" data-parent>
           <summary><h2>Mise en route</h2><span id="mer-progres" class="etiquette"></span></summary>
           <p class="discret petit">À la livraison, dans l'ordre. Les points marqués « auto » se cochent tout seuls.</p>
           <ul id="mer-liste" class="liste-choix"></ul>
@@ -146,7 +171,7 @@
           <h2>Diagnostic</h2>
           <p id="diag-resume" class="discret">—</p>
           <ul id="diag-detail" class="liste"></ul>
-          <button data-cmd="diagnostic" class="principal large">Lancer le diagnostic</button>
+          <button data-cmd="diagnostic" class="principal large" data-parent>Lancer le diagnostic</button>
         </div>
         <div class="carte">
           <h2>Batterie</h2>
@@ -200,6 +225,12 @@
             <button data-cmd="stop_taquinerie">Couper</button></div>
           <div class="reglage"><div><b>Sa carte</b><p class="discret">L'effacer (meubles déplacés, nouvel endroit). Elle repart aussi de zéro à chaque démarrage.</p></div>
             <button id="oublier-carte">Effacer</button></div>
+        </div>
+        <div class="carte" data-parent>
+          <h2>Connexions et configuration</h2>
+          <p class="discret petit">Son nom, les habitants, les codes, Home Assistant (facultatif), tes imprimantes 3D,
+            les appareils de la maison.</p>
+          <button id="ouvrir-connexions" class="principal large">Ouvrir</button>
         </div>
         <div class="carte" id="carte-journee" hidden>
           <h2>Sa journée</h2>
@@ -283,7 +314,7 @@
       <button data-onglet="commande"><span>🕹️</span>Commander</button>
       <button data-onglet="sante"><span>🩺</span>Santé</button>
       <button data-onglet="caractere"><span>🎭</span>Caractère</button>
-      <button data-onglet="reglages"><span>⚙️</span>Réglages</button>
+      <button data-onglet="reglages" data-parent><span>⚙️</span>Réglages</button>
       <button data-onglet="journal"><span>📜</span>Journal</button>
     </nav>
     <div id="toast" role="status" aria-live="polite"></div>
@@ -354,6 +385,62 @@
     </main>
   </section>
 
+  <!-- Connexions : la configuration du canard, sans editer ha.toml (configuration.py) -->
+  <section id="connexions" class="ecran plein" hidden>
+    <header class="entete">
+      <button class="icone-bouton retour" data-fermer aria-label="Retour">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="titre-plein"><h1>Connexions</h1><p class="discret">Configuration du canard</p></div>
+    </header>
+    <main>
+      <div id="redemarrer-bandeau" class="suggestion" hidden>
+        <span>Redémarre le cerveau pour appliquer.</span><button id="redemarrer" class="principal">Redémarrer</button>
+      </div>
+      <div class="carte">
+        <h2>Le canard</h2>
+        <label class="champ">Son nom<input id="c-nom" maxlength="40"></label>
+        <div class="reglage"><div><b>Mode garde au démarrage</b><p class="discret">Maison vide : il signale une voix, un choc.</p></div>
+          <input type="checkbox" id="c-garde" class="case"></div>
+        <button class="large" data-sauver="cerveau">Enregistrer</button>
+      </div>
+      <div class="carte">
+        <h2>Habitants</h2>
+        <p class="discret petit">L'entité Home Assistant (person.…) est facultative : elle sert à savoir qui est à la maison.</p>
+        <div id="c-habitants" class="lignes"></div>
+        <div class="boutons"><button id="c-habitant-ajout">Ajouter</button><button data-sauver="habitant">Enregistrer</button></div>
+      </div>
+      <div class="carte">
+        <h2>Codes</h2>
+        <label class="champ">Code de l'appli <small>(vide : inchangé)</small><input id="c-code" type="password" minlength="6" autocomplete="new-password"></label>
+        <label class="champ">Code enfant <small>(jouer, regarder, le retrouver ; ni réglages ni télécommande)</small>
+          <input id="c-code-enfant" type="password" autocomplete="new-password"></label>
+        <button class="large" data-sauver="appli">Enregistrer</button>
+      </div>
+      <div class="carte">
+        <h2>Home Assistant <small class="discret">(facultatif)</small></h2>
+        <div class="reglage"><div><b>Relier à Home Assistant</b><p class="discret">États du canard, événements de la maison.</p></div>
+          <input type="checkbox" id="c-ha-actif" class="case"></div>
+        <label class="champ">Adresse<input id="c-ha-url" placeholder="http://homeassistant.local:8123" inputmode="url"></label>
+        <label class="champ">Jeton d'accès longue durée <small>(profil HA → Sécurité)</small><input id="c-ha-jeton" type="password" autocomplete="off"></label>
+        <p id="c-ha-test" class="discret petit"></p>
+        <div class="boutons"><button id="c-ha-tester">Tester</button><button data-sauver="home_assistant">Enregistrer</button></div>
+      </div>
+      <div class="carte">
+        <h2>Imprimantes 3D</h2>
+        <p class="discret petit">Suivies en direct sur le Wi-Fi, sans Home Assistant : il réagit à la fin ou à l'échec
+          d'une impression. Prusa : PrusaLink et sa clé API ; Elegoo : protocole SDCP.</p>
+        <div id="c-imprimantes" class="lignes"></div>
+        <div class="boutons"><button id="c-imprimante-ajout">Ajouter</button><button data-sauver="imprimante_directe">Enregistrer</button></div>
+      </div>
+      <div class="carte">
+        <h2>Appareils <small class="discret">(Home Assistant)</small></h2>
+        <p class="discret petit">Sonnette, machines, détecteur de fumée, aspirateur, météo… par leur entité Home Assistant.</p>
+        <div id="c-appareils" class="lignes"></div>
+        <div class="boutons"><button id="c-appareil-ajout">Ajouter</button><button data-sauver="appareil">Enregistrer</button></div>
+      </div>
+    </main>
+  </section>
+
   <dialog id="vue-fiche" class="vue-lieu">
     <h2>Fiche d'impression</h2>
     <p id="fiche-schema" class="discret petit"></p>
@@ -368,5 +455,6 @@
   <script src="/demo.js"></script>
   <script src="/app.js"></script>
   <script src="/boutique.js"></script>
+  <script src="/connexions.js"></script>
 </body>
 </html>

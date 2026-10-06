@@ -656,6 +656,7 @@ async function entrer(c) {
     rafraichirCarte();
     verifierAlertes();
     chargerLook();
+    if (window.apresConnexion) window.apresConnexion();       // connexions.js : profil, impressions
     // APK : il retient l'adresse et le code pour verifier les alertes en arriere-plan (notifications, widget)
     if (window.MicroduckAndroid && !window.MicroduckDemo) window.MicroduckAndroid.retenir(location.origin, c);
   } catch (x) {
@@ -704,4 +705,10 @@ $("#oublier").addEventListener("click", () => { memoire("microduck-code", null);
 $("#form-code").addEventListener("submit", (ev) => { ev.preventDefault(); entrer($("#code").value.trim()); });
 
 const enregistre = window.MicroduckDemo ? "demo" : memoire("microduck-code");
-if (enregistre) entrer(enregistre); else $("#appairage").hidden = false;
+if (enregistre) entrer(enregistre);
+else {
+  // premier demarrage sans code : l'ecran d'installation (connexions.js) ; sinon l'appairage
+  fetch("/api/sante").then((r) => r.json()).then((s) => {
+    if (s.installation) $("#installation").hidden = false; else $("#appairage").hidden = false;
+  }).catch(() => { $("#appairage").hidden = false; });
+}

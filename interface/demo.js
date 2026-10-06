@@ -195,6 +195,15 @@
     actif: "Noir et orange",
   };
 
+  const configDemo = {
+    cerveau: { nom: "Microduck", garde: false }, appli: { code: "••••••", code_enfant: null },
+    home_assistant: { actif: true, url: "http://homeassistant.local:8123", token: "••••••" },
+    habitant: [{ nom: "Raphaël", entite: "person.raphael" }],
+    imprimante_directe: [{ nom: "MK4S", type: "prusalink", adresse: "192.168.1.30", cle_api: "••••••" },
+      { nom: "Saturn 4 Ultra", type: "sdcp", adresse: "192.168.1.31", cle_api: null }],
+    appareil: [{ nom: "Sonnette", type: "sonnette", entite: "binary_sensor.sonnette" }],
+  };
+
   function api(chemin, corps) {
     if (chemin === "/api/commande") return commande(corps.commande);
     if (chemin === "/api/lieu") return actionLieu(corps);
@@ -203,6 +212,19 @@
       const depuis = +new URLSearchParams(chemin.split("?")[1]).get("depuis") || 0;
       return { maintenant: Date.now() / 1000, alertes: alertes.filter((a) => a.t > depuis) };
     }
+    if (chemin === "/api/role") return { role: "parent" };
+    if (chemin === "/api/imprimantes") {
+      const t = (Date.now() / 1000 - debut) / 600;
+      return [{ nom: "MK4S", type: "prusalink", etat: "en_cours", joignable: true, progression: Math.min(99, 64 + t * 10), reste_s: 2700 },
+        { nom: "Saturn 4 Ultra", type: "sdcp", etat: "finie", joignable: true, progression: 100 }];
+    }
+    if (chemin === "/api/configuration") {
+      if (corps) configDemo[corps.section] = corps.valeur;
+      return corps ? { ok: true, redemarrer: corps.section !== "appli", configuration: configDemo } : configDemo;
+    }
+    if (chemin === "/api/tester-ha") return { ok: false, message: "démo : pas de Home Assistant ici" };
+    if (chemin === "/api/tester-imprimante") return { ok: true, etat: "en_cours", progression: 64 };
+    if (chemin === "/api/redemarrer") return { ok: true };
     if (chemin === "/api/sauvegarde") return { format: "microduck-sauvegarde", version: 1, date: Date.now() / 1000,
       cerveau: "démo", fichiers: { "design.json": DESIGN, "reglages.json": reglagesDemo } };
     if (chemin === "/api/restauration") return { ok: true, redemarrer: true };
