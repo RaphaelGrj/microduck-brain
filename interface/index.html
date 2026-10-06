@@ -34,7 +34,15 @@
         <h1 id="titre">Micro<span>duck</span></h1>
         <p id="sous-titre" class="discret">Connexion…</p>
       </div>
-      <span id="liaison" class="pastille" title="Liaison avec Microduck">●</span>
+      <div class="raccourcis">
+        <button id="ouvrir-design" class="icone-bouton" aria-label="Design : ses couleurs">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.7-.8 1.7-1.6 0-.5-.2-.8-.4-1.1-.3-.3-.4-.6-.4-1 0-.9.7-1.6 1.6-1.6H16a5 5 0 0 0 5-5C21 6.4 17 3 12 3Z"/><circle cx="7.5" cy="11.5" r="1.2"/><circle cx="10" cy="7.5" r="1.2"/><circle cx="14.5" cy="7.5" r="1.2"/><circle cx="17" cy="11.5" r="1.2"/></svg>
+        </button>
+        <button id="ouvrir-boutique" class="icone-bouton" aria-label="Marketplace : pièces à imprimer">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14l-1 12H6L5 8Z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8"/></svg>
+        </button>
+        <span id="liaison" class="pastille" title="Liaison avec Microduck">●</span>
+      </div>
     </header>
 
     <main>
@@ -220,6 +228,52 @@
     </nav>
     <div id="toast" role="status" aria-live="polite"></div>
   </section>
+  <!-- Design : le vrai Microduck en 3D (modele officiel, outils/modele_3d.py), a recolorer avant d'imprimer -->
+  <section id="design" class="ecran plein" hidden>
+    <header class="entete">
+      <button class="icone-bouton retour" data-fermer aria-label="Retour">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="titre-plein"><h1>Design</h1><p class="discret" id="design-schema">Couleurs d'origine</p></div>
+      <button id="design-comparer" class="icone-bouton" aria-label="Comparer avec l'origine (maintenir)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4v16"/><path d="M12 4a8 8 0 0 1 0 16Z" class="plein-svg"/></svg></button>
+    </header>
+    <div id="vue3d" class="vue3d"><p id="vue3d-attente" class="discret centre">Chargement du Microduck…</p></div>
+    <main>
+      <div class="carte">
+        <div class="ligne-titre"><h2 id="groupe-nom">Touche une pièce</h2><span id="groupe-info" class="discret"></span></div>
+        <div id="nuancier" class="nuancier" aria-label="Couleurs"></div>
+        <div class="boutons">
+          <label class="bouton-like">Autre couleur<input id="couleur-libre" type="color" value="#f26a1b"></label>
+          <button id="groupe-origine">Couleur d'origine</button>
+        </div>
+        <div class="boutons">
+          <label class="bouton-like">Ma pièce (STL)<input id="stl-perso" type="file" accept=".stl,model/stl,application/sla" hidden></label>
+          <button id="stl-retirer" disabled>Pièce d'origine</button>
+        </div>
+        <p class="discret petit">Dessine ta pièce à partir du STL d'origine, dans le même repère : elle se pose alors
+          exactement à sa place.</p>
+      </div>
+      <div class="carte">
+        <h2>Schémas de couleurs</h2>
+        <ul id="schemas" class="liste-choix"></ul>
+        <div class="boutons">
+          <button id="schema-sauver" class="principal">Enregistrer</button>
+          <button id="schema-nouveau">Repartir de l'origine</button>
+        </div>
+      </div>
+      <div class="carte">
+        <h2>Mes filaments</h2>
+        <p class="discret petit">Tes bobines en stock : elles apparaissent en premier dans le nuancier.</p>
+        <ul id="filaments" class="liste-choix"></ul>
+        <div class="ajout-filament">
+          <input id="filament-nom" placeholder="Ex. PLA orange Prusament" maxlength="40" aria-label="Nom du filament">
+          <input id="filament-couleur" type="color" value="#f26a1b" aria-label="Couleur du filament">
+          <button id="filament-ajouter">Ajouter</button>
+        </div>
+      </div>
+    </main>
+  </section>
+
   <script src="/demo.js"></script>
   <script src="/app.js"></script>
 </body>

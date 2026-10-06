@@ -164,10 +164,22 @@
     return { ok: true };
   }
 
+  const DESIGN = {
+    filaments: [{ nom: "PLA Prusament Orange", couleur: "#f26a1b" }, { nom: "PLA Galaxy Black", couleur: "#2b2a30" },
+      { nom: "PETG Blanc", couleur: "#f2f1ec" }],
+    schemas: [{ nom: "Noir et orange", couleurs: { dessus_tete: "#2b2a30", coques: "#2b2a30", cuisses: "#2b2a30",
+      face: "#f2f1ec", bec: "#f26a1b", pieds: "#f26a1b", dessous_tete: "#f26a1b" } }],
+    actif: null,
+  };
+
   function api(chemin, corps) {
     if (chemin === "/api/commande") return commande(corps.commande);
     if (chemin === "/api/lieu") return actionLieu(corps);
     if (chemin === "/api/carte") return carte();
+    if (chemin === "/api/design") {                   // schemas et filaments : dans ce telephone, en demo
+      if (corps) { try { localStorage.setItem("microduck-demo-design", JSON.stringify(corps)); } catch (e) { /* prive */ } return { ok: true }; }
+      try { return JSON.parse(localStorage.getItem("microduck-demo-design")) || DESIGN; } catch (e) { return DESIGN; }
+    }
     if (chemin === "/api/lieux") return resumeLieux();
     if (chemin.startsWith("/api/lieu-carte")) return carteDe(new URLSearchParams(chemin.split("?")[1]).get("id"));
     return instantane();

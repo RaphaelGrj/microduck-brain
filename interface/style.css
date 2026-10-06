@@ -217,3 +217,49 @@ input {
 .archives > summary { cursor: pointer; color: var(--discret); padding: 6px 0; }
 .vue-lieu { width: min(92vw, 520px); border: 0; border-radius: 18px; padding: 18px; background: var(--carte); color: var(--texte); }
 .vue-lieu::backdrop { background: rgba(0, 0, 0, .45); }
+
+/* Raccourcis en haut a droite (design, marketplace) */
+.raccourcis { display: flex; align-items: center; gap: 4px; }
+.icone-bouton { min-height: 40px; width: 40px; padding: 8px; border: 0; background: transparent; border-radius: 10px; }
+.icone-bouton svg { width: 24px; height: 24px; fill: none; stroke: var(--orange-fonce); stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round; }
+.icone-bouton circle { fill: var(--orange-fonce); stroke: none; }
+#design-comparer circle { fill: none; stroke: var(--orange-fonce); }
+.icone-bouton .plein-svg { fill: var(--orange-fonce); stroke: none; }
+.icone-bouton:active { background: var(--barre); }
+
+/* Ecrans plein (design, marketplace) par-dessus l'appli */
+.ecran.plein { position: fixed; inset: 0; z-index: 10; overflow-y: auto; background: var(--fond); }
+.ecran.plein .entete { justify-content: flex-start; gap: 6px; }
+.titre-plein { flex: 1; }
+.titre-plein h1 { font-size: 1.3rem; margin: 0; }
+.titre-plein p { margin: 0; font-size: .85rem; }
+.vue3d { position: relative; height: 46vh; min-height: 260px; margin: -14px 0 14px;
+  background: radial-gradient(circle at 50% 40%, var(--carte), var(--fond)); touch-action: none; }
+.vue3d canvas { display: block; width: 100%; height: 100%; }
+.vue3d p { position: absolute; inset: 45% 0 auto; }
+.ligne-titre { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.petit { font-size: .82rem; }
+.nuancier { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
+.nuancier button { width: 40px; height: 40px; min-height: 0; padding: 0; border-radius: 50%; border: 2px solid var(--bord); }
+.nuancier button[aria-pressed="true"] { outline: 3px solid var(--orange); outline-offset: 2px; }
+.nuancier .separateur { width: 100%; height: 0; }
+.bouton-like { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 12px;
+  border-radius: 12px; background: var(--barre); border: 1px solid var(--bord); cursor: pointer; }
+.bouton-like input[type=color] { width: 30px; height: 30px; border: 0; padding: 0; background: none; border-radius: 50%; }
+.bouton-like input[type=color]:disabled { opacity: .35; }
+.boutons + .boutons { margin-top: 10px; }
+.liste-choix { list-style: none; padding: 0; margin: 0 0 10px; }
+.liste-choix li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--bord); }
+.liste-choix li:last-child { border-bottom: 0; }
+.liste-choix .nom { flex: 1; }
+.liste-choix button { min-height: 36px; padding: 6px 10px; }
+.liste-choix .actif { color: var(--orange-fonce); font-weight: 700; }
+.pastille-couleur { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--bord); flex: none; }
+.apercu-schema { display: flex; flex: none; }
+.apercu-schema i { width: 12px; height: 22px; display: block; }
+.apercu-schema i:first-child { border-radius: 6px 0 0 6px; } .apercu-schema i:last-child { border-radius: 0 6px 6px 0; }
+.ajout-filament { display: flex; gap: 8px; align-items: center; }
+.ajout-filament input:first-child { flex: 1; min-width: 0; min-height: 44px; padding: 0 10px; border-radius: 10px;
+  border: 1px solid var(--bord); background: var(--carte); color: var(--texte); font: inherit; }
+.ajout-filament input[type=color] { width: 44px; height: 44px; border: 0; padding: 0; background: none; }

@@ -72,6 +72,7 @@ public class Canard extends Activity {
         if (chemin.endsWith(".webp")) return "image/webp";
         if (chemin.endsWith(".png")) return "image/png";
         if (chemin.endsWith(".svg")) return "image/svg+xml";
+        if (chemin.endsWith(".json")) return "application/json";
         if (chemin.endsWith(".webmanifest")) return "application/manifest+json";
         return "application/octet-stream";
     }

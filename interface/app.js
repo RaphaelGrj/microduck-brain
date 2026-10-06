@@ -382,6 +382,17 @@ $("#lieu-nouveau").addEventListener("click", () => {
   const n = prompt("Nom du nouveau lieu (il y recommence une carte)", "Nouveau lieu");
   if (n && n.trim()) lieu("nouveau", null, n.trim());
 });
+// Ecrans plein (design, marketplace) : ouverts par les icones en haut a droite, fermes par la fleche ou le bouton retour
+async function ouvrirDesign() {
+  try {
+    if (!window.MicroduckDesign) await import("/design.js");
+    await window.MicroduckDesign.ouvrir();
+  } catch (e) { toast("Le design ne s'ouvre pas"); }
+}
+$("#ouvrir-design").addEventListener("click", ouvrirDesign);
+document.addEventListener("click", (ev) => { if (ev.target.closest("[data-fermer]")) history.back(); });
+window.addEventListener("popstate", () => { document.querySelectorAll(".ecran.plein").forEach((e) => { e.hidden = true; }); });
+
 $("#oublier").addEventListener("click", () => { memoire("microduck-code", null); location.reload(); });
 $("#form-code").addEventListener("submit", (ev) => { ev.preventDefault(); entrer($("#code").value.trim()); });
 

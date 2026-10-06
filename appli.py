@@ -18,10 +18,13 @@ API :
   GET  /api/carte           carte des zones parcourues depuis le demarrage (repere de l'odometrie)
   GET  /api/lieux           les lieux (lieux.py) ; GET /api/lieu-carte?id=... la carte gardee d'un lieu
   POST /api/lieu            {"action": ..., "id": ..., "nom": ...} (basculer, renommer, archiver, restaurer, ...)
+  GET  /api/design          schemas de couleurs et filaments du design space ; POST /api/design pour les garder
   GET  /api/sante           test de vie, sans code (pour savoir si le canard repond)
 Le code se passe dans l'en-tete `X-Microduck-Code` (ou `?code=` pour le flux).
 """
 import hmac
+import os
+import re
 import ipaddress
 import json
 import queue
@@ -50,7 +53,8 @@ COMMANDES = {
     "regard_bas": "regard:bas", "regard_centre": "regard:centre",
 }
 TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
-         ".svg": "image/svg+xml", ".png": "image/png", ".webp": "image/webp", ".webmanifest": "application/manifest+json", ".json": "application/json"}
+         ".svg": "image/svg+xml", ".png": "image/png", ".webp": "image/webp", ".webmanifest": "application/manifest+json", ".json": "application/json",
+         ".bin": "application/octet-stream", ".txt": "text/plain; charset=utf-8"}
 
 
 def adresse_locale(ip):
@@ -142,6 +146,29 @@ def carte(brain, state):
     }
 
 
+COULEUR = re.compile(r"^#[0-9a-fA-F]{6}$")
+DESIGN_VIDE = {"filaments": [], "schemas": [], "actif": None}
+
+
+def valider_design(d):
+    """Schemas et filaments envoyes par le telephone -> version propre (noms courts, couleurs #rrggbb), ou None."""
+    if not isinstance(d, dict):
+        return None
+    def nom(v):
+        v = "".join(c for c in v if c.isprintable()).strip()[:40] if isinstance(v, str) else ""
+        return v or None
+    filaments = [{"nom": nom(f.get("nom")), "couleur": f.get("couleur")} for f in (d.get("filaments") or [])[:50]
+                 if isinstance(f, dict) and nom(f.get("nom")) and COULEUR.match(str(f.get("couleur")))]
+    schemas = []
+    for sc in (d.get("schemas") or [])[:50]:
+        if not isinstance(sc, dict) or not nom(sc.get("nom")) or not isinstance(sc.get("couleurs"), dict):
+            continue
+        couleurs = {str(k)[:40]: v for k, v in list(sc["couleurs"].items())[:60] if COULEUR.match(str(v))}
+        schemas.append({"nom": nom(sc["nom"]), "couleurs": couleurs})
+    actif = nom(d.get("actif"))
+    return {"filaments": filaments, "schemas": schemas, "actif": actif if any(sc["nom"] == actif for sc in schemas) else None}
+
+
 class Appli:
     def __init__(self, code, port=PORT_DEFAUT, log=print, version=None, hote="0.0.0.0"):
         if not code or len(str(code)) < 6:
@@ -150,6 +177,7 @@ class Appli:
         self.evenements = queue.Queue()
         self.etat = {}
         self.carte = {}
+        self.fichier_design = Path(os.environ.get("MICRODUCK_DESIGN", Path.home() / ".local/share/microduck/design.json"))
         self.lieux = None                       # lieux.Lieux, branche par canard.py (sinon : pas de section Lieux)
         self._t_photo = self._t_carte = -1e9
         self._echecs = {}                       # ip -> instant du dernier code faux (freine les essais)
@@ -232,6 +260,13 @@ class Appli:
                     if self._autorise():
                         self._json(200, appli.carte)
                     return
+                if url.path == "/api/design":
+                    if self._autorise():
+                        try:
+                            self._json(200, valider_design(json.loads(appli.fichier_design.read_text())) or DESIGN_VIDE)
+                        except (OSError, ValueError):
+                            self._json(200, DESIGN_VIDE)
+                    return
                 if url.path in ("/api/lieux", "/api/lieu-carte"):
                     if not self._autorise():
                         return
@@ -261,17 +296,29 @@ class Appli:
                 chemin = urlparse(self.path).path
                 if not adresse_locale(self.client_address[0]):
                     return self._json(403, {"erreur": "reseau local seulement"})
-                if chemin not in ("/api/commande", "/api/lieu"):
+                if chemin not in ("/api/commande", "/api/lieu", "/api/design"):
                     return self._json(404, {"erreur": "inconnu"})
                 if not self._autorise():
                     return
                 try:
-                    n = min(int(self.headers.get("Content-Length", "0")), 4096)
+                    n = min(int(self.headers.get("Content-Length", "0")), 65536 if chemin == "/api/design" else 4096)
                     corps = json.loads(self.rfile.read(n) or b"{}")
                     if not isinstance(corps, dict):
                         raise ValueError
                 except (ValueError, AttributeError):
                     return self._json(400, {"erreur": "JSON attendu"})
+                if chemin == "/api/design":
+                    propre = valider_design(corps)
+                    if propre is None:
+                        return self._json(400, {"erreur": "design attendu"})
+                    try:
+                        appli.fichier_design.parent.mkdir(parents=True, exist_ok=True)
+                        tmp = appli.fichier_design.with_suffix(".tmp")
+                        tmp.write_text(json.dumps(propre, ensure_ascii=False))
+                        os.replace(tmp, appli.fichier_design)
+                    except OSError:
+                        return self._json(500, {"erreur": "enregistrement impossible"})
+                    return self._json(200, {"ok": True})
                 if chemin == "/api/lieu":
                     if appli.lieux is None:
                         return self._json(404, {"erreur": "lieux non geres"})

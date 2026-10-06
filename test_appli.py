@@ -229,3 +229,37 @@ def test_lieux_depuis_l_appli(serveur, tmp_path):
     assert requete(serveur.port, "/api/lieu-carte?id=l1")[0] == 200
     assert requete(serveur.port, "/api/lieu", corps={"action": "nouveau"}, code="mauvais-code")[0] == 401
     time.sleep(1.1)
+
+
+def test_design_valide_et_garde(serveur, tmp_path):
+    """Schemas de couleurs et filaments du design space : nettoyes, gardes sur le canard, relus."""
+    import time
+    serveur.fichier_design = tmp_path / "design.json"
+    assert json.loads(requete(serveur.port, "/api/design")[1]) == appli.DESIGN_VIDE
+    envoi = {"filaments": [{"nom": "PLA orange", "couleur": "#f26a1b"}, {"nom": "", "couleur": "#000000"},
+                           {"nom": "Faux", "couleur": "rouge"}],
+             "schemas": [{"nom": "Noir et orange", "couleurs": {"coques": "#222222", "bec": "javascript:"}},
+                         {"nom": 3, "couleurs": {}}],
+             "actif": "Noir et orange", "pirate": "<script>"}
+    assert requete(serveur.port, "/api/design", corps=envoi)[0] == 200
+    relu = json.loads(requete(serveur.port, "/api/design")[1])
+    assert relu == {"filaments": [{"nom": "PLA orange", "couleur": "#f26a1b"}],
+                    "schemas": [{"nom": "Noir et orange", "couleurs": {"coques": "#222222"}}], "actif": "Noir et orange"}
+    assert requete(serveur.port, "/api/design", corps=[1, 2])[0] == 400
+    assert appli.valider_design({"schemas": [], "actif": "absent"})["actif"] is None
+    time.sleep(1.1)
+
+
+def test_modele_3d_coherent():
+    """Le modele 3D du design space (outils/modele_3d.py) : chaque instance pointe une piece et un groupe connus, et le
+    binaire contient exactement les positions et les indices annonces."""
+    m = json.loads((appli.DOSSIER / "design" / "microduck.json").read_text())
+    taille = (appli.DOSSIER / "design" / "microduck.bin").stat().st_size
+    groupes = {g["id"] for g in m["groupes"]}
+    assert {i["groupe"] for i in m["instances"]} <= groupes and {i["piece"] for i in m["instances"]} == set(m["pieces"])
+    for p in m["pieces"].values():
+        assert (p["v"][0] + p["v"][1]) * 4 <= m["octets_positions"]
+        assert m["octets_positions"] + (p["f"][0] + p["f"][1]) * 2 <= taille
+        assert p["v"][1] % 3 == 0 and p["f"][1] % 3 == 0
+    assert all(len(i["m"]) == 12 for i in m["instances"])
+    assert {g["id"] for g in m["groupes"] if g["imprimable"]} >= {"dessus_tete", "coques", "pieds", "bec"}
