@@ -441,7 +441,14 @@ def main():
         if "--scenes-auto" in sys.argv:
             print(f"=== scene {scene} ===", flush=True)
             subprocess.run(["bash", str(Path.home() / "run-scene.sh"), scene], check=True)
-        banc = Banc()
+        try:
+            banc = Banc()
+        except OSError as e:                        # duck-sim pas lance ou pas encore debout
+            for n in noms:
+                resultats.append({"scenario": n, "scene": scene, "ok": False,
+                                  "details": {"erreur": f"duck-sim injoignable ({type(e).__name__})"}})
+                print(f"ECHEC {n:14s} duck-sim injoignable : lance-le (bash ~/run-scene.sh {scene})", flush=True)
+            continue
         rt = banc.facteur_temps_reel()
         if rt < 0.95:
             print(f"ATTENTION : simulation a {rt:.2f}x le temps reel (< 0,95) : resultats de marche douteux", flush=True)
@@ -459,7 +466,8 @@ def main():
     SORTIE.parent.mkdir(parents=True, exist_ok=True)
     SORTIE.write_text(json.dumps(resultats, indent=1, ensure_ascii=False))
     print(f"\n{sum(r['ok'] for r in resultats)}/{len(resultats)} scenarios valides ; detail : {SORTIE}", flush=True)
+    return 0 if all(r["ok"] for r in resultats) else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
