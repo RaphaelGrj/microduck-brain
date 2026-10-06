@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Banc de VALIDATION GROUPEE dans duck-sim : tout ce qui a ete code sans simulateur (sessions cloud des 2026-10-05/06)
-et qui touche a la securite ou au mouvement, joue pour de vrai et mesure avec la verite terrain du fork.
+et qui touche a la securite ou au mouvement, joue pour de vrai et mesure avec la verite terrain du fork. Verifie aussi
+les hypotheses faites sur robotd sans pouvoir les essayer (bec a l'index 9 des joints, champs de robot.health...).
 
 La verite terrain (truth.py) sert uniquement a MESURER ; le cerveau decide avec ses capteurs, comme sur le robot.
 
@@ -287,6 +288,124 @@ def sc_pousse_balle(banc):
     m = banc.vivre(b, 4)
     deplace = math.dist(truth.read()["bodies"][nom][:2], depart)
     return (m["chutes"] == 0 and deplace >= 0.03), {"balle_deplacee_m": round(deplace, 3), "chutes": m["chutes"]}
+
+
+@scenario("autotest", "arena", "Auto-test du reveil contre le vrai robotd : sante, ToF, camera, tete qui suit ; tout OK")
+def sc_autotest(banc):
+    import truth
+    import vision
+    truth.teleport_duck(0.0, 0.0, 0.0)
+    banc.tenir(1.0)
+    b = banc.cerveau(seed=21, exploration=False, camera_test=lambda: vision.grab_frame(timeout=2.0) is not None)
+    b._bascule("autotest")
+    m = banc.vivre(b, 6)
+    res = b.diagnostic.autotest.resultats or {}
+    lum = None
+    try:
+        lum = round(vision.luminosite(vision.grab_frame(timeout=2.0)), 2)   # lumiere oubliee : valeur de reference
+    except Exception as e:
+        lum = f"{type(e).__name__}"
+    ok = m["chutes"] == 0 and bool(res) and all(v[0] for v in res.values())
+    return ok, {"verdict": {k: list(v) for k, v in res.items()}, "luminosite_scene": lum}
+
+
+@scenario("bec_index", "arena", "robot.state.joints : le BEC est a l'index 9 (bouche ouverte -> seul l'index 9 bouge)")
+def sc_bec_index(banc):
+    import truth
+    truth.teleport_duck(0.0, 0.0, 0.0)
+    avant = banc.tenir(1.0)
+    j0 = avant.get("joints") or []
+    t0 = time.monotonic()
+    s = avant
+    while time.monotonic() - t0 < 1.5:
+        s = banc.c.read_state_frame()
+        banc.c.notify("robot.mouth", {"open": 0.8})
+    j1 = s.get("joints") or []
+    banc.c.notify("robot.mouth", {"open": 0.0})
+    banc.tenir(1.0)
+    if len(j0) != 15 or len(j1) != 15:
+        return False, {"nombre_de_joints": [len(j0), len(j1)]}
+    ecarts = [round(abs(a - b), 3) for a, b in zip(j0, j1)]
+    bouge = max(range(15), key=lambda i: ecarts[i])
+    ok = bouge == 9 and all(e < 0.05 for i, e in enumerate(ecarts) if i != 9)
+    return ok, {"joint_qui_bouge": bouge, "ecarts_rad": ecarts,
+                "courants": "presents" if s.get("currents_ma") else "absents", "targets": len(s.get("targets") or [])}
+
+
+@scenario("compagnie", "arena", "Tenir compagnie : rejoint le coin 'social' appris a ~1,3 m et s'y assoit")
+def sc_compagnie(banc):
+    import truth
+    truth.teleport_duck(0.0, 0.0, 0.0)
+    s = banc.tenir(1.0)
+    gt = truth.read()
+    rel = (1.2, -0.5)
+    o = s["odom"]
+    coin_odom = (o["position"][0] + math.cos(o["yaw"]) * rel[0] - math.sin(o["yaw"]) * rel[1],
+                 o["position"][1] + math.sin(o["yaw"]) * rel[0] + math.cos(o["yaw"]) * rel[1])
+    attendu = devant(gt, *rel)
+    b = banc.cerveau(seed=23, exploration=False)
+    b.exploration.preference(coin_odom[0], coin_odom[1], "social", 600.0, 0.0)
+    b.evenement("compagnie")
+    assis = []
+    m = banc.vivre(b, 50, chaque_tick=lambda b, s: assis.append(s.get("policy") == "sit") if b.courant.nom == "compagnie"
+                   else None)
+    fin = m["traj"][-1] if m["traj"] else (0, 0, 0, 0)
+    ecart = math.dist(fin[1:3], attendu)
+    ok = m["chutes"] == 0 and ecart <= 0.40 and any(assis)
+    return ok, {"ecart_arrivee_m": round(ecart, 2), "assis": any(assis), "chutes": m["chutes"],
+                "issue": getattr(b.etats["va_compagnie"], "issue", None)}
+
+
+@scenario("coup_oeil", "arena", "Mouvement au bord de l'image pendant le repos : un coup d'oeil de ce cote, pas au centre")
+def sc_coup_oeil(banc):
+    import mouvement
+    import truth
+    import vision
+    resultats = {}
+    for cote, dy in (("gauche", 0.32), ("centre", 0.0)):
+        truth.teleport_duck(0.0, 0.0, 0.0)
+        banc.tenir(1.0)
+        gt = truth.read()
+        nom = balle(gt)
+        deplacer(nom, *devant(gt, 1.2, dy))
+        veille = mouvement.VeilleMouvement(vision.grab_frame)
+        veille.start()
+        b = banc.cerveau(seed=25, exploration=False, mouvement=veille)
+        b.etats["chill"].duree = lambda brain: 1e9
+        b.fin_etat = 1e9
+        k = [0]
+
+        def agite(b, s):
+            k[0] += 1
+            if b.t_global > 3.0 and k[0] % 10 == 0:          # la balle va et vient toutes les 0,2 s
+                deplacer(nom, *devant(truth.read(), 1.2, dy + (0.05 if (k[0] // 10) % 2 else -0.05)))
+        m = banc.vivre(b, 12, chaque_tick=agite)
+        veille.actif = False
+        resultats[cote] = {"coup_oeil": m["etats"].get("coup_oeil", 0) > 0, "lacet": b.etats["coup_oeil"].lacet}
+    ok = resultats["gauche"]["coup_oeil"] and resultats["gauche"]["lacet"] > 0 and not resultats["centre"]["coup_oeil"]
+    return ok, resultats
+
+
+@scenario("gestes_nouveaux", "arena", "Timide, penaud, baillement, retrait (assis), compagnie : aucune chute")
+def sc_gestes_nouveaux(banc):
+    import truth
+    resultats = {}
+    for etat, duree in (("timide", 9), ("penaud", 6), ("baillement_contagieux", 5), ("cajole", 4), ("retrait", 12),
+                        ("compagnie", 15)):
+        truth.teleport_duck(0.0, 0.0, 0.0)
+        banc.tenir(1.0)
+        b = banc.cerveau(seed=27, exploration=False)
+        if etat == "retrait":
+            b.vacarme, b.suivant_force = True, "nap"
+        if etat == "compagnie":
+            b.etats["compagnie"].DUREE = 8.0
+        b._bascule(etat)
+        politiques = set()
+        m = banc.vivre(b, duree, chaque_tick=lambda b, s: politiques.add(s.get("policy")))
+        resultats[etat] = {"chutes": m["chutes"], "politiques": sorted(p for p in politiques if p)}
+    ok = (all(r["chutes"] == 0 for r in resultats.values()) and "sit" in resultats["retrait"]["politiques"]
+          and "sit" in resultats["compagnie"]["politiques"])
+    return ok, resultats
 
 
 # --- programme -------------------------------------------------------------------------------------------------------
