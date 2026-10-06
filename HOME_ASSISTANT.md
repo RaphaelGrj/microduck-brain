@@ -25,7 +25,7 @@
 
 ## Ton installation : Home Assistant OS sur Raspberry Pi 3B+
 
-- **Le Pi 3B+ n'a que 1 Go de RAM** : le cerveau et le pont ne doivent PAS tourner dessus (voir « Où fait-on tourner le
+- **Le Pi 3B+ n'a que 1 Go de RAM** : le cerveau et le pont ne tournent PAS dessus mais sur le canard (voir « Où tourne le
   cerveau ? » plus bas). Ils parlent à HA par l'API réseau (port 8123).
 - Utilise l'**adresse IP** du Pi dans la config (le nom `homeassistant.local` ne se résout pas toujours depuis WSL) et
   fixe-lui une adresse (réservation DHCP dans ta box).
@@ -38,36 +38,23 @@
 - MQTT apporterait : entités avec `unique_id` (elles survivent au redémarrage de HA), appareil « Microduck » regroupé,
   boutons pour commander le canard depuis HA. **Pas encore codé** (en attente de ton oui).
 
-## Tu n'as que des Pi 3B+ : ça suffit pour le pont + cerveau (mesuré), pas pour la vision
+## Où tourne le cerveau : SUR le canard (décision du 2026-10-05)
 
-Mesuré sur le PC : pont + cerveau = **29 Mo de RAM et 0,4–0,8 % d'un cœur** (10 à 50 trames d'état/s). Un Pi 3B+ (Cortex-A53) est
-plusieurs fois plus lent (estimation ×5–10) : largement assez, avec 1 Go. Les modules concernés n'utilisent que la bibliothèque
-standard + `websockets` et sont compatibles Python 3.11 (celui de Raspberry Pi OS Bookworm). Ce qui **ne** tourne **pas** sur un Pi 3B+ :
-la vision (jeu de balle) et YOLO (chat) — ils restent sur le PC à la demande, ou sur le robot plus tard.
-Fichiers d'installation prêts mais **non testés sur un Pi** : `deploy/pi/` (README, deux services systemd, requirements).
+Le cerveau (`canard.py` : cerveau + pont Home Assistant + capteur de distance + caméra) tourne **sur la carte du robot**
+(Radxa Zero 3, RK3566), à côté de `robotd`, `tofd` et `mediad`, et ne parle qu'à eux en local. **Aucune donnée du canard
+(image, son, distances) n'est analysée sur un autre appareil** : `canard.py` refuse même de démarrer si la caméra n'est
+pas lue en local. Installation : `deploy/robot/`.
 
-## Où fait-on tourner le cerveau ? (sans laisser le PC allumé)
-
-Le PC n'est nécessaire que **pendant le développement** (c'est lui qui fait tourner le simulateur). En usage normal, le
-cerveau et le pont doivent tourner sur une machine allumée en permanence. Options, de la plus adaptée à la moins :
-
-| Option | Verdict |
-|---|---|
-| **Un autre Raspberry Pi** (4 ou 5 idéal ; un Pi 3 / Zero 2 W suffit pour le pont seul) | **Recommandé.** Linux complet, 24 h/24, quelques watts. Le pont (Python + `websockets`) est minuscule ; la vision (couleur) tient sur un Pi 4 ; YOLO pour le chat est plus lent (~0,3–1 s/image à estimer). |
-| **Le robot lui-même** (RK3566, 1 Go, comme `quacksat`) | Possible pour le pont et les réactions simples (pas de réseau entre cerveau et `robotd`), mais la RAM est partagée avec les démons ; à décider quand le robot sera là. |
-| **Ton S24+** (Termux) | **Déconseillé comme hôte** : Android suspend les applications en arrière-plan (économie de batterie), le cerveau s'arrêterait sans prévenir. Très bien comme **télécommande / notifications** via l'appli Home Assistant. |
-| Le Pi 3B+ de HA OS (add-on) | Non : 1 Go déjà bien occupé par HA. |
-
-**Comment un cerveau distant atteint le robot** : `robotd` n'écoute que sur un socket local du robot. Un cerveau sur un autre
-Pi s'y connecte par un **tunnel SSH de socket Unix** (`ssh -L` redirige un socket distant vers un socket local ; le robot a
-déjà SSH, c'est ainsi que `quacksat` s'y déploie). Le code actuel (`RobotdClient`) parle à un socket Unix : il n'y a rien à
-changer côté cerveau. **À valider sur le vrai robot** (pas encore livré).
+Le Pi 3B+ de Home Assistant ne fait que ce qu'il fait déjà (HA, et Mosquitto si tu l'ajoutes) : il reçoit des **états**
+(batterie, humeur, position, présence…) et envoie les **événements de la maison** (imprimantes, sonnette, présence,
+météo, boutons). Sans lui, le canard vit quand même ; seules les fonctions « maison » ne se déclenchent pas.
 
 ## Le fichier de configuration (ce que tu remplis)
 
 `~/microduck-brain/ha.toml`, soit `\\wsl.localhost\Ubuntu\home\raphael\microduck-brain\ha.toml` depuis Windows. Il est **ignoré par git**
 (`.gitignore`) et en droits `600`. Sections : `[home_assistant]` (IP, jeton), `[mqtt]`, `[reseau]` (où tourne quoi),
-`[[imprimante]]` (une par imprimante), `[notes]` (libre). Tout ce qui reste à `A_REMPLIR` est ignoré. Le programme
+`[[imprimante]]` (une par imprimante), `[[habitant]]`, `[[appareil]]` (messager : sonnette, lave-linge…), `[[declencheur]]`
+(une entité HA → un événement du cerveau), `[cerveau]` (routines : heures calmes, bonjour du matin), `[notes]` (libre). Tout ce qui reste à `A_REMPLIR` est ignoré. Le programme
 **avertit** si ce fichier n'est pas ignoré par git, et n'affiche jamais le jeton.
 
 ## Mise en route chez toi (ce que je ne peux pas faire à ta place)
@@ -76,7 +63,9 @@ changer côté cerveau. **À valider sur le vrai robot** (pas encore livré).
 2. Remplir `ha.toml` (IP du Pi, jeton, et laisser les imprimantes à `A_REMPLIR` pour l'instant).
 3. `bash ~/run-brain.sh pont_ha.py ha.toml --verifier` : teste l'URL, le jeton, le WebSocket, le broker MQTT, et **liste les
    entités qui ressemblent à une imprimante** : il suffit de recopier leurs noms dans `[[imprimante]]`.
-4. `bash ~/run-brain.sh pont_ha.py ha.toml` (le simulateur ou le robot doit tourner).
+4. `bash ~/run-brain.sh canard.py ha.toml` (le simulateur ou le robot doit tourner) : le canard **complet** (cerveau + HA +
+   capteur de distance + caméra). `pont_ha.py ha.toml` lance encore le cerveau seul avec HA, mais sans ToF ni caméra
+   (le canard ne marche alors jamais, et ni la main tendue ni le jeu ne sont actifs).
 
 Intégrations HA à installer pour les imprimantes (déjà existantes, non écrites par nous) :
 - Prusa **MK4S** : intégration officielle *PrusaLink* (états `idle, busy, printing, paused, finished, stopped,
@@ -84,6 +73,22 @@ Intégrations HA à installer pour les imprimantes (déjà existantes, non écri
   (≥ 0.7.2) ; sinon ce sera une surveillance indirecte (Prusa Connect n'a pas d'API locale documentée ici).
 - **Elegoo Saturn 4 Ultra** : intégration communautaire *elegoo-homeassistant* (HACS, protocole SDCP) ;
   **les valeurs d'état exactes sont à relever chez toi**.
+
+## Messager de la maison, boutons et routines (2026-10-05)
+
+- **`[[appareil]]`** : sonnette (`type = "sonnette"` pour un `binary_sensor`, `"sonnette_event"` pour une entité `event.*` dont
+  chaque appui change l'état), machine connectée (`"machine"` : états `finished`/`end`/`complete`… de Home Connect, LG ThinQ,
+  SmartThings) ou **appareil « bête » sur une prise qui mesure la puissance** (`"puissance"` : en marche au-dessus de `seuil_w`,
+  fini après `fin_apres_s` sous le seuil — un lave-linge s'arrête quelques minutes pendant le trempage —, et seulement après un
+  vrai cycle de `marche_min_s`). Le canard réagit (sonnette : tête qui se redresse + alarme puis interrogatif ; machine finie :
+  « il y a quelque chose » + signe). **Si personne n'est à la maison**, les fins d'impression / de machine sont **gardées et
+  redites à l'accueil** du prochain habitant qui rentre (`sensor.microduck_messages` : nombre et liste).
+- **Boutons** (avec MQTT) : `button.microduck_jouer_soleil` et `button.microduck_fin_jeu` apparaissent sur l'appareil Microduck
+  (jeu « 1-2-3 soleil »). Seules ces deux commandes sont acceptées sur `microduck/commande`. Sans MQTT : une Entrée « Bouton »
+  (`input_button`) reliée par `[[declencheur]] evenement = "jeu_soleil"`.
+- **`[cerveau]`** : `heures_calmes = [23, 7]` (assis et silencieux la nuit, comme l'interrupteur calme), `bonjour = "7:30"`
+  (une fois par jour : étirement + bonjour si quelqu'un est là, dans les 4 h qui suivent).
+- Tout cela est testé contre le faux HA / faux broker (`test_ha.py`), **pas encore sur ton instance**.
 
 ## Ce qui est validé, et ce qui ne l'est pas
 
@@ -109,5 +114,6 @@ noms d'entités et d'états réels des imprimantes ; comportement quand `quacksa
   elles survivent au redémarrage de HA).
 - **Arbitrage `quacksat` / cerveau** : tous deux sont clients de `robotd` (`robot.move` / `robot.head` : le
   dernier écrit gagne) ; il faudra un partage clair (par ex. le cerveau se tait pendant une conversation).
-- Le canard qui **va vers l'habitant** quand une impression échoue (navigation : plus tard, UWB/odométrie).
+- Le canard qui **va vers l'habitant** quand une impression échoue : il sait maintenant aller vers un point connu à
+  l'odométrie (`navigation.py`), mais ne sait pas OÙ est l'habitant (UWB plus tard) ; en attendant, il garde le message.
 - Scènes déclenchées par le canard (NFC, geste, présence) via `appeler_service`.

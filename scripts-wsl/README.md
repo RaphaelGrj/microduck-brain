@@ -9,6 +9,7 @@ Copiés ici depuis `~` pour être reproductibles. Pas de mot de passe, rien d'é
 | `run-scene.sh <scène>` | Redémarre `duck-sim` sur une scène du fork : `arena_chat` (arène + affiche de ton chat, générée par `make_cat_scene.py`), `arena` (sol plan sans murs + balle d'entraînement — **à utiliser pour évaluer une approche**), `testball`, `kick_right`, `kick_left`, `apartment`. |
 | `restart-duck.sh` | Arrête l'ancien `duck-sim` (`down`). À lancer avant `start-duck.sh`. |
 | `wait-duck.sh` | Attend que le canard soit debout et résume (mediad, console web). |
+| `valider-tout.sh [scénarios...]` | **Validation groupée en une commande** : tests, coût du cerveau (`bench_cerveau.py`), puis les scénarios de `valider_sim.py` dans `duck-sim`, scène par scène. Rapport daté `~/validation-AAAA-MM-JJ_HHMM.txt`, à me renvoyer. |
 | `bin-shim/sudo` | `sudo -n` : `duck-sim down` appelle `sudo systemctl` et restait bloqué sur un mot de passe. |
 
 ## Ordre d'utilisation

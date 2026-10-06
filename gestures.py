@@ -84,6 +84,24 @@ def eternuement(t):
     return (0.0, 0.55 * k, 0.0, 0.0)
 
 
+def fier(t):
+    # Fierte (running gag, trophee de malice) : la tete se redresse et se rengorge, petit roulis satisfait.
+    k = _smooth(t, 0.0, 0.4) * (1.0 - _smooth(t, 1.4, 1.8))
+    return (-0.15 * k, -0.3 * k, 0.0, 0.12 * k * math.sin(2 * math.pi * t / 0.9))
+
+
+def baillement(t):
+    # Baillement : la tete part en arriere lentement, tenue, puis revient (la bouche est geree a part : robot.mouth).
+    k = _smooth(t, 0.0, 0.9) * (1.0 - _smooth(t, 2.2, 2.8))
+    return (-0.1 * k, -0.35 * k, 0.0, 0.08 * k)
+
+
+def gene(t):
+    # Gene (apres un trebuchement devant quelqu'un) : tete basse, detournee, qui se fait toute petite, puis revient.
+    k = _smooth(t, 0.0, 0.4) * (1.0 - _smooth(t, 1.6, 2.2))
+    return (0.15 * k, 0.4 * k, 0.5 * k, 0.15 * k)
+
+
 # --- Gestes du CORPS (robot.pose : z / roulis / tangage du tronc debout, lisses par robotd) -------------------------
 # Le "Content (tremoussement)" de la phase 1 : on croyait qu'il fallait du RL (mouvement de tout le corps), mais
 # robotd accepte une pose du corps debout. Mesure (diag_pose.py, duck-sim) : roulis et tangage suivis (~1:1, 0,15 rad
@@ -118,6 +136,9 @@ GESTES = {
     "ebouriffe": (1.6, ebouriffe),
     "lissage": (4.0, lissage),
     "eternuement": (1.4, eternuement),
+    "fier": (1.8, fier),
+    "baillement": (2.8, baillement),
+    "gene": (2.2, gene),
 }
 
 

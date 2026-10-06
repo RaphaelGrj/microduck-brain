@@ -30,8 +30,8 @@ def main():
         frames += 1
         now = time.monotonic() - start
         policy = state.get("policy")
-        fallen = state.get("safety", {}).get("fallen")
-        missed = state.get("loop", {}).get("missed")
+        fallen = (state.get("safety") or {}).get("fallen")
+        missed = (state.get("loop") or {}).get("missed")
 
         if policy != last_policy:
             print(f"[{now:6.1f}s] politique: {last_policy} -> {policy}", flush=True)

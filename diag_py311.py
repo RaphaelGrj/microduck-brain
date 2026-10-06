@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Les modules du 'pont + cerveau' tournent-ils sous Python 3.11 (Raspberry Pi OS Bookworm) ? Test STATIQUE :
+"""Les modules du 'pont + cerveau' tournent-ils sous Python 3.11 (Debian/Armbian du canard) ? Test STATIQUE :
 grammaire 3.11 et f-strings a guillemets imbriques identiques (autorises seulement depuis 3.12, PEP 701).
 Ne remplace pas un vrai essai sur un Pi, mais attrape les erreurs de syntaxe."""
 import ast

@@ -1,0 +1,121 @@
+From d311214730e0157ba9200fffc93c1d619851e3bd Mon Sep 17 00:00:00 2001
+From: Raphael Gorju <raphael.gorju@gmail.com>
+Date: Mon, 5 Oct 2026 21:17:41 +0000
+Subject: [PATCH] robotd-params: [audio] capture, a capture device separate
+ from playback (share the mic)
+
+The capture PCM is single-client and robotd's mic worker holds it, with the device derived
+from the playback one. An optional audio.capture names the capture PCM verbatim, so an
+operator can put the worker on a dsnoop PCM from /etc/asound.conf and let a second listener
+on the robot - an on-board brain recognising a few spoken words locally - hear the mic too,
+without touching playback. Unset keeps today's behaviour exactly.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011L4Y66NLTymVdcdaznYLmJ
+---
+ deploy/robotd.toml            |  5 +++++
+ robotd-params/src/edit.rs     |  1 +
+ robotd-params/src/lib.rs      | 21 +++++++++++++++++++++
+ robotd-params/src/registry.rs |  5 +++++
+ 4 files changed, 32 insertions(+)
+
+diff --git a/deploy/robotd.toml b/deploy/robotd.toml
+index 8979b3e..6cfbb1c 100644
+--- a/deploy/robotd.toml
++++ b/deploy/robotd.toml
+@@ -292,6 +292,11 @@ mode = "walk"
+ # worker captures from "<device>,0".
+ # device = "plughw:aic3104"
+ 
++# ALSA capture device for the mic worker. Unset derives it from `device` (subdevice 0). The capture
++# PCM is single-client: to let a second listener on the robot hear the mic too (an on-board brain
++# recognising a few spoken words locally), define a dsnoop PCM in /etc/asound.conf and name it here.
++# capture = "micro_partage"
++
+ # Where the voice bank lives.
+ # bank = "/var/lib/robot/sounds"
+ 
+diff --git a/robotd-params/src/edit.rs b/robotd-params/src/edit.rs
+index f43d5ea..a018ace 100644
+--- a/robotd-params/src/edit.rs
++++ b/robotd-params/src/edit.rs
+@@ -223,6 +223,7 @@ impl Model {
+                     .to_string(),
+             ),
+             "audio.pet_model" => path(params.audio.pet_model_resolved()),
++            "audio.capture" => Some(params.audio.capture_device()),
+             _ => None,
+         }
+     }
+diff --git a/robotd-params/src/lib.rs b/robotd-params/src/lib.rs
+index 910d4dd..5a28cbf 100644
+--- a/robotd-params/src/lib.rs
++++ b/robotd-params/src/lib.rs
+@@ -849,6 +849,11 @@ pub struct AudioParams {
+     pub enabled: bool,
+     /// ALSA playback device — the TLV320AIC3104 codec.
+     pub device: String,
++    /// ALSA capture device for the mic worker. Absent (the default) derives it from `device`
++    /// (subdevice 0). Set it to share the mic: the capture PCM is single-client, so a second
++    /// listener on the robot — an on-board brain recognising a few spoken words locally — needs
++    /// both sides on a `dsnoop` PCM defined in `/etc/asound.conf`, e.g. `capture = "micro_partage"`.
++    pub capture: Option<String>,
+     /// Where the per-robot voice bank lives. The release's postinstall renders it there
+     /// (`sounds ensure-bank`), seeded from the SoC serial.
+     pub bank: PathBuf,
+@@ -873,6 +878,7 @@ impl Default for AudioParams {
+         Self {
+             enabled: true,
+             device: "plughw:aic3104".to_owned(),
++            capture: None,
+             bank: PathBuf::from("/var/lib/robot/sounds"),
+             greet: true,
+             pet_detect: None,
+@@ -899,6 +905,9 @@ impl AudioParams {
+     /// `plughw:aic3104,0` would otherwise become `plughw:aic3104,0,0`, which no card
+     /// answers to. That lands the worker in its restart loop for the life of the daemon.
+     pub fn capture_device(&self) -> String {
++        if let Some(capture) = self.capture.as_ref().filter(|c| !c.is_empty()) {
++            return capture.clone();
++        }
+         if self.device.contains(',') {
+             self.device.clone()
+         } else {
+@@ -2991,6 +3000,18 @@ mod tests {
+         assert_eq!(spelled_out.capture_device(), "plughw:aic3104,0");
+     }
+ 
++    /// An explicit capture device wins over the derived one, verbatim: it is how the mic is
++    /// shared through a `dsnoop` PCM, which takes no subdevice.
++    #[test]
++    fn an_explicit_capture_device_is_used_as_written() {
++        let shared = AudioParams {
++            capture: Some("micro_partage".to_owned()),
++            ..AudioParams::default()
++        };
++        assert_eq!(shared.capture_device(), "micro_partage");
++        assert_eq!(shared.device, "plughw:aic3104", "playback is untouched");
++    }
++
+     /// An unprovisioned board must still come up. A daemon that refuses to start because a
+     /// config file is absent is far harder to diagnose on a robot than one running on
+     /// documented defaults.
+diff --git a/robotd-params/src/registry.rs b/robotd-params/src/registry.rs
+index 39043a6..6ec84e3 100644
+--- a/robotd-params/src/registry.rs
++++ b/robotd-params/src/registry.rs
+@@ -407,6 +407,11 @@ pub const REGISTRY: &[Entry] = &[
+         "The voice and the microphone; off walks identically and stays quiet",
+     ),
+     entry("audio.device", Kind::Text, "ALSA playback device"),
++    entry(
++        "audio.capture",
++        Kind::Text,
++        "ALSA capture device; unset = derived from audio.device",
++    ),
+     entry("audio.bank", Kind::Text, "Voice bank directory"),
+     feature(
+         "audio.greet",
+-- 
+2.43.0
+

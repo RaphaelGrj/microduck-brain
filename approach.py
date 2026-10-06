@@ -26,6 +26,7 @@ import math
 import sys
 import time
 
+import balle
 import geometry
 import track
 import vision
@@ -68,13 +69,17 @@ PROFILS_TIR = {
     "tolerant_droit": {"cible_x": {"left": CIBLE_X, "right": 0.11}, "tol_av": {"left": 0.025, "right": 0.035},
                        "tol_ar": {"left": 0.016, "right": 0.03}},
 }
-X_MIN_BALLE, Y_MIN_BALLE = 0.05, 0.09    # zone occupee par le canard : aucune balle reelle ne peut y etre
+from balle import X_MIN_BALLE, Y_MIN_BALLE   # noqa: E402,F401  zone occupee par le canard (balle.py)
 D_ENTREE_AJUST = 0.35                    # on passe en AJUSTER sous cette distance
 D_SORTIE_AJUST = 0.45                    # et on repasse en VISER au-dela (balle repoussee)
 MAX_AJUSTEMENTS = 10
 X_SWING = 0.13                           # en dessous, le pied qui avance peut pousser la balle
 MAX_PROPAGATIONS = 2                     # mesures "a l'odometrie" consecutives avant de chercher
 T_TETE_NEUTRE = 1.4                      # attente, tete ramenee au neutre, avant de lancer le tir
+# Fausse feinte (taquinerie, ROADMAP lot A) : avant le tir, la tete regarde ostensiblement d'un cote pendant T_FEINTE,
+# puis revient au neutre et on attend T_TETE_NEUTRE comme d'habitude - le tir lui-meme est inchange. A MESURER en arene
+# (approach_eval.py --feinte) : 38 % de la masse dans la tete, le tronc peut se decaler dans la fenetre de 3-4 cm.
+T_FEINTE, YAW_FEINTE = 0.9, 0.5
 
 V_MARCHE, V_ROT, V_COTE = 0.4, 1.5, 0.4  # au-dessus de la zone morte
 
@@ -118,13 +123,14 @@ def wrap(a):
 
 class Approche:
     def __init__(self, client, couleur="orange", verite=False, log=print, cap_vise=None, profil=None, cible_vise=None,
-                 arret=None):
+                 arret=None, feinte=False):
         """`cible_vise` (x, y repere de l'odometrie) : tirer VERS ce point (un joueur) ; la direction est calculee depuis
         la balle quand on la localise. `arret()` : appelee a chaque tour, True = abandon immediat (mode calme...)."""
         if cible_vise is not None and cap_vise is None:
             cap_vise = 0.0                       # provisoire : remplace dans planifier_visee
         self.cible_vise = cible_vise
         self.arret = arret
+        self.feinte = feinte                       # fausse feinte avant le tir (taquinerie, desactivee par defaut)
         self.c = client
         self.couleur = couleur
         self.log = log
@@ -160,9 +166,11 @@ class Approche:
         self.resultat = {}
 
     # --- boucle bas niveau -------------------------------------------------------------
-    def pas(self):
-        """Un tour de boucle cadence sur le flux d'etat : renvoie la trame, envoie tete et corps."""
-        s = self.c.read_state_frame()
+    def pas(self, s=None):
+        """Un tour de boucle cadence sur le flux d'etat : renvoie la trame, envoie tete et corps. `s` : trame deja lue
+        (pilotage par le cerveau, brain.py) ; sinon on la lit ici (boucle autonome `run`)."""
+        if s is None:
+            s = self.c.read_state_frame()
         self.pose_odom = (s["odom"]["position"][0], s["odom"]["position"][1], s["odom"]["yaw"])
         now = time.monotonic()
         vx = vy = vyaw = 0.0
@@ -218,20 +226,8 @@ class Approche:
 
     # --- perception -------------------------------------------------------------------
     def estimer(self, det, s):
-        """Position (x, y) de la balle dans le repere du tronc, en m (None si inutilisable)."""
-        e = geometry.balle_dans_tronc(det, s["frames"]["camera"], s["odom"]["position"][2])
-        sol, ray = e["sol"], (None if det.touche_bord else e["rayon"])   # le rayon apparent est faux si le disque est tronque
-        if sol is not None and ray is not None:
-            p = (0.5 * (sol[0] + ray[0]), 0.5 * (sol[1] + ray[1]))
-        else:
-            p = sol if sol is not None else ray
-            p = None if p is None else (p[0], p[1])
-        if p is not None and p[0] < X_MIN_BALLE and abs(p[1]) < Y_MIN_BALLE:
-            # Une balle ne peut pas etre SOUS le canard : c'est lui-meme (pieds orange visibles au bord bas de
-            # l'image quand la tete est baissee a fond). Sans ce filtre l'asservissement s'y accroche et
-            # croit la balle au pied alors qu'elle roule a 1,5 m (diag_beak.py, essai d'evaluation 1).
-            return None
-        return p
+        """Position (x, y) de la balle dans le repere du tronc, en m (None si inutilisable) : voir balle.estimer."""
+        return balle.estimer(det, s)
 
     def enregistrer(self, est, s):
         self.mesure = (est, tuple(s["odom"]["position"][:2]), s["odom"]["yaw"])
@@ -406,6 +402,12 @@ class Approche:
         self.yaw = self.pitch = 0.0
         self.t_tir = time.monotonic() + T_TETE_NEUTRE
         self.etat = "TIR"
+        if self.feinte:                          # "regarde la-bas"... puis tire ailleurs
+            self.yaw = YAW_FEINTE * (1.0 if self.cote == "right" else -1.0)   # du cote oppose au pied qui tire
+            self.t_feinte = time.monotonic() + T_FEINTE
+            self.t_tir = self.t_feinte + T_TETE_NEUTRE
+            self.etat = "FEINTE"
+            self.resultat["feinte"] = True
 
     def declencher_tir(self):
         if self.avant_tir:                       # mesure externe (evaluation), jamais utilisee pour decider
@@ -415,6 +417,49 @@ class Approche:
         self.etat = "FINI"
 
     # --- boucle principale --------------------------------------------------------------
+    def etape(self, s):
+        """Une decision du controleur sur la trame `s` (deja envoyee tete/corps par `pas`). Appelee par `run` dans sa
+        propre boucle, ou trame par trame par l'etat `balle` du cerveau (etats_jeux.JeuBalle)."""
+        if self.etat == "FEINTE":                 # tete tournee d'un cote, puis retour au neutre et tir normal
+            if time.monotonic() >= self.t_feinte:
+                self.yaw = 0.0
+                self.etat = "TIR"
+            return
+        if self.etat == "TIR":                    # tete au neutre pendant T_TETE_NEUTRE, puis coup
+            if time.monotonic() >= self.t_tir:
+                self.declencher_tir()
+            return
+        if self.burst:
+            return
+        r = self.vis.get_apres(self.t_pret)
+        if r is None or r[0] <= self.t_traite:
+            return
+        self.t_traite = r[0]
+        det = r[1]
+        est = self.estimer(det, s) if det is not None else None
+        if est is None:
+            if self.cap_vise is not None and self.stage in ("PLACER", "ORIENTER") and self.balle_odom:
+                self.etape_visee()                  # contournement a l'odometrie : la balle peut etre hors champ
+                return
+            self.balle_perdue(s)
+            return
+        self.manques = self.n_propag = 0
+        self.suivre_du_regard(det)
+        if det.touche_bord and det.cy < 0.5 * vision.HEIGHT:
+            # disque coupe par le haut ou le cote : le centre mesure est faux (erreurs de 6 a 14 cm) et
+            # y croire entretiendrait l'erreur ; on recentre la tete et on regarde a nouveau
+            self.log("  balle coupee par le bord de l'image : on recentre la tete")
+            return
+        self.sens_recherche = +1.0 if est[1] >= 0 else -1.0
+        self.x_vis = est[0]
+        self.enregistrer(est, s)
+        nouvelle = self.vers_odom(est)
+        if (self.balle_odom and self.stage in ("PLACER", "ORIENTER")
+                and math.hypot(nouvelle[0] - self.balle_odom[0], nouvelle[1] - self.balle_odom[1]) > 0.10):
+            self.stage = None                       # la balle n'est pas la ou on croyait : on replanifie
+        self.balle_odom = nouvelle
+        self.decider(est)
+
     def run(self, duree_max=90.0):
         t0 = time.monotonic()
         self.pas()
@@ -426,40 +471,7 @@ class Approche:
                 self.resultat["etat"] = "INTERROMPU"
                 self.resultat["duree"] = time.monotonic() - t0
                 return self.resultat
-            if self.etat == "TIR":                    # tete au neutre pendant T_TETE_NEUTRE, puis coup
-                if time.monotonic() >= self.t_tir:
-                    self.declencher_tir()
-                continue
-            if self.burst:
-                continue
-            r = self.vis.get_apres(self.t_pret)
-            if r is None or r[0] <= self.t_traite:
-                continue
-            self.t_traite = r[0]
-            det = r[1]
-            est = self.estimer(det, s) if det is not None else None
-            if est is None:
-                if self.cap_vise is not None and self.stage in ("PLACER", "ORIENTER") and self.balle_odom:
-                    self.etape_visee()                  # contournement a l'odometrie : la balle peut etre hors champ
-                    continue
-                self.balle_perdue(s)
-                continue
-            self.manques = self.n_propag = 0
-            self.suivre_du_regard(det)
-            if det.touche_bord and det.cy < 0.5 * vision.HEIGHT:
-                # disque coupe par le haut ou le cote : le centre mesure est faux (erreurs de 6 a 14 cm) et
-                # y croire entretiendrait l'erreur ; on recentre la tete et on regarde a nouveau
-                self.log("  balle coupee par le bord de l'image : on recentre la tete")
-                continue
-            self.sens_recherche = +1.0 if est[1] >= 0 else -1.0
-            self.x_vis = est[0]
-            self.enregistrer(est, s)
-            nouvelle = self.vers_odom(est)
-            if (self.balle_odom and self.stage in ("PLACER", "ORIENTER")
-                    and math.hypot(nouvelle[0] - self.balle_odom[0], nouvelle[1] - self.balle_odom[1]) > 0.10):
-                self.stage = None                       # la balle n'est pas la ou on croyait : on replanifie
-            self.balle_odom = nouvelle
-            self.decider(est)
+            self.etape(s)
         if self.etat != "FINI":
             self.log("=== temps ecoule sans tir")
         self.resultat["etat"] = self.etat

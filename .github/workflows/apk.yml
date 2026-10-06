@@ -1,0 +1,66 @@
+# Publie l'APK de l'application Microduck, tout seul : a chaque push qui change la version (android:versionName de
+# android/AndroidManifest.xml), GitHub construit l'APK, le signe avec TA cle et cree la release apk-v<version> avec
+# microduck.apk et version.json. L'appli lit releases/latest/download/version.json pour proposer la mise a jour.
+# Se lance aussi a la main (onglet Actions -> APK -> Run workflow) ou par une etiquette apk-v*.
+# Secrets (crees par android/creer_cle.sh, une seule fois) :
+#   MICRODUCK_KEYSTORE_B64           la cle de signature, en base64
+#   MICRODUCK_KEYSTORE_MOT_DE_PASSE  son mot de passe
+# Toujours la MEME cle : sinon Android refuse d'installer la mise a jour par-dessus.
+name: APK
+on:
+  push:
+    branches: ["main"]
+    paths: ["android/AndroidManifest.xml"]
+    tags: ["apk-v*"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Version et cle
+        id: prep
+        env:
+          CLE: ${{ secrets.MICRODUCK_KEYSTORE_B64 }}
+          MDP: ${{ secrets.MICRODUCK_KEYSTORE_MOT_DE_PASSE }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(python3 -c 'import re; print(re.search(r"versionName=\"([^\"]+)\"", open("android/AndroidManifest.xml").read()).group(1))')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [ -z "$CLE" ] || [ -z "$MDP" ]; then
+            echo "::warning::pas de cle de signature sur GitHub : lancer une fois android/creer_cle.sh (voir android/CLE_DE_SIGNATURE.md)"
+            echo "pret=non" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if gh release view "apk-v$VERSION" >/dev/null 2>&1; then
+            echo "apk-v$VERSION deja publiee : rien a faire (monter versionCode/versionName pour publier)"
+            echo "pret=non" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          mkdir -p "$HOME/.microduck-android" && chmod 700 "$HOME/.microduck-android"
+          echo "$CLE" | base64 -d > "$HOME/.microduck-android/microduck.keystore"
+          printf '%s' "$MDP" > "$HOME/.microduck-android/mot-de-passe"
+          echo "pret=oui" >> "$GITHUB_OUTPUT"
+      - name: Outils Android (paquets Ubuntu, sans Android Studio)
+        if: steps.prep.outputs.pret == 'oui'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends aapt apksigner dalvik-exchange zipalign android-sdk-platform-23 openjdk-17-jdk-headless
+      - name: Construire
+        if: steps.prep.outputs.pret == 'oui'
+        run: bash android/construire.sh
+      - name: Publier
+        if: steps.prep.outputs.pret == 'oui'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.prep.outputs.version }}
+        run: |
+          gh release create "apk-v$VERSION" android/sortie/microduck.apk android/version.json \
+            --target "$GITHUB_SHA" --latest \
+            --title "Application Microduck $VERSION" \
+            --notes "APK $VERSION. Installer : ouvrir microduck.apk sur le téléphone. Empreinte de la clé : $(apksigner verify --print-certs android/sortie/microduck.apk | grep SHA-256 | cut -d: -f2 | tr -d ' ')"
+      - uses: actions/upload-artifact@v4
+        if: steps.prep.outputs.pret == 'oui'
+        with:
+          name: microduck-apk
+          path: android/sortie/microduck.apk

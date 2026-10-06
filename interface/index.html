@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f26a1b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Microduck">
+  <title>Microduck</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icone.png" type="image/png">
+  <link rel="apple-touch-icon" href="/icone.png">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <!-- Appairage : le code de [appli] dans ha.toml, garde sur ce telephone -->
+  <section id="appairage" class="ecran" hidden>
+    <div class="carte appairage">
+      <img src="/icone.png" alt="" width="88" height="88" class="icone">
+      <h1>Micro<span>duck</span></h1>
+      <p>Entre le code d'appairage de ton Microduck (choisi à son installation).</p>
+      <form id="form-code">
+        <input id="code" type="password" autocomplete="current-password" inputmode="text" placeholder="Code"
+               aria-label="Code d'appairage" required minlength="6">
+        <button type="submit" class="principal">Se connecter</button>
+      </form>
+      <p id="erreur-code" class="erreur" role="alert"></p>
+    </div>
+  </section>
+
+  <!-- Installation : premier demarrage, sans code (30 min apres son allumage, reseau local) -->
+  <section id="installation" class="ecran" hidden>
+    <div class="carte appairage">
+      <img src="/icone.png" alt="" width="88" height="88" class="icone">
+      <h1>Bienvenue !</h1>
+      <p>Ton Microduck est neuf. Trois choses et c'est parti.</p>
+      <form id="form-installation">
+        <label class="champ">Son nom<input id="i-nom" maxlength="40" placeholder="Microduck" required></label>
+        <label class="champ">Qui vit avec lui ? <small>(prénoms, séparés par des virgules)</small>
+          <input id="i-habitants" maxlength="200" placeholder="Raphaël, Clémence"></label>
+        <label class="champ">Code de l'appli <small>(6 caractères au moins : la clé de ton canard)</small>
+          <input id="i-code" type="password" minlength="6" required autocomplete="new-password"></label>
+        <label class="champ">Encore une fois<input id="i-code2" type="password" minlength="6" required autocomplete="new-password"></label>
+        <button type="submit" class="principal">C'est parti</button>
+      </form>
+      <p id="erreur-installation" class="erreur" role="alert"></p>
+      <p class="discret petit">Home Assistant, imprimantes, appareils : plus tard, dans Réglages → Connexions. Tout est
+        facultatif.</p>
+    </div>
+  </section>
+
+  <section id="appli" class="ecran" hidden>
+    <header class="entete">
+      <div>
+        <h1 id="titre">Micro<span>duck</span></h1>
+        <p id="sous-titre" class="discret">Connexion…</p>
+      </div>
+      <div class="raccourcis">
+        <button id="ouvrir-design" class="icone-bouton" aria-label="Design : ses couleurs">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.7-.8 1.7-1.6 0-.5-.2-.8-.4-1.1-.3-.3-.4-.6-.4-1 0-.9.7-1.6 1.6-1.6H16a5 5 0 0 0 5-5C21 6.4 17 3 12 3Z"/><circle cx="7.5" cy="11.5" r="1.2"/><circle cx="10" cy="7.5" r="1.2"/><circle cx="14.5" cy="7.5" r="1.2"/><circle cx="17" cy="11.5" r="1.2"/></svg>
+        </button>
+        <button id="ouvrir-boutique" class="icone-bouton" aria-label="Marketplace : pièces à imprimer">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14l-1 12H6L5 8Z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8"/></svg>
+        </button>
+        <span id="liaison" class="pastille" title="Liaison avec Microduck">●</span>
+      </div>
+    </header>
+
+    <main>
+      <!-- Accueil -->
+      <div class="page" data-page="accueil">
+        <div class="carte heros">
+          <!-- Le vrai Microduck, rendu depuis son modele 3D officiel (outils/rendu_microduck.py) : l'image suit sa posture
+               et la position de sa tete. Une illustration, pas une image de la camera. -->
+          <div id="microduck" class="microduck" role="img" aria-label="Microduck">
+            <img id="microduck-img" src="/microduck/debout.webp" alt="" width="120" height="138">
+            <span class="signe zzz" aria-hidden="true">z<small>z</small></span>
+            <span class="signe exclamation" aria-hidden="true">!</span>
+            <span class="signe coeur" aria-hidden="true">♥</span>
+          </div>
+          <div class="etat-courant">
+            <span class="libelle">En ce moment</span>
+            <strong id="etat">—</strong>
+            <div id="alertes"></div>
+            <button data-cmd="ou_es_tu" class="ou-es-tu">📍 Où es-tu ?</button>
+          </div>
+        </div>
+        <div class="grille">
+          <div class="carte jauge"><span class="libelle">Énergie</span><div class="barre"><i id="b-energie"></i></div><b id="v-energie">—</b></div>
+          <div class="carte jauge"><span class="libelle">Éveil</span><div class="barre"><i id="b-eveil"></i></div><b id="v-eveil">—</b></div>
+          <div class="carte jauge"><span class="libelle">Batterie</span><div class="barre"><i id="b-batterie"></i></div><b id="v-batterie">—</b></div>
+          <div class="carte"><span class="libelle">À la maison</span><b id="presents">—</b></div>
+        </div>
+        <div class="carte" id="carte-impressions" hidden>
+          <h2>Impressions</h2>
+          <ul id="impressions" class="liste-choix"></ul>
+        </div>
+        <div class="carte" id="carte-alertes" hidden>
+          <h2>Alertes</h2>
+          <ul id="alertes-liste" class="liste alertes"></ul>
+        </div>
+        <div class="carte">
+          <h2>Aujourd'hui</h2>
+          <ul id="du-jour" class="pastilles"></ul>
+        </div>
+        <div class="carte">
+          <h2>Sa carte</h2>
+          <canvas id="plan" class="plan" aria-label="Carte des endroits où il est passé depuis son démarrage"></canvas>
+          <p id="plan-vide" class="discret">Il n'a pas encore exploré depuis son démarrage.</p>
+          <ul class="legende" aria-hidden="true">
+            <li><i class="l-passe"></i>passé par là</li><li><i class="l-obstacle"></i>obstacle</li>
+            <li><i class="l-chute"></i>il y est tombé</li><li>💤 sieste</li><li>🛋️ repos</li><li>🍽️ repas</li><li>🔌 chargeur</li><li>• objet remarqué</li>
+          </ul>
+          <h3 class="sous-titre">Où l'a-t-il vu ?</h3>
+          <ul id="vus" class="liste"></ul>
+        </div>
+        <div class="carte">
+          <h2>Messages</h2>
+          <p class="discret petit">Laisse un message pour quelqu'un : quand il le verra (à son retour, ou tout de suite
+            s'il est là), le canard le lui signalera en pépiant, et le texte s'affichera ici.</p>
+          <div class="message-form">
+            <input id="msg-pour" list="msg-noms" placeholder="Pour qui ?" maxlength="40" aria-label="Pour qui ?">
+            <datalist id="msg-noms"></datalist>
+            <input id="msg-texte" placeholder="Ton message" maxlength="280" aria-label="Ton message">
+            <button id="msg-envoyer" class="principal">Laisser</button>
+          </div>
+          <ul id="messages" class="liste-choix"></ul>
+        </div>
+      </div>
+
+      <!-- Jouer -->
+      <div class="page" data-page="jouer" hidden>
+        <div class="carte">
+          <h2>Jeu de balle</h2>
+          <dl class="valeurs" id="stats-balle"></dl>
+          <details class="defi">
+            <summary>Défi à plusieurs</summary>
+            <p class="discret petit">Chacun son tour pose la balle devant lui et lance : un tir réussi rapporte un point.</p>
+            <div class="ajout-filament"><input id="defi-nom" placeholder="Prénom du joueur" maxlength="20" aria-label="Prénom du joueur">
+              <button id="defi-ajout">Ajouter</button></div>
+            <ul id="defi-joueurs" class="liste-choix"></ul>
+            <button id="defi-tour" class="principal large">Au tour de…</button>
+            <button id="defi-raz" class="large">Nouvelle partie</button>
+          </details>
+        </div>
+        <div class="carte">
+          <h2>Sur sa carte</h2>
+          <p class="discret petit" id="jeu-aide">Choisis un jeu, puis touche sa carte.</p>
+          <div class="boutons">
+            <button id="jeu-balle" aria-pressed="false">⚽ La balle est là</button>
+            <button id="jeu-parcours" aria-pressed="false">🏁 Parcours</button>
+          </div>
+          <canvas id="plan-jeu" class="plan" aria-label="Sa carte : touche pour poser un point"></canvas>
+          <p id="plan-jeu-vide" class="discret">Il faut qu'il ait un peu exploré pour avoir une carte.</p>
+          <div class="boutons">
+            <button id="jeu-partir" class="principal" disabled>Partir</button>
+            <button id="jeu-effacer">Effacer les points</button>
+          </div>
+          <dl class="valeurs" id="records"></dl>
+        </div>
+        <div class="carte" data-parent>
+          <h2>Mode photo</h2>
+          <p class="discret petit">Il prend la pose et la tient, sans un son, le temps de la photo (sa caméra).</p>
+          <div class="boutons" id="poses"></div>
+          <img id="photo-posee" class="photo-posee" alt="La dernière photo" hidden>
+        </div>
+        <div class="carte">
+          <h2>Ses tours à lui</h2>
+          <p class="discret petit">Compose des chorégraphies : positions de tête, sons de canard, gestes, s'asseoir.</p>
+          <ul id="liste-tours" class="liste-choix"></ul>
+          <button id="ouvrir-studio" class="principal large" data-parent>Studio de chorégraphies</button>
+        </div>
+        <div class="carte" data-parent>
+          <h2>Comportements</h2>
+          <p class="discret petit">Les politiques apprises (Pollen et communauté) : installées, à essayer, à ajouter.</p>
+          <button id="ouvrir-comportements" class="large">Ouvrir</button>
+        </div>
+        <div class="carte">
+          <h2>Jeux</h2>
+          <div class="boutons">
+            <button data-cmd="jouer_balle">⚽ Balle</button>
+            <button data-cmd="jouer_cache">🙈 Cache-cache</button>
+            <button data-cmd="jouer_soleil">☀️ 1-2-3 soleil</button>
+            <button data-cmd="danse">🎵 Danse</button>
+          </div>
+          <button data-cmd="fin_jeu" class="large">Fin du jeu</button>
+        </div>
+        <div class="carte">
+          <h2>Tours</h2>
+          <div class="boutons">
+            <button data-cmd="salut">👋 Salut</button>
+            <button data-cmd="toupie">🌀 Toupie</button>
+            <button data-cmd="assis">🪑 Assis / debout</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Télécommande -->
+      <div class="page" data-page="commande" hidden>
+        <div class="carte" data-parent>
+          <h2>Marcher</h2>
+          <p class="discret">Garde le doigt appuyé pour continuer. Petits pas guidés : il refuse d'avancer s'il y a un obstacle ou un vide. Pas de marche arrière (il ne voit pas derrière).</p>
+          <div class="croix">
+            <span></span><button data-cmd="avance" aria-label="Avancer">▲</button><span></span>
+            <button data-cmd="gauche" aria-label="Tourner à gauche">⟲</button>
+            <button data-cmd="stop" class="danger" aria-label="Stop">■</button>
+            <button data-cmd="droite" aria-label="Tourner à droite">⟳</button>
+          </div>
+        </div>
+        <div class="carte">
+          <h2>Regarder</h2>
+          <div class="croix">
+            <span></span><button data-cmd="regard_haut" aria-label="Regarder en haut">↑</button><span></span>
+            <button data-cmd="regard_gauche" aria-label="Regarder à gauche">←</button>
+            <button data-cmd="regard_centre" aria-label="Regarder devant">●</button>
+            <button data-cmd="regard_droite" aria-label="Regarder à droite">→</button>
+            <span></span><button data-cmd="regard_bas" aria-label="Regarder en bas">↓</button><span></span>
+          </div>
+          <p class="discret petit">Ou fais glisser ton doigt : il regarde où tu pointes.</p>
+          <div id="pave-regard" class="pave" aria-label="Pavé du regard"><i></i></div>
+        </div>
+      </div>
+
+      <!-- Maintenance -->
+      <div class="page" data-page="sante" hidden>
+        <div class="carte">
+          <h2>Diagnostic</h2>
+          <p id="diag-resume" class="discret">—</p>
+          <ul id="diag-detail" class="liste"></ul>
+          <button data-cmd="diagnostic" class="principal large" data-parent>Lancer le diagnostic</button>
+        </div>
+        <div class="carte">
+          <h2>Batterie</h2>
+          <dl class="valeurs" id="batt"></dl>
+        </div>
+        <div class="carte" id="carte-batteries" hidden>
+          <h2>Ses batteries</h2>
+          <div id="batterie-question" class="suggestion" hidden>
+            <span>Batterie changée : laquelle viens-tu de mettre ?</span>
+          </div>
+          <ul id="batteries" class="liste-choix"></ul>
+          <p class="discret petit">Écris 1, 2 et 3 au feutre sur tes batteries : il suit la santé de chacune.</p>
+        </div>
+        <div class="carte">
+          <h2>Servos et températures</h2>
+          <dl class="valeurs" id="servos"></dl>
+        </div>
+        <div class="carte">
+          <h2>Chutes</h2>
+          <dl class="valeurs" id="chutes"></dl>
+        </div>
+        <div class="carte" id="carte-usure">
+          <h2>Usure des servos</h2>
+          <p class="discret petit">Au repos debout, chaque jour : l'effort de chaque servo (courant) et la chaleur. Un
+            servo qui force de plus en plus s'use : mieux vaut le savoir avant qu'il ne lâche.</p>
+          <select id="usure-servo" aria-label="Servo"></select>
+          <canvas id="usure-graphe" class="graphe" aria-label="Courant de repos du servo, jour par jour"></canvas>
+          <p id="usure-vide" class="discret">Pas encore assez de jours de mesure (il en faut quelques-uns au repos).</p>
+          <ul id="usure-alertes" class="liste"></ul>
+        </div>
+        <div class="carte" id="carte-comparer" hidden>
+          <h2>Comparer les batteries</h2>
+          <canvas id="batteries-graphe" class="graphe" aria-label="Autonomie de chaque batterie, cycle après cycle"></canvas>
+          <ul id="batteries-legende" class="legende"></ul>
+        </div>
+        <div class="carte" data-parent>
+          <h2>Carnet d'entretien</h2>
+          <div class="carnet-form">
+            <select id="cn-type" aria-label="Type">
+              <option value="piece">Pièce changée</option><option value="impression">Pièce imprimée</option>
+              <option value="servo">Servo remplacé</option><option value="batterie">Batterie remplacée</option>
+              <option value="nettoyage">Nettoyage</option><option value="autre">Autre</option>
+            </select>
+            <select id="cn-servo" aria-label="Quel servo ?" hidden></select>
+            <select id="cn-batterie" aria-label="Quelle batterie ?" hidden><option value="1">Batterie 1</option>
+              <option value="2">Batterie 2</option><option value="3">Batterie 3</option></select>
+            <input id="cn-texte" placeholder="Détail (pièce, couleur, remarque…)" maxlength="200" aria-label="Détail">
+            <input id="cn-date" type="date" aria-label="Date">
+            <button id="cn-ajouter" class="principal">Noter</button>
+          </div>
+          <p class="discret petit">Un servo ou une batterie notés « remplacés » repartent d'une mesure neuve.</p>
+          <ol id="carnet" class="liste chrono"></ol>
+        </div>
+        <div class="carte" data-parent>
+          <h2>Mises à jour et rapport</h2>
+          <dl class="valeurs"><dt>Cerveau</dt><dd id="maj-version">—</dd></dl>
+          <p id="maj-etat" class="discret petit"></p>
+          <div class="boutons">
+            <button id="maj-chercher">Chercher une mise à jour</button>
+            <button id="maj-installer" class="principal" hidden>Installer</button>
+          </div>
+          <button id="maj-revenir" class="large">Revenir à la version précédente</button>
+          <button id="rapport" class="large">Exporter un rapport de diagnostic</button>
+          <p class="discret petit">Le rapport sert à demander de l'aide (Pollen, communauté) : versions, santé, alertes.
+            Aucun prénom, lieu, réseau ni journal de la maison. Le logiciel du robot lui-même se met à jour par l'appli
+            officielle de Pollen.</p>
+        </div>
+        <p class="discret centre" id="version"></p>
+      </div>
+
+      <!-- Caractère et mémoire -->
+      <div class="page" data-page="caractere" hidden>
+        <div class="carte" data-parent>
+          <h2>Ses réglages</h2>
+          <p class="discret petit">Au milieu : tel qu'il est. Sa personnalité continue d'évoluer avec ce qu'il vit.</p>
+          <label class="curseur"><span>Plutôt calme</span><input type="range" id="k-joueur" min="0" max="1" step="0.05"><span>Plutôt joueur</span></label>
+          <label class="curseur"><span>Discret</span><input type="range" id="k-bavard" min="0" max="1" step="0.05"><span>Bavard</span></label>
+          <label class="curseur"><span>Sage</span><input type="range" id="k-taquin" min="0" max="1" step="0.05"><span>Taquin</span></label>
+          <button id="k-enregistrer" class="large">Enregistrer</button>
+        </div>
+        <div class="carte">
+          <h2>Personnalité</h2>
+          <div id="traits"></div>
+        </div>
+        <div class="carte">
+          <h2>Sa voix</h2>
+          <p class="discret">Ses petits sons préférés : ceux qui font réagir la maison reviennent plus souvent.</p>
+          <div id="sons"></div>
+        </div>
+        <div class="carte">
+          <h2>Ceux qu'il connaît</h2>
+          <ul id="etres" class="liste"></ul>
+        </div>
+      </div>
+
+      <!-- Réglages -->
+      <div class="page" data-page="reglages" hidden>
+        <div class="carte">
+          <h2>Modes</h2>
+          <div class="reglage"><div><b>Mode calme</b><p class="discret">Assis, silencieux, il ne bouge plus.</p></div>
+            <button id="t-calme" class="bascule" role="switch" aria-checked="false"></button></div>
+          <div class="reglage"><div><b>Mode garde</b><p class="discret">Maison vide : il signale une voix, un choc, des coups à la porte.</p></div>
+            <button id="t-garde" class="bascule" role="switch" aria-checked="false"></button></div>
+          <div class="reglage"><div><b>Vacances</b><p class="discret">Maison vide pour longtemps : calme et garde, et des nouvelles chaque soir à 20 h.</p></div>
+            <button id="t-vacances" class="bascule" role="switch" aria-checked="false"></button></div>
+          <div class="reglage"><div><b>Taquineries</b><p class="discret">Les couper 30 minutes.</p></div>
+            <button data-cmd="stop_taquinerie">Couper</button></div>
+          <div class="reglage"><div><b>Sa carte</b><p class="discret">L'effacer (meubles déplacés, nouvel endroit). Elle repart aussi de zéro à chaque démarrage.</p></div>
+            <button id="oublier-carte">Effacer</button></div>
+        </div>
+        <details class="carte mise-en-route" id="mise-en-route" data-parent>
+          <summary><h2>Mise en route</h2><span id="mer-progres" class="etiquette"></span></summary>
+          <p class="discret petit">À la livraison, dans l'ordre. Les points marqués « auto » se cochent tout seuls.</p>
+          <ul id="mer-liste" class="liste-choix"></ul>
+          <button id="mer-masquer" class="large">Masquer cette section</button>
+        </details>
+        <div class="carte">
+          <h2>Aide</h2>
+          <p class="discret petit">Questions fréquentes, et ce que veut dire chacun de ses états.</p>
+          <button id="ouvrir-aide" class="large">Ouvrir l'aide</button>
+        </div>
+        <div class="carte" data-parent>
+          <h2>Connexions et configuration</h2>
+          <p class="discret petit">Son nom, les habitants, les codes, Home Assistant (facultatif), tes imprimantes 3D,
+            les appareils de la maison.</p>
+          <button id="ouvrir-connexions" class="principal large">Ouvrir</button>
+        </div>
+        <div class="carte" id="carte-journee" hidden>
+          <h2>Sa journée</h2>
+          <div class="reglage"><div><b>Heures calmes</b><p class="discret">Assis et silencieux la nuit.</p></div>
+            <input type="checkbox" id="r-calmes" class="case"></div>
+          <div class="heures" id="r-calmes-heures">de <select id="r-calmes-debut"></select> h à <select id="r-calmes-fin"></select> h</div>
+          <div class="reglage"><div><b>Bonjour du matin</b><p class="discret">Il s'étire et dit bonjour.</p></div>
+            <input type="time" id="r-bonjour" aria-label="Heure du bonjour en semaine"></div>
+          <div class="reglage"><div><b>Bonjour le week-end</b><p class="discret">Vide : comme en semaine.</p></div>
+            <input type="time" id="r-bonjour-we" aria-label="Heure du bonjour le week-end"></div>
+          <div class="reglage"><div><b>Repas</b><p class="discret">Il apprend où l'on mange et vient voir.</p></div>
+            <button id="r-repas-ajout" aria-label="Ajouter un repas">+</button></div>
+          <div id="r-repas" class="repas"></div>
+          <div class="reglage"><div><b>Auto-test du matin</b><p class="discret">Un diagnostic rapide au premier réveil.</p></div>
+            <input type="checkbox" id="r-autotest" class="case"></div>
+          <div class="reglage"><div><b>Rythme de la journée</b><p class="discret">Plus vif le matin, plus calme le soir.</p></div>
+            <input type="checkbox" id="r-circadien" class="case"></div>
+          <div class="reglage"><div><b>Routines</b><p class="discret">À heure fixe, les jours choisis.</p></div>
+            <button id="r-routine-ajout" aria-label="Ajouter une routine">+</button></div>
+          <div id="r-routines" class="routines"></div>
+          <button id="r-enregistrer" class="principal large">Enregistrer</button>
+        </div>
+        <div class="carte" id="carte-lieux" hidden>
+          <h2>Lieux</h2>
+          <p class="discret">Il reconnaît où il est par le Wi-Fi : sur un réseau inconnu, il crée un nouveau lieu ;
+            de retour sur un réseau connu, il y rebascule tout seul.</p>
+          <div id="lieu-ici" class="lieu-ici"></div>
+          <div id="lieu-suggestion" class="suggestion" hidden></div>
+          <ul id="lieux" class="lieux"></ul>
+          <button id="lieu-nouveau" class="large">Nouveau lieu</button>
+          <details id="archives" class="archives" hidden>
+            <summary>Archives</summary>
+            <ul id="lieux-archives" class="lieux"></ul>
+          </details>
+        </div>
+        <dialog id="vue-lieu" class="vue-lieu">
+          <h2 id="vue-lieu-titre"></h2>
+          <canvas id="plan-lieu" class="plan"></canvas>
+          <p id="plan-lieu-vide" class="discret">Pas de carte gardée pour ce lieu.</p>
+          <form method="dialog"><button class="large">Fermer</button></form>
+        </dialog>
+        <div class="carte" data-parent>
+          <h2>Invités</h2>
+          <p class="discret petit">Un code pour quelques heures (un ami, les grands-parents) : jouer, regarder, laisser un
+            message. Ni réglages, ni marche guidée, ni photos.</p>
+          <div class="message-form">
+            <input id="inv-nom" placeholder="Pour qui ?" maxlength="30" aria-label="Pour qui ?">
+            <select id="inv-duree" aria-label="Durée"><option value="3">3 h</option><option value="24" selected>1 jour</option>
+              <option value="72">3 jours</option><option value="168">1 semaine</option></select>
+            <button id="inv-creer" class="principal">Créer</button>
+          </div>
+          <ul id="invites" class="liste-choix"></ul>
+        </div>
+        <dialog id="vue-qr" class="vue-qr">
+          <h2 id="vue-qr-titre"></h2>
+          <div id="vue-qr-image" class="qr"></div>
+          <p id="vue-qr-texte" class="discret petit"></p>
+          <div class="boutons"><button id="vue-qr-copier">Copier</button><button id="vue-qr-partager">Partager</button></div>
+          <form method="dialog"><button class="large">Fermer</button></form>
+        </dialog>
+        <div class="carte">
+          <h2>Ce téléphone</h2>
+          <div id="presence-tel" hidden>
+            <div class="reglage"><div><b>Prévenir le canard quand j'arrive</b>
+              <p class="discret">Quand ce téléphone rejoint le Wi-Fi de la maison, il t'accueille (même sans Home Assistant).</p></div>
+              <input type="checkbox" id="presence-actif" class="case"></div>
+            <div class="ajout-filament"><input id="presence-nom" placeholder="Ton prénom" maxlength="40" aria-label="Ton prénom">
+              <button id="presence-enregistrer">OK</button></div>
+          </div>
+          <div class="reglage" data-parent><div><b>Mise en route</b><p class="discret">Afficher la liste de la livraison dans les réglages.</p></div>
+            <input type="checkbox" id="mer-afficher" class="case"></div>
+          <div class="reglage"><div><b>Langue</b><p class="discret">Language</p></div>
+            <select id="langue" class="choix-langue" aria-label="Langue / Language">
+              <option value="">Auto</option><option value="fr">Français</option><option value="en">English</option></select></div>
+          <button id="oublier" class="large">Oublier le code</button>
+        </div>
+        <div class="carte">
+          <h2>Sauvegarde</h2>
+          <p class="discret petit">Ce qu'il a appris (habitants, personnalité, lieux, batteries), tes schémas et ses
+            réglages, dans un fichier sur ce téléphone. Jamais le jeton Home Assistant.</p>
+          <div class="boutons">
+            <button id="sauvegarder" class="principal">Enregistrer</button>
+            <label class="bouton-like">Restaurer…<input id="restaurer" type="file" accept=".json,application/json" hidden></label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Journal -->
+      <div class="page" data-page="journal" hidden>
+        <div class="carte" data-parent id="carte-photos">
+          <h2>Ses photos</h2>
+          <div class="reglage"><div><b>Journal photo</b><p class="discret">Il garde quelques images de sa journée (le chat,
+            un retour, une partie, une impression finie). Sur lui seulement, 7 jours, jamais ailleurs.</p></div>
+            <button id="t-photos" class="bascule" role="switch" aria-checked="false"></button></div>
+          <div id="photos" class="photos-grille"></div>
+          <p id="photos-vide" class="discret">Pas de photo pour l'instant.</p>
+          <div class="boutons"><button id="photo-maintenant">📷 Une photo maintenant</button>
+            <button id="photos-effacer" class="danger">Tout effacer</button></div>
+        </div>
+        <dialog id="vue-photo" class="vue-photo">
+          <img id="vue-photo-img" alt="">
+          <p id="vue-photo-legende" class="discret petit"></p>
+          <div class="boutons"><button id="vue-photo-garder" class="principal">Enregistrer</button>
+            <button id="vue-photo-effacer" class="danger">Effacer</button></div>
+          <form method="dialog"><button class="large">Fermer</button></form>
+        </dialog>
+        <div class="carte">
+          <h2>Sa semaine</h2>
+          <div id="semaine" class="semaine" aria-label="Activités des 7 derniers jours"></div>
+          <ul id="semaine-totaux" class="pastilles"></ul>
+        </div>
+        <div class="carte">
+          <h2>Ce qu'il a fait</h2>
+          <ol id="journal" class="liste chrono"></ol>
+        </div>
+      </div>
+    </main>
+
+    <nav class="onglets" aria-label="Sections">
+      <button data-onglet="accueil" aria-current="page"><span>🏠</span>Accueil</button>
+      <button data-onglet="jouer"><span>⚽</span>Jouer</button>
+      <button data-onglet="commande"><span>🕹️</span>Commander</button>
+      <button data-onglet="sante"><span>🩺</span>Santé</button>
+      <button data-onglet="caractere"><span>🎭</span>Caractère</button>
+      <button data-onglet="reglages" data-parent><span>⚙️</span>Réglages</button>
+      <button data-onglet="journal"><span>📜</span>Journal</button>
+    </nav>
+    <div id="toast" role="status" aria-live="polite"></div>
+  </section>
+  <!-- Design : le vrai Microduck en 3D (modele officiel, outils/modele_3d.py), a recolorer avant d'imprimer -->
+  <section id="design" class="ecran plein" hidden>
+    <header class="entete">
+      <button class="icone-bouton retour" data-fermer aria-label="Retour">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="titre-plein"><h1>Design</h1><p class="discret" id="design-schema">Couleurs d'origine</p></div>
+      <button id="design-comparer" class="icone-bouton" aria-label="Comparer avec l'origine (maintenir)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4v16"/><path d="M12 4a8 8 0 0 1 0 16Z" class="plein-svg"/></svg></button>
+    </header>
+    <div id="vue3d" class="vue3d"><p id="vue3d-attente" class="discret centre">Chargement du Microduck…</p></div>
+    <main>
+      <div class="carte">
+        <div class="ligne-titre"><h2 id="groupe-nom">Touche une pièce</h2><span id="groupe-info" class="discret"></span></div>
+        <div id="nuancier" class="nuancier" aria-label="Couleurs"></div>
+        <div class="boutons">
+          <label class="bouton-like">Autre couleur<input id="couleur-libre" type="color" value="#f26a1b"></label>
+          <button id="groupe-origine">Couleur d'origine</button>
+        </div>
+        <div class="boutons">
+          <label class="bouton-like">Ma pièce (STL)<input id="stl-perso" type="file" accept=".stl,model/stl,application/sla" hidden></label>
+          <button id="stl-retirer" disabled>Pièce d'origine</button>
+        </div>
+        <p class="discret petit">Dessine ta pièce à partir du STL d'origine, dans le même repère : elle se pose alors
+          exactement à sa place.</p>
+      </div>
+      <div class="carte">
+        <h2>Schémas de couleurs</h2>
+        <ul id="schemas" class="liste-choix"></ul>
+        <div class="boutons">
+          <button id="schema-sauver" class="principal">Enregistrer</button>
+          <button id="schema-nouveau">Repartir de l'origine</button>
+        </div>
+        <div class="boutons">
+          <button id="fiche-impression">Fiche d'impression</button>
+          <button id="design-photo">Photo</button>
+        </div>
+      </div>
+      <div class="carte">
+        <h2>Mes filaments</h2>
+        <p class="discret petit">Tes bobines en stock : elles apparaissent en premier dans le nuancier.</p>
+        <ul id="filaments" class="liste-choix"></ul>
+        <div class="ajout-filament">
+          <input id="filament-nom" placeholder="Ex. PLA orange Prusament" maxlength="40" aria-label="Nom du filament">
+          <input id="filament-couleur" type="color" value="#f26a1b" aria-label="Couleur du filament">
+          <button id="filament-ajouter">Ajouter</button>
+        </div>
+      </div>
+    </main>
+  </section>
+
+  <!-- Marketplace : les pieces du catalogue (depot microduck-catalogue), telechargees chez Printables ou Cults -->
+  <section id="boutique" class="ecran plein" hidden>
+    <header class="entete">
+      <button class="icone-bouton retour" data-fermer aria-label="Retour">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="titre-plein"><h1>Marketplace</h1><p class="discret">Pièces à imprimer pour Microduck</p></div>
+    </header>
+    <main>
+      <div id="filtres" class="filtres" role="tablist" aria-label="Catégories"></div>
+      <p id="boutique-etat" class="discret centre">Chargement du catalogue…</p>
+      <ul id="pieces" class="pieces"></ul>
+      <p class="discret petit centre">Le téléchargement se fait sur Printables ou Cults. Le catalogue est lu par le
+        téléphone ; le canard n'envoie rien.</p>
+    </main>
+  </section>
+
+  <!-- Aide -->
+  <section id="aide" class="ecran plein" hidden>
+    <header class="entete">
+      <button class="icone-bouton retour" data-fermer aria-label="Retour">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="titre-plein"><h1>Aide</h1><p class="discret">Microduck au quotidien</p></div>
+    </header>
+    <main>
+      <div class="carte faq">
+        <h2>Questions fréquentes</h2>
+        <details><summary>Il ne marche pas, il reste sur place</summary><p>Il ne marche jamais sans son capteur de
+          distance, ni vers un obstacle ou un vide. Les tout petits pas ne le font pas avancer : c'est normal (la marche
+          démarre au-delà d'une certaine vitesse). Vérifie le capteur dans Santé → Diagnostic.</p></details>
+        <details><summary>Il tombe souvent</summary><p>Santé → Chutes montre l'activité et les endroits à risque ; il
+          apprend lui-même à éviter les zones où il est tombé. Un sol glissant ou un bord de tapis sont les causes
+          habituelles. Lance un diagnostic pour vérifier les servos.</p></details>
+        <details><summary>L'appli ne le trouve pas</summary><p>Le téléphone doit être sur le même Wi-Fi que lui. Dans
+          l'appli Android, « Chercher le canard » interroge tout le réseau ; sinon tape son adresse. S'il vient d'être
+          rallumé, laisse-lui une minute.</p></details>
+        <details><summary>Le mettre en silence</summary><p>Réglages → Mode calme (assis, silencieux), ou des heures
+          calmes chaque nuit (Réglages → Sa journée).</p></details>
+        <details><summary>Les batteries</summary><p>Numérote-les 1, 2, 3 au feutre. Après un échange, il te demande
+          laquelle est mise (Santé → Ses batteries) et suit la santé de chacune.</p></details>
+        <details><summary>Home Assistant est-il obligatoire ?</summary><p>Non. Sans lui, il vit, joue, surveille ses
+          imprimantes (Réglages → Connexions) et t'accueille grâce à ton téléphone. Home Assistant ajoute la maison :
+          sonnette, machines, alarme, scènes.</p></details>
+        <details><summary>Les notifications arrivent en retard</summary><p>Appli fermée, Android ne laisse vérifier que
+          toutes les 15 minutes environ. Appli ouverte, elles arrivent tout de suite.</p></details>
+        <details><summary>Un enfant veut jouer avec</summary><p>Réglages → Connexions → Code enfant : avec ce code,
+          l'appli ne montre que les jeux, le regard et « Où es-tu ? ».</p></details>
+        <details><summary>Où sont mes données ?</summary><p>Sur le canard, et nulle part ailleurs : ce qu'il voit et
+          entend est analysé par lui seul. Home Assistant ne reçoit que des états. Une sauvegarde (Réglages) est un
+          fichier que tu gardes sur ton téléphone.</p></details>
+      </div>
+      <div class="carte">
+        <h2>Ce qu'il peut être en train de faire</h2>
+        <p class="discret petit">Tout ce que l'accueil peut afficher dans « En ce moment ».</p>
+        <ul id="glossaire" class="pastilles"></ul>
+      </div>
+    </main>
+  </section>
+
+  <!-- Studio de choregraphies (choregraphies.py) -->
+  <section id="studio" class="ecran plein" hidden>
+    <header class="entete">
+      <button class="icone-bouton retour" data-fermer aria-label="Retour">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="titre-plein"><h1>Studio</h1><p class="discret" id="studio-duree">Chorégraphies</p></div>
+    </header>
+    <main>
+      <div class="carte">
+        <label class="champ">Chorégraphie<select id="studio-choix"></select></label>
+        <div class="boutons"><button id="studio-nouveau">Nouvelle</button><button id="studio-supprimer" class="danger">Supprimer</button></div>
+        <label class="champ">Nom<input id="studio-nom" maxlength="40"></label>
+      </div>
+      <div class="carte">
+        <h2>Étapes</h2>
+        <ol id="studio-etapes" class="etapes"></ol>
+        <div class="ajouts">
+          <button data-etape="tete">+ Tête</button><button data-etape="son">+ Son</button>
+          <button data-etape="geste">+ Geste</button><button data-etape="assis">+ Assis/debout</button>
+          <button data-etape="pause">+ Pause</button>
+        </div>
+      </div>
+      <div class="boutons"><button id="studio-jouer">▶ Essayer</button><button id="studio-enregistrer" class="principal">Enregistrer</button></div>
+      <div class="carte">
+        <h2>Partager</h2>
+        <p class="discret petit">Exporte ce tour (fichier, texte ou QR code) pour un autre Microduck, ou importe celui
+          d'un ami. Pour le proposer à tous : le dossier « choregraphies » du catalogue.</p>
+        <div class="boutons"><button id="studio-exporter">Exporter</button><button id="studio-qr">QR code</button></div>
+        <div class="boutons">
+          <label class="bouton-like">Importer un fichier<input id="studio-importer" type="file" accept=".json,application/json" hidden></label>
+          <button id="studio-coller">Coller un texte</button>
+        </div>
+      </div>
+      <div class="carte">
+        <h2>Du catalogue</h2>
+        <ul id="studio-catalogue" class="liste-choix"><li class="discret">Chargement…</li></ul>
+      </div>
+    </main>
+  </section>
+
+  <!-- Comportements : politiques de robotd (catalogue Pollen / communaute) -->
+  <section id="comportements" class="ecran plein" hidden>
+    <header class="entete">
+      <button class="icone-bouton retour" data-fermer aria-label="Retour">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="titre-plein"><h1>Comportements</h1><p class="discret">Ses politiques apprises</p></div>
+    </header>
+    <main>
+      <div class="carte"><h2>Installés</h2><p id="comp-etat" class="discret petit"></p><ul id="comp-installes" class="liste-choix"></ul></div>
+      <div class="carte">
+        <h2>En trouver d'autres</h2>
+        <div class="ajout-filament"><input id="comp-texte" placeholder="Ex. salto, danse…" aria-label="Rechercher"><button id="comp-chercher">Chercher</button></div>
+        <ul id="comp-resultats" class="liste-choix"></ul>
+        <p class="discret petit">Le catalogue officiel (uduck-registry, Hugging Face) : c'est le robot qui le consulte, comme
+          l'appli officielle de Pollen.</p>
+      </div>
+    </main>
+  </section>
+
+  <!-- Connexions : la configuration du canard, sans editer ha.toml (configuration.py) -->
+  <section id="connexions" class="ecran plein" hidden>
+    <header class="entete">
+      <button class="icone-bouton retour" data-fermer aria-label="Retour">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="titre-plein"><h1>Connexions</h1><p class="discret">Configuration du canard</p></div>
+    </header>
+    <main>
+      <div id="redemarrer-bandeau" class="suggestion" hidden>
+        <span>Redémarre le cerveau pour appliquer.</span><button id="redemarrer" class="principal">Redémarrer</button>
+      </div>
+      <div class="carte">
+        <h2>Le canard</h2>
+        <label class="champ">Son nom<input id="c-nom" maxlength="40"></label>
+        <div class="reglage"><div><b>Mode garde au démarrage</b><p class="discret">Maison vide : il signale une voix, un choc.</p></div>
+          <input type="checkbox" id="c-garde" class="case"></div>
+        <button class="large" data-sauver="cerveau">Enregistrer</button>
+      </div>
+      <div class="carte">
+        <h2>Habitants</h2>
+        <p class="discret petit">L'entité Home Assistant (person.…) est facultative : elle sert à savoir qui est à la maison.</p>
+        <div id="c-habitants" class="lignes"></div>
+        <div class="boutons"><button id="c-habitant-ajout">Ajouter</button><button data-sauver="habitant">Enregistrer</button></div>
+      </div>
+      <div class="carte">
+        <h2>Codes</h2>
+        <label class="champ">Code de l'appli <small>(vide : inchangé)</small><input id="c-code" type="password" minlength="6" autocomplete="new-password"></label>
+        <label class="champ">Code enfant <small>(jouer, regarder, le retrouver ; ni réglages ni télécommande)</small>
+          <input id="c-code-enfant" type="password" autocomplete="new-password"></label>
+        <button class="large" data-sauver="appli">Enregistrer</button>
+      </div>
+      <div class="carte">
+        <h2>Home Assistant <small class="discret">(facultatif)</small></h2>
+        <div class="reglage"><div><b>Relier à Home Assistant</b><p class="discret">États du canard, événements de la maison.</p></div>
+          <input type="checkbox" id="c-ha-actif" class="case"></div>
+        <label class="champ">Adresse<input id="c-ha-url" placeholder="http://homeassistant.local:8123" inputmode="url"></label>
+        <label class="champ">Jeton d'accès longue durée <small>(profil HA → Sécurité)</small><input id="c-ha-jeton" type="password" autocomplete="off"></label>
+        <p id="c-ha-test" class="discret petit"></p>
+        <div class="boutons"><button id="c-ha-tester">Tester</button><button data-sauver="home_assistant">Enregistrer</button></div>
+      </div>
+      <div class="carte">
+        <h2>Imprimantes 3D</h2>
+        <p class="discret petit">Suivies en direct sur le Wi-Fi, sans Home Assistant : il réagit à la fin ou à l'échec
+          d'une impression. Prusa : PrusaLink et sa clé API ; Elegoo : protocole SDCP.</p>
+        <div id="c-imprimantes" class="lignes"></div>
+        <div class="boutons"><button id="c-imprimante-ajout">Ajouter</button><button data-sauver="imprimante_directe">Enregistrer</button></div>
+      </div>
+      <div class="carte">
+        <h2>Appareils <small class="discret">(Home Assistant)</small></h2>
+        <p class="discret petit">Sonnette, machines, détecteur de fumée, aspirateur, météo… par leur entité Home Assistant.</p>
+        <div id="c-appareils" class="lignes"></div>
+        <div class="boutons"><button id="c-appareil-ajout">Ajouter</button><button data-sauver="appareil">Enregistrer</button></div>
+      </div>
+    </main>
+  </section>
+
+  <dialog id="vue-fiche" class="vue-lieu">
+    <h2>Fiche d'impression</h2>
+    <p id="fiche-schema" class="discret petit"></p>
+    <div id="fiche-contenu" class="fiche"></div>
+    <div class="boutons">
+      <button id="fiche-copier">Copier</button>
+      <button id="fiche-enregistrer">Enregistrer</button>
+    </div>
+    <form method="dialog"><button class="large">Fermer</button></form>
+  </dialog>
+
+  <script src="/i18n.js"></script>
+  <script src="/demo.js"></script>
+  <script src="/app.js"></script>
+  <script src="/boutique.js"></script>
+  <script src="/connexions.js"></script>
+  <script src="/studio.js"></script>
+  <script src="/lib/qrcode.js"></script>
+  <script src="/plus.js"></script>
+</body>
+</html>

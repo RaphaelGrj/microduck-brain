@@ -140,7 +140,8 @@ for i in range(n_essais):
         cap_vise = cap_w + (s0["odom"]["yaw"] - yaw_w)        # la meme direction dans le repere de l'odometrie
         print(f"direction visee : {math.degrees(cap_w):+.0f} deg (monde), "
               f"{math.degrees(cap_w - math.atan2(pb[1] - pd[1], pb[0] - pd[0])):+.0f} deg de la ligne canard-balle", flush=True)
-    ap = approach.Approche(c, "orange", verite=True, log=lambda m: print(m, flush=True), cap_vise=cap_vise)
+    ap = approach.Approche(c, "orange", verite=True, log=lambda m: print(m, flush=True), cap_vise=cap_vise,
+                           feinte="--feinte" in sys.argv)
     ap.avant_tir = lambda: {"verite": truth.in_trunk_frame(truth.read(), "testball"), "gt": truth.read()}
     t0 = time.monotonic()
     res = ap.run(90.0)

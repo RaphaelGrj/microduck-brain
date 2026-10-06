@@ -4,7 +4,9 @@
 Verifie : transitions d'etat -> evenements du cerveau (et seulement elles), etats ignores, jeton refuse,
 publication des entites du canard, reconnexion apres coupure. Usage : bash ~/run-brain.sh test_ha.py
 """
+import tempfile
 import time
+from pathlib import Path
 
 import brain
 import mock_ha
@@ -73,7 +75,7 @@ def test_publication():
     pont.photographier(FauxBrain(), faux_etat())
     pont.demarrer()
     try:
-        assert attendre(lambda: "sensor.microduck_batterie" in ha.etats), ha.etats.keys()
+        assert attendre(lambda: "binary_sensor.microduck_chat_vu" in ha.etats), ha.etats.keys()   # la derniere publiee
         assert ha.etats["sensor.microduck_batterie"]["state"] == "87"
         assert ha.etats["sensor.microduck_batterie"]["attributes"]["device_class"] == "battery"
         assert ha.etats["binary_sensor.microduck_tombe"]["state"] == "off"
@@ -248,6 +250,99 @@ reactions = {{ complete = "impression_finie" }}
     assert not mauvais["rest"] and any("jeton refuse" in m for m in sortie)
     ha.arreter()
     print("config + verifier : OK (champs A_REMPLIR ignores, imprimantes listees, jeton jamais affiche, mauvais jeton explique)")
+
+
+def test_options_cerveau():
+    """Section [cerveau] de ha.toml -> routines du cerveau ; valeurs absentes ou invalides ignorees."""
+    assert pont_ha.options_cerveau({"cerveau": {"heures_calmes": [23, 7], "bonjour": "7:30"}}) == \
+        {"heures_calmes": (23, 7), "bonjour": (7, 30)}
+    assert pont_ha.options_cerveau({"cerveau": {"bonjour": 8}}) == {"bonjour": 8}
+    assert pont_ha.options_cerveau({"cerveau": {"heures_calmes": [25, 7], "bonjour": "matin"}}) == {}
+    assert pont_ha.options_cerveau({}) == {}
+
+
+def test_messager_appareils():
+    """Sections [[appareil]] : sonnette (binary_sensor et event.*), machine a etats, prise a mesure de puissance."""
+    import tempfile
+    from pathlib import Path
+    toml = """
+[home_assistant]
+url = "http://ha.local:8123"
+[[appareil]]
+nom = "Sonnette"
+type = "sonnette_event"
+entite = "event.sonnette_entree"
+[[appareil]]
+nom = "Lave-vaisselle"
+type = "machine"
+entite = "sensor.lave_vaisselle_operation_state"
+[[appareil]]
+nom = "Lave-linge"
+type = "puissance"
+entite = "sensor.prise_lave_linge_puissance"
+fin_apres_s = 120
+[[declencheur]]
+evenement = "jeu_soleil"
+entite = "input_button.microduck_soleil"
+[[appareil]]
+nom = "Seche-linge"
+type = "puissance"
+entite = "A_REMPLIR"
+"""
+    with tempfile.TemporaryDirectory() as d:
+        chemin = Path(d) / "ha.toml"
+        chemin.write_text(toml)
+        cfg = pont_ha.lire_config(chemin)
+    assert cfg["ignorees"] == ["Seche-linge"]
+    t = [0.0]
+    pont = pont_ha.PontHA(cfg, JETON, log=lambda m: None, horloge=lambda: t[0])
+    # premiere apparition (ancien None) et retour d'une entite indisponible : ce ne sont pas des appuis
+    pont._sur_changement("event.sonnette_entree", None, "2026-10-05T10:00:00+00:00")
+    pont._sur_changement("event.sonnette_entree", "unavailable", "2026-10-05T10:00:00+00:00")
+    assert pont.source() == [], "un etat retrouve n'est pas un appui"
+    pont._sur_changement("event.sonnette_entree", "2026-10-05T10:00:00+00:00", "2026-10-05T10:05:00+00:00")
+    pont._sur_changement("event.sonnette_entree", "2026-10-05T10:05:00+00:00", "2026-10-05T10:07:00+00:00")
+    assert pont.source() == ["sonnette:Sonnette", "sonnette:Sonnette"], "chaque appui doit sonner"
+    pont._sur_changement("input_button.microduck_soleil", "2026-10-05T10:00:00", "2026-10-05T10:01:00")
+    assert pont.source() == ["jeu_soleil:input_button.microduck_soleil"]
+    pont._sur_changement("sensor.lave_vaisselle_operation_state", "run", "Finished")
+    assert pont.source() == ["machine_finie:Lave-vaisselle"]
+    lv = "sensor.prise_lave_linge_puissance"
+
+    def puissance(w, a):
+        t[0] = a
+        pont._sur_changement(lv, None, str(w))
+        return pont.source()
+    assert puissance(2000, 0) == [] and puissance(1.0, 600) == []     # 10 min de lavage, puis trempage
+    assert puissance(1.0, 700) == []                                   # 100 s sous le seuil : pas encore fini
+    assert puissance(400, 710) == []                                   # ca repart : c'etait une pause
+    assert puissance(0.5, 3000) == []
+    t[0] = 3121
+    assert pont.source() == ["machine_finie:Lave-linge"], "cycle termine non signale"
+    t[0] = 9999
+    assert pont.source() == [], "un cycle ne se signale qu'une fois"
+    assert puissance(1500, 10000) == [] and puissance(0.0, 10030) == []    # 30 s de marche : pas une lessive
+    t[0] = 11000
+    assert pont.source() == [], "un allumage bref ne doit rien signaler"
+    assert puissance("unavailable", 11001) == []
+
+
+def test_publication_messages_en_attente():
+    pont = pont_ha.PontHA({"url": "http://x", "surveillance": [], "publier_toutes_les_s": 1}, JETON, log=lambda m: None)
+    b = FauxBrain()
+    b.messages = ["machine_finie:Lave-linge"]
+    pont.photographier(b, faux_etat())
+    etat, attrs = pont.entites_du_canard()["sensor.microduck_messages"]
+    assert etat == 1 and attrs["messages"] == "machine_finie:Lave-linge"
+    assert pont.entites_du_canard()["binary_sensor.microduck_veille"][0] == "off"
+    assert "sensor.microduck_blagues" not in pont.entites_du_canard(), "pas de compteur sans cerveau a taquineries"
+    vrai = brain.Brain(type("C", (), {"notify": lambda *a: None, "request": lambda *a, **k: {}})(), seed=1)
+    vrai.malice.noter(vrai, "regard_mystere")
+    vrai.veille_jusqua = 100.0
+    pont.photographier(vrai, faux_etat())
+    e = pont.entites_du_canard()
+    assert e["sensor.microduck_blagues"][0] == 1 and e["sensor.microduck_blagues"][1]["derniere"] == "regard_mystere"
+    assert e["binary_sensor.microduck_veille"][0] == "on"
 
 
 def test_calme():
@@ -435,6 +530,13 @@ def test_mqtt():
         assert br.retenus["microduck/disponible"] == b"online"
         assert json.loads(br.retenus["homeassistant/binary_sensor/microduck/tombe/config"])["payload_on"] == "on"
         assert "homeassistant/switch/microduck/calme/config" in br.retenus
+        bouton = json.loads(br.retenus["homeassistant/button/microduck/jouer_soleil/config"])
+        assert bouton["payload_press"] == "jeu_soleil" and bouton["command_topic"] == "microduck/commande", bouton
+        br.publier("microduck/commande", "jeu_soleil")                      # le bouton dans HA
+        assert attendre(lambda: pont.source() == ["jeu_soleil"]), log
+        br.publier("microduck/commande", "robot.init")                      # charge inconnue : refusee
+        time.sleep(0.3)
+        assert pont.source() == [], "seules les commandes des boutons annonces sont acceptees"
         assert "sensor.microduck_batterie" not in ha.etats, "avec MQTT, pas de publication REST en double"
         br.publier("microduck/calme/set", "ON")                              # l'interrupteur dans HA
         assert attendre(lambda: pont.source() == ["calme_on"]), log
@@ -536,3 +638,161 @@ if __name__ == "__main__":
     test_reconnexion()
     test_cerveau()
     print("TOUS LES TESTS OK")
+
+
+def test_deux_declencheurs_sur_la_meme_entite():
+    """visiteur (on) et visiteur_fin (off) sur le meme input_boolean : les deux reactions doivent rester."""
+    toml = """
+[home_assistant]
+url = "http://ha.local:8123"
+[[declencheur]]
+evenement = "visiteur"
+nom = "Josiane"
+entite = "input_boolean.josiane_est_la"
+etat = "on"
+[[declencheur]]
+evenement = "visiteur_fin"
+nom = "Josiane"
+entite = "input_boolean.josiane_est_la"
+etat = "off"
+"""
+    with tempfile.TemporaryDirectory() as d:
+        chemin = Path(d) / "ha.toml"
+        chemin.write_text(toml)
+        cfg = pont_ha.lire_config(chemin)
+    pont = pont_ha.PontHA(cfg, JETON, log=lambda m: None)
+    pont._sur_changement("input_boolean.josiane_est_la", "off", "on")
+    pont._sur_changement("input_boolean.josiane_est_la", "on", "off")
+    assert pont.source() == ["visiteur:Josiane", "visiteur_fin:Josiane"]
+
+
+def test_le_modele_de_configuration_se_lit():
+    cfg = pont_ha.lire_config(Path(__file__).parent / "ha.exemple.toml")
+    assert cfg["surveillance"] == [] and "visiteur" in cfg["ignorees"], "tout est A_REMPLIR : rien de surveille"
+
+
+ACTIONS_TOML = """
+[home_assistant]
+url = "http://127.0.0.1:1"
+[[action]]
+quand = "accueil"
+service = "light.turn_on"
+entite = "light.entree"
+donnees = { brightness_pct = 60 }
+[[action]]
+voix = "lumiere du salon"
+service = "light.toggle"
+entite = "light.salon"
+delai_min_s = 2
+[[action]]
+quand = "nap"
+service = "scene.turn_on"
+entite = "scene.nuit"
+heures = [22, 6]
+[[action]]
+quand = "sonnette"
+service = "notify.notify"
+donnees = { message = "on sonne" }
+[[action]]
+service = "light.toggle"
+"""
+
+
+def test_actions_lues_et_concernees():
+    with tempfile.TemporaryDirectory() as d:
+        (Path(d) / "ha.toml").write_text(ACTIONS_TOML)
+        cfg = pont_ha.lire_config(Path(d) / "ha.toml")
+    a = cfg["actions"]
+    assert len(a) == 4 and cfg["ignorees"] == ["action"], "une action sans quand ni voix est ignoree"
+    assert a[0]["donnees"] == {"brightness_pct": 60, "entity_id": "light.entree"}
+    assert a[1]["voix_evt"] == "maison:lumiere_du_salon" and a[1]["voix"] == "lumiere du salon"
+    assert a[1]["delai_min_s"] == 2.0 and a[0]["delai_min_s"] == 60.0
+    assert pont_ha.action_concernee(a[0], "etat:accueil") and not pont_ha.action_concernee(a[0], "etat:chill")
+    assert pont_ha.action_concernee(a[3], "sonnette:Entree")     # l'evenement de HA (puis l'etat : delai_min_s)
+    assert not pont_ha.action_concernee(a[1], "maison:autre")
+    assert pont_ha.slug("Allume l'entrée !") == "allume_l_entree"
+    modele = pont_ha.lire_config(Path(__file__).parent / "ha.exemple.toml")
+    assert modele["actions"] == [], "le modele (A_REMPLIR) ne doit declencher aucune action sans cible"
+
+
+def test_le_canard_declenche_des_scenes_dans_ha():
+    """De bout en bout contre le faux HA : la voix (reconnue sur le canard) et l'accueil appellent des services."""
+    from commandes import Commandes
+    from test_commandes import FauxVosk
+    from test_brain import FauxClient
+    ha = mock_ha.MockHA(JETON)
+    with tempfile.TemporaryDirectory() as d:
+        (Path(d) / "ha.toml").write_text(ACTIONS_TOML.replace("http://127.0.0.1:1", ha.url))
+        cfg = pont_ha.lire_config(Path(d) / "ha.toml")
+    cfg["url_ws"] = ha.url_ws
+    pont = pont_ha.PontHA(cfg, JETON, log=lambda m: None)
+    pont.demarrer()
+    try:
+        maison = {a["voix"]: a["voix_evt"] for a in cfg["actions"] if a["voix"]}
+        cmd = Commandes(lambda g: FauxVosk(g), nom="daffy", maison=maison)
+        assert "daffy lumiere du salon" in cmd.reco.grammaire
+        b = brain.Brain(FauxClient(), brain.Humeur(energie=0.9), seed=4)
+        for k in range(10):
+            pont.photographier(b, faux_etat())
+            b.tick({"t": k * 0.02, "safety": {"fallen": False}, "policy": "stand"}, 0.02)
+        cmd.reco.file.append(("daffy lumiere du salon", 0.95))
+        for e in cmd.bloc_brut(b"\0" * 640):
+            b.evenement(e)
+        b.evenement("retour:Raphael|3600")
+        for k in range(10, 60):
+            b.tick({"t": k * 0.02, "safety": {"fallen": False}, "policy": "stand"}, 0.02)
+        attendu = [("light", "toggle", {"entity_id": "light.salon"}),
+                   ("light", "turn_on", {"brightness_pct": 60, "entity_id": "light.entree"})]
+        assert attendre(lambda: sorted(ha.appels) == sorted(attendu), 5.0), ha.appels
+        assert "compris" in [e[1] for e in b.journal], "il accuse reception d'un petit son de canard"
+        cmd.reco.file.append(("daffy lumiere du salon", 0.95))   # redit tout de suite : pas deux fois en 2 s
+        for e in cmd.bloc_brut(b"\0" * 640):
+            b.evenement(e)
+        time.sleep(0.5)
+        assert len([x for x in ha.appels if x[1] == "toggle"]) == 1
+    finally:
+        pont.stop()
+        ha.arreter()
+
+
+def test_action_hors_de_sa_plage_horaire():
+    a = pont_ha.lire_action({"quand": "nap", "service": "scene.turn_on", "entite": "scene.nuit", "heures": [22, 6]})
+    pont = pont_ha.PontHA.__new__(pont_ha.PontHA)
+    pont.cfg, pont.horloge = {"actions": [a]}, time.monotonic
+    pont._actions, pont._derniere_action = __import__("queue").Queue(), {}
+    pont._sur_canard("etat:nap")
+    h = time.localtime().tm_hour
+    assert pont._actions.qsize() == (1 if (h >= 22 or h < 6) else 0)
+
+
+def test_mode_garde_maison_vide():
+    from test_brain import FauxClient
+    ha = mock_ha.MockHA(JETON)
+    cfg = {"surveillance": [], "publier_toutes_les_s": 30, "url": ha.url, "url_ws": ha.url_ws, "cerveau": {"garde": True}}
+    pont = pont_ha.PontHA(cfg, JETON, log=lambda m: None)
+    pont.demarrer()
+    try:
+        b = brain.Brain(FauxClient(), brain.Humeur(energie=0.9), seed=4, extras={"garde": True})
+        pont.photographier(b, faux_etat())
+        tick = [0]
+
+        def vivre(evts):
+            for e in evts:
+                b.evenement(e)
+            for _ in range(5):
+                b.tick({"t": tick[0] * 0.02, "safety": {"fallen": False}, "policy": "stand"}, 0.02)
+                tick[0] += 1
+        vivre(["voix"])                                           # presence inconnue : rien
+        vivre(["presence:Raphael|home", "voix"])                  # quelqu'un est la : rien
+        vivre(["depart:Raphael"])                                 # maison vide (petit rituel de depart d'abord)
+        for _ in range(150):
+            vivre([])
+        b.ctx.t_dernier_son = -1e9                                # (son du rituel : il ne s'entend pas lui-meme)
+        vivre(["voix", "intonation", "toc_porte"])
+        assert attendre(lambda: len(ha.appels) >= 2, 3.0)
+        time.sleep(0.3)
+        assert sorted(ha.appels, key=str) == sorted([("evenement", "microduck_garde", {"type": "voix"}),
+                                                    ("evenement", "microduck_garde", {"type": "porte"})], key=str)
+    finally:
+        pont.stop()
+        ha.arreter()

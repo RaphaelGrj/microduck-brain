@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Application Microduck pour Android : une coquille autour de l'interface que le canard sert lui-meme (appli.py).
+     Elle ne parle qu'au canard, sur le reseau local, en HTTP (d'ou usesCleartextTraffic). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="fr.microduck.appli"
+    android:versionCode="11"
+    android:versionName="1.1">
+
+    <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="34" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <application
+        android:label="Microduck"
+        android:icon="@drawable/icone"
+        android:allowBackup="false"
+        android:usesCleartextTraffic="true"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+
+        <activity android:name=".Accueil" android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity android:name=".Canard" android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <!-- verification en arriere-plan : alertes -> notifications, widget -->
+        <service android:name=".Veille" android:exported="true"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <receiver android:name=".WidgetCanard" android:exported="true" android:label="Microduck">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_info" />
+        </receiver>
+    </application>
+</manifest>

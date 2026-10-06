@@ -383,12 +383,14 @@ def test_recule_si_chat_approche_vite():
 
 
 class FauxHorloge:
-    """Imite time.localtime() juste assez pour Brain.heures_calmes : une heure locale pilotee par le test."""
-    def __init__(self, heure):
-        self.heure = heure
+    """Imite time.localtime() juste assez pour Brain (heures_calmes, bonjour) : heure, minute, jour pilotes par le test."""
+    def __init__(self, heure, minute=0, jour=100, semaine=None):
+        self.heure, self.minute, self.jour = heure, minute, jour
+        self.semaine = semaine                  # jour de la semaine (0 = lundi) ; par defaut d'apres le jour de l'annee
 
     def __call__(self):
-        return type("T", (), {"tm_hour": self.heure})()
+        wday = self.semaine if self.semaine is not None else self.jour % 7
+        return type("T", (), {"tm_hour": self.heure, "tm_min": self.minute, "tm_yday": self.jour, "tm_wday": wday})()
 
 
 def test_heures_calmes_nuit_force_le_repos():
@@ -449,6 +451,120 @@ def test_pas_de_recul_si_approche_lente():
     chat.estimation = (1.0, 0.3, 0.0)      # 0,2 m parcourus en 1 s = 0,2 m/s, sous le seuil (0,3 m/s)
     etat.pas(b, 1.0)
     assert dernier_vx(c) == 0.0, "une approche lente ne doit pas declencher de recul"
+
+
+def test_bonjour_une_fois_par_jour_a_heure_reelle():
+    # routine du matin (ROADMAP, prochaine etape n°6) : avant l'heure, rien ; a l'heure, un bonjour des que le canard
+    # est au repos ; jamais deux fois le meme jour ; de nouveau le lendemain.
+    c = FauxClient()
+    horloge = FauxHorloge(7, 10)
+    b = Brain(c, Humeur(energie=0.9), seed=30, horloge=horloge, bonjour=(7, 30))
+    simule(b, 30)
+    assert "bonjour" not in {e[1] for e in b.journal}, "bonjour avant l'heure"
+    horloge.minute = 31
+    simule(b, 60)
+    assert [e[1] for e in b.journal].count("bonjour") == 1, b.journal
+    simule(b, 60)
+    assert [e[1] for e in b.journal].count("bonjour") == 1, "deux bonjours le meme jour"
+    horloge.jour += 1
+    simule(b, 60)
+    assert [e[1] for e in b.journal].count("bonjour") == 2, "pas de bonjour le lendemain"
+
+
+def test_bonjour_hors_fenetre_et_desactive_par_defaut():
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.9), seed=31, horloge=FauxHorloge(17), bonjour=8)    # 17h : trop tard
+    simule(b, 60)
+    assert "bonjour" not in {e[1] for e in b.journal}
+    b = Brain(FauxClient(), Humeur(energie=0.9), seed=31, horloge=FauxHorloge(8, 5))  # pas configure
+    simule(b, 60)
+    assert "bonjour" not in {e[1] for e in b.journal}
+
+
+def test_bonjour_attend_la_fin_des_heures_calmes_et_salue_les_presents():
+    c = FauxClient()
+    horloge = FauxHorloge(6, 50)
+    b = Brain(c, Humeur(energie=0.9), seed=32, horloge=horloge, heures_calmes=(23, 7), bonjour=(6, 45))
+    b.presents.add("Raphael")
+    simule(b, 30)
+    assert b.mode_calme and "bonjour" not in {e[1] for e in b.journal}, "bonjour pendant les heures calmes"
+    horloge.heure, horloge.minute = 7, 0
+    simule(b, 90)
+    assert "bonjour" in {e[1] for e in b.journal}
+    assert any(m == "robot.sound" and p == {"tag": "greet"} for m, p in c.appels), "pas de bonjour a l'habitant"
+
+
+def test_messager_sonnette_et_machine():
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.9), seed=33)
+    simule(b, 3, evenements=[(1.0, "sonnette:Entree")])
+    assert "sonnette" in {e[1] for e in b.journal}
+    assert any(m == "robot.sound" and p == {"tag": "alarm"} for m, p in c.appels)
+    simule(b, 8, evenements=[(1.0, "machine_finie:Lave-linge")])
+    assert "messager" in {e[1] for e in b.journal}
+    assert b.messages == ["machine_finie:Lave-linge"], "personne a la maison : le message doit etre garde"
+    assert b.etats["sonnette"] is not None and "sonnette" not in " ".join(b.messages)
+
+
+def test_message_transmis_au_retour_puis_oublie():
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.9), seed=34)
+    simule(b, 8, evenements=[(1.0, "impression_finie:MK4S")])
+    assert b.messages == ["impression_finie:MK4S"]
+    n_avant = sum(1 for m, p in c.appels if m == "robot.sound" and p == {"tag": "inquire"})
+    simule(b, 15, evenements=[(1.0, "retour:Raphael|3600")])
+    assert b.messages == [], "message non transmis"
+    acc = b.etats["accueil"]
+    assert acc.messages == ["impression_finie:MK4S"]
+    assert sum(1 for m, p in c.appels if m == "robot.sound" and p == {"tag": "inquire"}) > n_avant
+    simule(b, 8, evenements=[(1.0, "impression_finie:MK4S")])
+    assert b.messages == [], "quelqu'un est la : rien a garder, il l'a vu en direct"
+
+
+def test_chat_agace_trois_chutes_veille_assis():
+    # garde-fou "chat agace" (ROADMAP, non negociable) : renverse 3 fois en 10 min -> il s'assoit et passe en veille
+    # au lieu de recommencer ; au bout de la veille, il reprend sa vie.
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.9), seed=80)
+    for k in range(3):
+        simule(b, 30, tombe_entre=(10.0, 13.0))
+    assert b.veille_jusqua > b.t_global, "pas de veille apres 3 chutes"
+    noms = [e[1] for e in b.journal]
+    assert noms[-1] == "nap" and noms.count("ebouriffe") == 2, noms
+    simule(b, 600)
+    assert {e[1] for e in b.journal[len(noms):]} <= {"nap"}, "pendant la veille : seulement des siestes"
+    assert b.ctx.sitting, "il reste assis pendant la veille"
+    simule(b, 400)
+    assert b.t_global > b.veille_jusqua and not b.ctx.sitting, "la veille finie, il se releve"
+
+
+def test_deux_chutes_espacees_pas_de_veille():
+    c = FauxClient()
+    b = Brain(c, Humeur(energie=0.9), seed=81)
+    simule(b, 30, tombe_entre=(10.0, 13.0))
+    simule(b, 700)
+    simule(b, 30, tombe_entre=(10.0, 13.0))
+    simule(b, 30, tombe_entre=(10.0, 13.0))
+    assert b.veille_jusqua < 0, "3 chutes, mais pas dans la meme fenetre de 10 min"
+
+
+def test_taquinerie_non_puis_joue_quand_meme():
+    class Veille:
+        def armer(self): pass
+        def desarmer(self): pass
+        def a_bouge(self): return False
+    vus = 0
+    for seed in range(40):
+        c = FauxClient()
+        b = Brain(c, Humeur(energie=0.9), seed=seed, extras={"mouvement": Veille()}, horloge=FauxHorloge(15))
+        b.fin_etat = 1e9
+        simule(b, 6, evenements=[(0.5, "jeu_soleil")])
+        noms = [e[1] for e in b.journal]
+        assert "soleil" in noms, (seed, noms)
+        if "taquin" in noms:
+            vus += 1
+            assert noms.index("taquin") + 1 == noms.index("soleil"), "apres le non, il joue"
+    assert 2 <= vus <= 16, f"taquinerie {vus}/40 : elle doit rester occasionnelle"
 
 
 if __name__ == "__main__":

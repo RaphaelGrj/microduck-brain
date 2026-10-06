@@ -1,0 +1,29 @@
+# Cerveau du Microduck, SUR le canard (canard.py : cerveau + ToF + camera + Home Assistant si ha.toml).
+# NON TESTE (robot pas livre). Sockets : chemins officiels (deploy/robotd.toml du depot pollen-robotics/microduck).
+[Unit]
+Description=Cerveau comportemental (Microduck)
+After=robotd.service tofd.service mediad.service network-online.target
+Wants=network-online.target
+
+[Service]
+User=microduck-cerveau
+WorkingDirectory=/opt/microduck-cerveau
+Environment=ROBOTD_SOCK=/run/robotd.sock
+Environment=TOFD_SOCK=/run/tofd/tof.sock
+Environment=MICRODUCK_FRAME_URL=http://127.0.0.1:8080/frame
+Environment=MICRODUCK_MICRO=micro_partage
+Environment=PYTHONUNBUFFERED=1
+# mise a jour demandee depuis l'appli (installer / revenir) : avant le cerveau, sans jamais l'empecher de demarrer
+ExecStartPre=-/opt/microduck-cerveau/mettre_a_jour.sh
+ExecStart=/opt/microduck-cerveau/venv/bin/python canard.py ha.toml --micro
+# SIGTERM (defaut) : canard.py se releve s'il est assis et sauve sa memoire avant de sortir
+TimeoutStopSec=15
+Restart=always
+RestartSec=10
+# le cerveau est un client parmi d'autres : jamais prioritaire sur la boucle de controle de robotd
+Nice=10
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

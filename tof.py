@@ -52,7 +52,8 @@ class Tof(threading.Thread):
     def noter_etat(self, etat):
         """A appeler a CHAQUE trame robot.state : garde la pose du capteur pour la retrouver a l'instant exact de la
         trame ToF (la tete bouge : la pose courante, plus recente, place mal les points, surtout vers le sol)."""
-        if etat and etat.get("t_ns") and etat.get("frames", {}).get("tof"):
+        pos = ((etat or {}).get("odom") or {}).get("position")
+        if etat and etat.get("t_ns") and (etat.get("frames") or {}).get("tof") and pos and len(pos) > 2:
             self.historique.append((etat["t_ns"], etat["frames"]["tof"], etat["odom"]["position"][2], haut(etat)))
 
     def _pose_a(self, t_ns):

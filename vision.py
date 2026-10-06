@@ -12,6 +12,7 @@ d'un quart de tour -> image portrait 360x640. Horizontalement on a donc le champ
 Usage : uv run python vision.py [chemin_sortie.png]   -> detecte et sauvegarde l'image annotee
 """
 import math
+import os
 import sys
 import urllib.request
 from dataclasses import dataclass
@@ -19,7 +20,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-FRAME_URL = "http://127.0.0.1:8080/frame"
+FRAME_URL = os.environ.get("MICRODUCK_FRAME_URL", "http://127.0.0.1:8080/frame")
 WIDTH, HEIGHT = 360, 640
 FOVY_DEG = 45.0  # champ vertical du rendu avant rotation = champ HORIZONTAL de l'image portrait
 FOCAL_PX = (WIDTH / 2) / math.tan(math.radians(FOVY_DEG / 2))  # ~434.6 px
@@ -58,7 +59,17 @@ class Detection:
     touche_bord: bool = False  # coupe par le bord de l'image : centre/rayon sont approximatifs
 
 
+def luminosite(img) -> float:
+    """Luminosite moyenne de l'image, 0 (noir) a 1 (blanc) : lumiere allumee ou eteinte dans la piece."""
+    gris = img if img.ndim == 2 else cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    return float(gris.mean()) / 255.0
+
+
 def grab_frame(url: str = FRAME_URL, timeout: float = 5.0) -> np.ndarray:
+    # Regle du projet : la camera du canard est lue et analysee SUR le canard - jamais une camera distante.
+    from urllib.parse import urlparse
+    if urlparse(url).hostname not in ("127.0.0.1", "localhost", "::1"):
+        raise RuntimeError(f"camera distante refusee ({url}) : tout est analyse sur le canard")
     with urllib.request.urlopen(url, timeout=timeout) as r:
         data = np.frombuffer(r.read(), dtype=np.uint8)
     img = cv2.imdecode(data, cv2.IMREAD_COLOR)
