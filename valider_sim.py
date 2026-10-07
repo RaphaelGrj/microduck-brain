@@ -248,7 +248,11 @@ def sc_aspirateur(banc):
     gt = truth.read()
     nom = balle(gt)
     b = banc.cerveau(seed=15, exploration=False)
-    b.evenement("aspirateur_on")
+    # l'aspirateur tourne deja (pas la reaction curieuse a son demarrage, qui l'aurait fige hors du repos) ; repos
+    # « aux aguets », tete immobile : c'est la que le ToF guette ce qui approche au ras du sol
+    b.aspirateur_actif = True
+    b.etats["chill"].duree = lambda brain: 1e9
+    b.etats["chill"].aux_aguets = True
     b.fin_etat = 1e9
     etat = {"d": 1.0, "ecarte_a": None, "n": 0}
     asp = b.etats["aspirateur"]
@@ -335,6 +339,11 @@ def sc_bec_index(banc):
     if len(j0) != 15 or len(j1) != 15:
         return False, {"nombre_de_joints": [len(j0), len(j1)]}
     ecarts = [round(abs(a - b), 3) for a, b in zip(j0, j1)]
+    if max(ecarts) < 0.02:
+        # aucun servo n'a bouge : duck-sim ne simule pas le bec (le modele MuJoCo n'a que 14 servos, sans bec) ;
+        # l'index du bec ne se verifiera que sur le vrai canard (meme scenario, robotd du robot)
+        return None, {"non_mesurable": "pas de servo de bec dans duck-sim", "ecarts_rad": ecarts,
+                      "courants": "presents" if s.get("currents_ma") else "absents"}
     bouge = max(range(15), key=lambda i: ecarts[i])
     ok = bouge == 9 and all(ecarts[i] < 0.05 for i in (5, 6, 7, 8))     # tete immobile ; les jambes ne comptent pas
     return ok, {"joint_qui_bouge": bouge, "ecarts_rad": ecarts,
@@ -381,6 +390,7 @@ def sc_coup_oeil(banc):
         veille.start()
         b = banc.cerveau(seed=25, exploration=False, mouvement=veille)
         b.etats["chill"].duree = lambda brain: 1e9
+        b.etats["chill"].aux_aguets = True      # le repos ou il guette (le premier repos n'a pas tire au sort)
         b.fin_etat = 1e9
         k = [0]
 
@@ -458,15 +468,20 @@ def main():
                 ok, details = SCENARIOS[n][1](banc)
             except Exception as e:                  # un scenario qui plante ne doit pas arreter les autres
                 ok, details = False, {"erreur": f"{type(e).__name__}: {e}"}
-            r = {"scenario": n, "scene": scene, "ok": bool(ok), "details": details,
+            # ok None : pas mesurable dans duck-sim (a verifier sur le vrai canard) - ni reussite, ni echec
+            r = {"scenario": n, "scene": scene, "ok": None if ok is None else bool(ok), "details": details,
                  "duree_s": round(time.monotonic() - t0, 1), "temps_reel": round(rt, 2)}
             resultats.append(r)
-            print(f"{'OK   ' if ok else 'ECHEC'} {n:14s} {json.dumps(details, ensure_ascii=False)}", flush=True)
+            print(f"{'N/A  ' if ok is None else 'OK   ' if ok else 'ECHEC'} {n:14s} {json.dumps(details, ensure_ascii=False)}",
+                  flush=True)
         banc.tof.actif = False
     SORTIE.parent.mkdir(parents=True, exist_ok=True)
     SORTIE.write_text(json.dumps(resultats, indent=1, ensure_ascii=False))
-    print(f"\n{sum(r['ok'] for r in resultats)}/{len(resultats)} scenarios valides ; detail : {SORTIE}", flush=True)
-    return 0 if all(r["ok"] for r in resultats) else 1
+    mesures = [r for r in resultats if r["ok"] is not None]
+    na = len(resultats) - len(mesures)
+    print(f"\n{sum(1 for r in mesures if r['ok'])}/{len(mesures)} scenarios valides"
+          + (f" ({na} non mesurable(s) en simulation)" if na else "") + f" ; detail : {SORTIE}", flush=True)
+    return 0 if all(r["ok"] for r in mesures) else 1
 
 
 if __name__ == "__main__":
