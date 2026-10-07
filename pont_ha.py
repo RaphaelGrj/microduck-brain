@@ -150,7 +150,7 @@ def normaliser(brut):
             cfg["ignorees"].append(piece.get("nom", "piece"))
             continue
         nom = str(piece["nom"]).replace("|", " ").replace(":", " ").strip()[:40]
-        cfg["surveillance"].append({"entite": piece["entite"], "nom": nom,
+        cfg["surveillance"].append({"entite": piece["entite"], "nom": nom, "sans_detail": True,   # (deja dans l'evenement)
                                     "reactions": {"on": f"presence_piece:{nom}|on", "off": f"presence_piece:{nom}|off"}})
     cfg["actions"] = []
     from commandes import VOCABULAIRE
@@ -396,7 +396,9 @@ class PublieurMQTT:
                ("suis_moi", "suis-moi", "mdi:shoe-print", "suis_moi"),
                ("je_te_suis", "montre-moi le chemin", "mdi:walk", "je_te_suis"),
                ("station", "rentre a ta station", "mdi:home-import-outline", "commande:station"),
-               ("ronde", "fais ta ronde", "mdi:shield-home-outline", "commande:ronde"))
+               ("ronde", "fais ta ronde", "mdi:shield-home-outline", "commande:ronde"),
+               ("tresor", "chasse au tresor", "mdi:treasure-chest", "commande:tresor"),
+               ("cherche_balle", "va chercher ta balle", "mdi:soccer-field", "commande:cherche_balle"))
 
     def __init__(self, mq, log=print, sur_evenement=None):
         import paho.mqtt.client as mqtt

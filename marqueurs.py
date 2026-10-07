@@ -66,8 +66,9 @@ def pose_du_canard(vu, sur_le_plan):
     return X - (c * x - s * y), Y - (s * x + c * y), cap
 
 
-def page_a_imprimer(chemin="marqueurs_a_imprimer.png", ids=range(6), dpi=300):
-    """Une page A4 (300 dpi) avec des marqueurs de TAILLE_M de cote et leur numero. Imprimer « taille reelle »."""
+def page_a_imprimer(chemin="marqueurs_a_imprimer.png", ids=(0, 1, 2, 3, 4, 9), dpi=300):
+    """Une page A4 (300 dpi) avec des marqueurs de TAILLE_M de cote et leur numero : 0 a 4 pour les murs, 9 = le
+    TRESOR (chasse au tresor, etats_plan.TRESOR_ID : a cacher, pas a coller). Imprimer « taille reelle »."""
     mm = dpi / 25.4
     page = np.full((int(297 * mm), int(210 * mm)), 255, np.uint8)
     d = cv2.aruco.getPredefinedDictionary(DICO)
@@ -79,7 +80,7 @@ def page_a_imprimer(chemin="marqueurs_a_imprimer.png", ids=range(6), dpi=300):
         if y0 + cote > page.shape[0] or x0 + cote > page.shape[1]:
             break
         page[y0:y0 + cote, x0:x0 + cote] = cv2.aruco.generateImageMarker(d, int(i), cote)
-        cv2.putText(page, f"n {i}  ({int(TAILLE_M * 100)} cm)", (x0, y0 + cote + int(8 * mm)),
+        cv2.putText(page, f"n {i}  ({int(TAILLE_M * 100)} cm)" + ("  TRESOR" if i == 9 else ""), (x0, y0 + cote + int(8 * mm)),
                     cv2.FONT_HERSHEY_SIMPLEX, 1.6, 0, 3)
     cv2.imwrite(chemin, page)
     return chemin

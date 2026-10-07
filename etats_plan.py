@@ -11,6 +11,7 @@ distance doit voir de la place devant, sinon il s'arrete ; une zone interdite bl
 import json
 import math
 import threading
+import time
 
 from etats_base import TETE_PROMENADE, V_ROTATION, Etat
 from navigation import AllerVers
@@ -93,8 +94,10 @@ class VaSurPlan(Etat):
     position perdue, bloque deux fois) : `si_echec`."""
     DUREE_MAX = 150.0
 
-    def __init__(self, nom, ensuite, motif, si_echec="chill"):
-        self.nom, self.ensuite, self.motif, self.si_echec = nom, ensuite, motif, si_echec
+    def __init__(self, nom, ensuite, motif, si_echec="chill", proche_ok=0.0):
+        """`proche_ok` : bloque a moins de cette distance de la cible = arrive (une balle, une imprimante sur sa table :
+        on s'arrete devant)."""
+        self.nom, self.ensuite, self.motif, self.si_echec, self.proche_ok = nom, ensuite, motif, si_echec, proche_ok
         self.cible = None
 
     def entre(self, brain):
@@ -111,6 +114,11 @@ class VaSurPlan(Etat):
         brain.ctx.move(vx=vx, vyaw=vyaw)
         if statut == "avance":
             return
+        pos = brain.ctx.extras.get("position")
+        p = pos.pose() if pos is not None else None
+        if (statut == "echec:bloque" and p is not None and self.proche_ok > 0
+                and math.hypot(p[0] - self.cible[0], p[1] - self.cible[1]) <= self.proche_ok):
+            statut = "arrive"
         self.issue = statut
         brain.suivant_force = self.ensuite if statut == "arrive" else self.si_echec
         brain.fin_etat = t
@@ -269,4 +277,140 @@ class Ronde(Etat):
         p = brain.ctx.extras.get("position")
         if p is not None:
             p.chemin = []
+        brain.ctx.calme()
+
+
+# -- chasse au tresor -----------------------------------------------------------------------------------------------------
+TRESOR_ID = 9                    # le marqueur « tresor » (marqueurs.py imprimer : la page en contient un)
+
+
+class Tresor(Etat):
+    """Chasse au tresor : tu as cache le marqueur « tresor » (n 9). Il fouille piece par piece - il y va, regarde
+    autour de lui (sa camera cherche le marqueur) - et fait la fete quand il le voit ; bredouille, un « coo » decu."""
+    nom = "tresor"
+    REGARDE_S = 7.0
+
+    def entre(self, brain):
+        pos = brain.ctx.extras.get("position")
+        pl = pos.plan if pos is not None else None
+        p = pos.pose() if pos is not None else None
+        self.pieces = [centre(q["contour"]) for q in (pl.pieces if pl else []) if len(q.get("contour") or []) >= 3]
+        if p is not None:                                 # d'abord la piece ou il est, puis les plus proches
+            self.pieces.sort(key=lambda c: math.hypot(c[0] - p[0], c[1] - p[1]))
+        self.t0_jeu, self.k, self.trajet, self.phase, self.t0 = brain.t_global, 0, None, "regarde", 0.0
+        if pos is not None:
+            pos.chercher.add(TRESOR_ID)
+        self.t_mur0 = time.time()                         # un marqueur vu AVANT le debut de la partie ne compte pas
+        brain.ctx.sound("chirp")                          # c'est parti !
+
+    def duree(self, brain):
+        return 90.0 * max(1, len(self.pieces)) + 30.0
+
+    def _trouve(self, brain):
+        pos = brain.ctx.extras.get("position")
+        vu = (pos.vus_marqueurs.get(TRESOR_ID) or 0.0) if pos is not None else 0.0
+        return vu >= self.t_mur0
+
+    def pas(self, brain, t):
+        if self.phase != "fete" and self._trouve(brain):
+            brain.ctx.move()
+            brain.ctx.sound("wheee")
+            self.phase, self.t0 = "fete", t
+            brain.perso.vit("jeu")
+            return
+        dt = t - self.t0
+        if self.phase == "va":
+            brain.ctx.head((0.0, TETE_PROMENADE, 0.0, 0.0))
+            statut, vx, vyaw = self.trajet.commande(brain, t)
+            brain.ctx.move(vx=vx, vyaw=vyaw)
+            if statut != "avance":
+                brain.ctx.move()
+                self.phase, self.t0 = "regarde", t
+        elif self.phase == "regarde":
+            brain.ctx.move()
+            brain.ctx.head((0.0, -0.05, 0.8 * math.sin(2 * math.pi * dt / self.REGARDE_S), 0.0))   # il balaie du regard
+            if dt >= self.REGARDE_S:
+                if self.k >= len(self.pieces):
+                    brain.ctx.sound("coo")                # bredouille
+                    self.phase, self.t0 = "fin", t
+                else:
+                    self.trajet = Trajet(brain.ctx.extras.get("position"), self.pieces[self.k])
+                    self.k += 1
+                    self.phase, self.t0 = "va", t
+        elif self.phase == "fete":
+            import gestures
+            d, fn = gestures.GESTES["content"]
+            brain.ctx.move()
+            brain.ctx.head(fn(min(dt, d)))
+            brain.ctx.pose(gestures.content_corps(dt) if dt < d else None)
+            if dt >= d + 0.5:
+                brain.fin_etat = t
+        else:
+            brain.ctx.move()
+            brain.fin_etat = t
+
+    def sort(self, brain):
+        pos = brain.ctx.extras.get("position")
+        if pos is not None:
+            pos.chercher.discard(TRESOR_ID)
+            pos.chemin = []
+        brain.ctx.calme()
+
+
+# -- guide -------------------------------------------------------------------------------------------------------------------
+class Guide(Etat):
+    """« Emmene-moi a la cuisine » : il ouvre la marche le long du trajet, s'arrete tous les ~2,5 m, tourne la tete en
+    arriere avec un « chirp » (suis-moi !), et salue a l'arrivee."""
+    nom = "guide"
+    PAUSE_TOUS_M = 2.5
+
+    def __init__(self):
+        self.cible, self.nom_cible = None, None
+
+    def entre(self, brain):
+        self.trajet = Trajet(brain.ctx.extras.get("position"), self.cible)
+        self.parcouru, self.dernier, self.pause_jusqua, self.fini = 0.0, None, None, None
+        brain.ctx.sound("chirp")
+
+    def duree(self, brain):
+        return 180.0
+
+    def pas(self, brain, t):
+        o = (brain.ctx.state or {}).get("odom")
+        if self.fini is not None:
+            import gestures
+            brain.ctx.move()
+            brain.ctx.head(gestures.oui(min(t - self.fini, 1.2)))
+            if t - self.fini >= 1.5:
+                brain.fin_etat = t
+            return
+        if self.pause_jusqua is not None:
+            brain.ctx.move()
+            brain.ctx.head((0.0, 0.0, 0.8, 0.0))         # un regard en arriere : tu suis ?
+            if t >= self.pause_jusqua:
+                self.pause_jusqua = None
+            return
+        if o is not None:
+            p = (o["position"][0], o["position"][1])
+            if self.dernier is not None:
+                self.parcouru += math.hypot(p[0] - self.dernier[0], p[1] - self.dernier[1])
+            self.dernier = p
+        if self.parcouru >= self.PAUSE_TOUS_M:
+            self.parcouru = 0.0
+            self.pause_jusqua = t + 1.8
+            brain.ctx.move()
+            brain.ctx.sound("chirp")
+            return
+        brain.ctx.head((0.0, TETE_PROMENADE, 0.0, 0.0))
+        statut, vx, vyaw = self.trajet.commande(brain, t)
+        brain.ctx.move(vx=vx, vyaw=vyaw)
+        if statut != "avance":
+            brain.ctx.move()
+            brain.ctx.sound("greet" if statut == "arrive" else "inquire")
+            self.fini = t
+
+    def sort(self, brain):
+        pos = brain.ctx.extras.get("position")
+        if pos is not None:
+            pos.chemin = []
         brain.ctx.calme()

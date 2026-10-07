@@ -238,3 +238,163 @@ def test_ha_presence_par_piece_et_ronde():
         pytest.skip("lecture de configuration HA sous un autre nom")
     s = next(s for s in cfg["surveillance"] if s["entite"] == "binary_sensor.presence_salon")
     assert s["reactions"] == {"on": "presence_piece:Salon|on", "off": "presence_piece:Salon|off"}
+    # de bout en bout : un vrai changement d'etat HA -> l'evenement exact (sans « :nom » ajoute)
+    p = pont_ha.PontHA(cfg, "x", log=lambda m: None)
+    p._sur_changement("binary_sensor.presence_salon", "off", "on")
+    assert p.source() == ["presence_piece:Salon|on"]
+
+
+# == plan II ==============================================================================================================
+import time
+
+import plan_vie
+from memoire import Memoire
+
+
+class SimuPlus(Simu):
+    """+ ce que position.PositionPlan expose en plus : marqueurs recherches et vus, changements du decor."""
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self.chercher, self.vus_marqueurs, self.a_signaler, self.changements = set(), {}, [], []
+
+
+def test_chasse_au_tresor():
+    pl = plan_maison()
+    simu = SimuPlus(pl, 0.4, -0.3, 0.0)
+    b, c = cerveau(simu)
+    vivre(b, c, simu, 1, evenements=[(0.1, "commande:tresor")])
+    assert b.courant.nom == "tresor" and 9 in simu.chercher, "sa camera cherche le marqueur n 9"
+    vivre(b, c, simu, 12)
+    simu.vus_marqueurs[9] = time.time()                    # le voila !
+    n = len(c.appels)
+    vivre(b, c, simu, 6)
+    assert "wheee" in [p["tag"] for m, p in c.appels[n:] if m == "robot.sound"] and 9 not in simu.chercher
+
+
+def test_cachette_invisible_et_contre_un_meuble():
+    import numpy as np
+    pl = plan_maison()
+    depart = (0.4, -0.3)
+    x, y = plan_vie.cachette(pl, depart, np.random.default_rng(1))
+    assert not plan_vie.visible(pl, depart, (x, y)) and pl.distance()[pl.case(x, y)] <= 0.35
+    simu = SimuPlus(pl, *depart)
+    b, c = cerveau(simu)
+    b._prepare_cache_cache()
+    assert b.etats["cache_cache"].cible_plan is not None
+    vivre(b, c, simu, 30, evenements=[(0.1, "jeu_cache")])
+    assert math.hypot(simu.x - b.etats["cache_cache"].cible_plan[0], simu.y - b.etats["cache_cache"].cible_plan[1]) < 0.5
+
+
+def test_va_chercher_sa_balle():
+    from test_jeu_balle import FausseApproche
+    pl = plan_maison()
+    simu = SimuPlus(pl, 0.4, -0.3, 0.0)
+    b, c = cerveau(simu, fabrique_approche=FausseApproche)
+    b.balle_plan = ("l1", 1.2, -3.2, time.time())
+    vivre(b, c, simu, 40, evenements=[(0.1, "commande:cherche_balle")])
+    noms = [e[1] for e in b.journal]
+    assert "va_balle" in noms and "balle" in noms, noms
+    assert math.hypot(simu.x - 1.2, simu.y + 3.2) < 0.8
+
+
+def test_va_t_attendre_a_la_porte_quand_tu_approches():
+    pl = plan_maison()
+    simu = SimuPlus(pl, 2.0, -3.0, 0.0)
+    b, c = cerveau(simu)
+    vivre(b, c, simu, 40, evenements=[(0.1, "arrivee_proche:Raphael")])
+    noms = [e[1] for e in b.journal]
+    assert "va_entree" in noms and "attend_porte" in noms, noms
+    assert math.hypot(simu.x - 1.2, simu.y - 0.1) < 0.4, "a la vraie porte d'entree"
+
+
+def test_recharge_avant_ton_retour(tmp_path):
+    pl = plan_maison()
+    simu = SimuPlus(pl, 2.0, -3.0, 0.0)
+    mem = Memoire(tmp_path / "m.json")
+    mem.donnees["retours"] = {"Raphael": [[0, 18 * 60 + 30]] * 6}      # rentre vers 18 h 30 en semaine
+    b, c = cerveau(simu, heure=18, memoire=mem)
+    b.horloge = FauxHorloge(18, 0, semaine=2)
+    b._batterie_pct = 40
+    assert b._recharge_avant() == "va_station" and b.recharge_jusqua > b.t_global
+    b._bascule("va_station")
+    vivre(b, c, simu, 80)
+    noms = [e[1] for e in b.journal]
+    assert noms.count("nap") >= 2 or (noms[-1] == "nap" and "accoste" in noms), noms
+
+
+def test_va_voir_l_impression():
+    pl = plan_maison().annoter(points={"imprimante": [2.2, -3.2]})
+    simu = SimuPlus(pl, 0.4, -0.3, 0.0)
+    b, c = cerveau(simu)
+    vivre(b, c, simu, 50, evenements=[(0.1, "impression_finie:MK4S")])
+    noms = [e[1] for e in b.journal]
+    assert "va_imprimante" in noms and "regarde_impression" in noms, noms
+    import photos
+    assert photos.MOTIFS.get("etat:regarde_impression") == "impression", "la photo (opt-in) se prend devant l'imprimante"
+
+
+def test_guide_vocal():
+    from test_commandes import FauxVosk
+    import commandes as cmd
+    com = cmd.Commandes(lambda g: FauxVosk(g), nom="daffy", lieux=plan_vie.noms(plan_maison().vers_dict()))
+    assert com.comprendre({"text": "daffy emmene moi au fond"}) == ["emmene:fond"]
+    pl = plan_maison()
+    simu = SimuPlus(pl, 0.4, -0.3, 0.0)
+    b, c = cerveau(simu)
+    vivre(b, c, simu, 40, evenements=[(0.1, "emmene:fond")])
+    assert "guide" in [e[1] for e in b.journal] and simu.piece() == "Fond"
+    assert "chirp" in [p["tag"] for m, p in c.appels if m == "robot.sound"]
+    vivre(b, c, simu, 1, evenements=[(0.1, "emmene:grenier")])
+    assert "hesite" in [e[1] for e in b.journal], "un lieu inconnu : il hesite"
+
+
+def test_sa_place_selon_l_heure(tmp_path):
+    lh = plan_vie.LieuxHeure({})
+    for _ in range(130):
+        lh.noter("l1", 9, 2.2, -3.1, 5.0)
+    lh.noter("l1", 9, 0.4, -0.3, 60.0)
+    assert lh.favori("l1", 9) == pytest.approx((2.25, -3.25)) and lh.favori("l1", 20) is None
+    pl = plan_maison()
+    simu = SimuPlus(pl, 0.4, -0.3, 0.0)
+    b, c = cerveau(simu, heure=9, memoire=Memoire(tmp_path / "m.json"))
+    b.lieux_heure = lh
+    b._rng_vie.random = lambda: 0.0
+    assert b._habitude_du_moment() == "va_habitude"
+
+
+def test_soleil_appris_par_fenetre():
+    pl = plan_maison()
+    pl.objets.append({"type": "window_frame", "nom": "fenêtre", "centre": [1.5, -3.65], "contour": [[1.0, -3.65], [2.0, -3.65]]})
+    d = {}
+    for jour in range(3):
+        assert plan_vie.noter_soleil(d, "l1", pl, 1.5, -3.0, 10 * 60 + 5 * jour) is not None
+    assert plan_vie.fenetre_au_soleil(d, "l1", pl, 10 * 60 + 20) is not None
+    assert plan_vie.fenetre_au_soleil(d, "l1", pl, 15 * 60) is None, "pas a 15 h"
+    x, y = plan_vie.devant_la_fenetre(pl, pl.objets[-1])
+    assert y > -3.65 and pl.libre(x, y)
+
+
+def test_le_decor_a_change(tmp_path):
+    import lieux
+    li = lieux.Lieux(tmp_path / "lieux.json", log=lambda m: None)
+    li.importer_plan(li.d["actuel"], export_piece())
+    pos = position_mod.PositionPlan(li, log=lambda m: None)
+    pos.pas()
+    t = [1000.0]
+    reel = time.time
+    try:
+        time.time = lambda: t[0]
+        for k in range(70):                                 # un carton, la ou le plan ne connait rien, pendant 35 min
+            t[0] += 30.0
+            pos._compare_au_plan([(1.2, -2.5)])
+    finally:
+        time.time = reel
+    assert pos.a_signaler and pos.changements and abs(pos.changements[0][0] - 1.2) < 0.11
+    pos.indices.clear()
+    pos._compare_au_plan([(0.0, 0.29)] * 100)              # contre le mur : connu du plan, rien a signaler
+    assert len(pos.changements) == 1
+    simu = SimuPlus(plan_maison(), 0.4, -0.3, 0.0)
+    simu.a_signaler.append((1.6, -1.2))
+    b, c = cerveau(simu)
+    vivre(b, c, simu, 15)
+    assert "va_changement" in [e[1] for e in b.journal] and "inspecte" in [e[1] for e in b.journal]

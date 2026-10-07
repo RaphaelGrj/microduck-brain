@@ -86,6 +86,7 @@ COMMANDES = {
     "calme_on": "calme_on", "calme_off": "calme_off", "garde_on": "garde_on", "garde_off": "garde_off",
     "oublier_carte": "oublier_carte", "ou_es_tu": "ou_es_tu", "signal_stop": "signal_stop",
     "suis_moi": "suis_moi", "je_te_suis": "je_te_suis", "station": "commande:station", "ronde": "commande:ronde",
+    "tresor": "commande:tresor", "cherche_balle": "commande:cherche_balle",
     "batterie_1": "batterie_mise:1", "batterie_2": "batterie_mise:2", "batterie_3": "batterie_mise:3",
     "avance": "guide:avance", "gauche": "guide:gauche", "droite": "guide:droite",
     "regard_gauche": "regard:gauche", "regard_droite": "regard:droite", "regard_haut": "regard:haut",
@@ -115,7 +116,8 @@ def _position_courte(pos):
     if e is None:
         return None
     return {"x": round(e[0], 2), "y": round(e[1], 2), "cap": round(e[2], 2), "ecart": round(e[3], 2),
-            "sur": e[3] <= 0.2, "piece": pos.piece(), "lieu": (pos._cle or [None])[0]}
+            "sur": e[3] <= 0.2, "piece": pos.piece(), "lieu": (pos._cle or [None])[0],
+            "changements": list(getattr(pos, "changements", []) or [])}
 
 
 def instantane(brain, state, version=None):
@@ -224,7 +226,7 @@ INSTALLATION_S = 30 * 60             # sans code : l'installation reste ouverte 
 ENFANT_LECTURE = {"/api/role", "/api/etat", "/api/flux", "/api/carte", "/api/alertes", "/api/design", "/api/lieux", "/api/lieu-carte",
                   "/api/imprimantes", "/api/choregraphies", "/api/comportements", "/api/messages", "/api/parcours", "/api/planning", "/api/stats"}
 ENFANT_ECRITURE = {"/api/commande", "/api/message", "/api/parcours", "/api/minuteur"}
-COMMANDES_ENFANT = {"signal_stop", "suis_moi", "je_te_suis", "jouer_balle", "jouer_cache", "jouer_soleil", "fin_jeu", "salut", "toupie", "danse", "stop",
+COMMANDES_ENFANT = {"signal_stop", "suis_moi", "je_te_suis", "tresor", "cherche_balle", "jouer_balle", "jouer_cache", "jouer_soleil", "fin_jeu", "salut", "toupie", "danse", "stop",
                     "stop_taquinerie", "ou_es_tu", "regard_gauche", "regard_droite", "regard_haut", "regard_bas",
                     "regard_centre"}
 SECTIONS_A_REDEMARRER = {"home_assistant", "habitant", "imprimante_directe", "appareil", "cerveau"}
