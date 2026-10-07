@@ -24,6 +24,7 @@ ECART_MEME_MOTIF_S = 10 * 60            # au plus une photo automatique par moti
 # etat du cerveau (ou evenement) -> motif de la photo automatique
 MOTIFS = {"etat:regarde_chat": "chat", "etat:accueil": "retour", "etat:jour_special": "jour_special",
           "etat:danse": "danse", "etat:fier": "fier", "etat:balle": "balle", "etat:remarque": "objet",
+          "etat:regarde_impression": "impression",
           "impression_finie": "impression", "impression_echec": "impression"}
 NOM = re.compile(r"^\d{10}-\d{3}-[a-z_]{1,20}\.(png|jpg)$")
 

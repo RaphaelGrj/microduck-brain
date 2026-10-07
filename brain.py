@@ -35,7 +35,8 @@ from etats_appli import Parcours, PosePhoto, Signal
 import vivant
 from vivant import AttendPorte, Boude, Habituation, JeTeSuis, Reponse, SuisMoi
 import personnage
-from etats_plan import Accoste, Ronde, VaSurPlan, point_approche
+from etats_plan import Accoste, Guide, Ronde, Tresor, VaSurPlan, point_approche
+import plan_vie
 from personnage import (BainSoleil, Doudou, Gaffe, Gouts, Hoquet, Inspecte, Nid, Nomme, ObservateurChat, Petit,
                          Rythme, Solitude, Succes)
 from diagnostic import Diagnostic
@@ -262,6 +263,16 @@ class Brain:
             "accoste": Accoste(), "ronde": Ronde(),
             "va_piece": VaSurPlan("va_piece", "cherche_attention", "voir dans la piece ou l'on est"),
             "va_point": VaSurPlan("va_point", "chill", "la ou on l'envoie"),
+            # plan II : tresor, guide, balle retrouvee, porte d'entree, imprimante, habitudes, soleil, decor change
+            "tresor": Tresor(), "guide": Guide(),
+            "va_balle": VaSurPlan("va_balle", "balle", "retrouver sa balle", proche_ok=0.6),
+            "va_entree": VaSurPlan("va_entree", "attend_porte", "t'attendre a la porte"),
+            "va_imprimante": VaSurPlan("va_imprimante", "regarde_impression", "voir l'impression", proche_ok=0.8),
+            "regarde_impression": Sequence("regarde_impression", [("curieux", "inquire"), ("content", "chirp")]),
+            "va_habitude": VaSurPlan("va_habitude", "chill", "a sa place de ce moment de la journee"),
+            "va_soleil": VaSurPlan("va_soleil", "au_soleil", "la ou il y a du soleil a cette heure"),
+            "au_soleil": Sequence("au_soleil", [("etirement", "coo")]),
+            "va_changement": VaSurPlan("va_changement", "inspecte", "voir ce qui a change", proche_ok=0.7),
         }
         self.etats["taquin"].taquinerie = True
         self.malice = Malice(self.ctx.extras.get("memoire"))
@@ -321,6 +332,10 @@ class Brain:
         self._rituels_faits = set()             # (jour, qui) : rituel deja reclame aujourd'hui
         self.sollicitations = []                # t_global des sollicitations recentes (besoin de solitude)
         self.pieces_occupees = {}               # piece -> t_global : presence par piece (capteurs HA, [[piece]])
+        self.lieux_heure = plan_vie.LieuxHeure(donnees_mem if isinstance(donnees_mem, dict) else None)
+        self.recharge_jusqua = -1e9             # recharge anticipee : sieste sur la station jusque-la
+        self.balle_plan = None                  # (lieu, x, y, heure murale) : ou il a vu sa balle, sur le plan
+        self._t_lieu_note = -1e9
         self.dernier_releve_ronde = None
         self._jour_ronde = None
         self.observateur_chat = ObservateurChat()
@@ -684,6 +699,11 @@ class Brain:
                     self.messages = (self.messages + [nom])[-self.MESSAGES_MAX:]
                 print(f"[{self.t_global:6.1f}s] notification maison : {nom}", flush=True)
                 self._bascule(etat)
+                if base == "impression_finie":
+                    imp = self._point_imprimante(detail)
+                    if imp is not None:
+                        self.etats["va_imprimante"].cible = imp
+                        self.suivant_force = "va_imprimante"   # il va voir la piece terminee
                 continue
             if base in ("stop_taquinerie", "non"):
                 # signal "stop" (bouton HA, "non" vocal) : la taquinerie en cours s'arrete net, plus aucune pendant un moment
@@ -702,6 +722,26 @@ class Brain:
                 continue
             if base == "commande":
                 self._sur_commande(detail)
+                continue
+            if base == "emmene":
+                # « emmene-moi a la cuisine » (voix) : un point nomme ou une piece du plan
+                pos = self.ctx.extras.get("position")
+                cible = plan_vie.resoudre(pos.plan, detail) if pos is not None and pos.plan is not None else None
+                if cible is None or pos.pose() is None or self.mode_calme or self.ctx.sitting or self.tombe:
+                    self._bascule("hesite")             # « ou ca ? »
+                else:
+                    self.etats["guide"].cible, self.etats["guide"].nom_cible = cible, detail
+                    self._bascule("guide")
+                continue
+            if base == "arrivee_proche":
+                # HA : quelqu'un approche de la maison (son telephone) -> il va l'attendre a la vraie porte d'entree
+                pos = self.ctx.extras.get("position")
+                entree = (pos.plan.reperes.get("entree") if pos is not None and pos.plan is not None else None)
+                if (entree and pos.pose() is not None and detail not in self.presents and not self.mode_calme
+                        and not self.tombe and self.courant.nom in ("chill", "look", "wander", "nap", "jeu_solitaire")):
+                    self.etats["attend_porte"].qui = detail or None
+                    self.etats["va_entree"].cible = (entree[0], entree[1])
+                    self._bascule("va_entree")
                 continue
             if base == "presence_piece":
                 piece, _, etat = detail.partition("|")
@@ -1079,7 +1119,8 @@ class Brain:
         if quoi == "stop":
             self.evenements[0:0] = ["non", "fin_jeu"]      # coupe une taquinerie, termine un jeu
             if self.courant.nom in ("assis_demande", "suis_moi", "mene", "va_porte", "va_souvenir", "va_station",
-                                    "accoste", "ronde", "va_piece", "va_point"):
+                                    "accoste", "ronde", "va_piece", "va_point", "tresor", "guide", "va_balle",
+                                    "va_entree", "va_imprimante", "va_habitude", "va_soleil", "va_changement"):
                 self.suivant_force = None
                 self.fin_etat = self.t_etat
         elif quoi == "station":
@@ -1090,6 +1131,14 @@ class Brain:
         elif quoi == "ronde":
             if self._ronde_possible():
                 self._bascule("ronde")
+        elif quoi == "tresor":
+            if self._ronde_possible():
+                self._bascule("tresor")                 # chasse au tresor : il fouille piece par piece
+        elif quoi == "cherche_balle":
+            cible = self._balle_sur_plan()
+            if cible is not None:
+                self.etats["va_balle"].cible = cible
+                self._bascule("va_balle")
         elif quoi == "assis" and not self.ctx.sitting:
             self._bascule("assis_demande")
         elif quoi == "debout" and self.courant.nom == "assis_demande":
@@ -1138,7 +1187,18 @@ class Brain:
                             "startle": "sursaut", "soleil": "jeu"}
 
     def _prepare_cache_cache(self):
-        """Ou se cacher : un coin appris (sieste ou observation) a 1-4 m, sinon droit devant."""
+        """Ou se cacher : sur le plan, une vraie cachette (derriere un meuble, invisible d'ici) ; sinon un coin appris
+        (sieste ou observation) a 1-4 m ; sinon droit devant."""
+        self.etats["cache_cache"].cible_plan = None
+        pos = self.ctx.extras.get("position")
+        p = pos.pose() if pos is not None else None
+        if p is not None and pos.plan is not None:
+            import numpy as np
+            cachette = plan_vie.cachette(pos.plan, p[:2], np.random.default_rng(self._rng_vie.randrange(1 << 30)))
+            if cachette is not None:
+                self.etats["cache_cache"].cible_plan = cachette
+                self.etats["cache_cache"].cible = None
+                return
         coin = None
         for activite in ("nap", "chill"):
             c = self.exploration.coin_favori(activite, self.t_global)
@@ -1183,6 +1243,10 @@ class Brain:
                 return force
         if self.surchauffe:
             return "nap"                        # servos trop chauds : repos assis, jamais de marche, jusqu'a refroidir
+        if self.t_global < self.recharge_jusqua and self.courant.nom in ("nap", "accoste", "etirement"):
+            if self._batterie_pct is None or self._batterie_pct < 90:
+                return "nap"                    # recharge anticipee, sur sa station
+            self.recharge_jusqua = -1e9
         if self.mode_calme or self.t_global < self.veille_jusqua:
             return "nap"                        # sieste prolongee, assis : interrupteur calme, ou veille apres des chutes
         h = self.humeur
@@ -1296,6 +1360,12 @@ class Brain:
         soleil = self._bain_de_soleil()
         if soleil is not None:
             return soleil
+        avant = self._recharge_avant()
+        if avant is not None:
+            return avant
+        habitude = self._habitude_du_moment()
+        if habitude is not None:
+            return habitude
         repas = self._repas_maintenant()
         if repas is not None:
             return repas
@@ -2094,14 +2164,128 @@ class Brain:
 
     def _bain_de_soleil(self):
         vu, self._soleil_vu = self._soleil_vu, None
-        if (vu is None or self.ctx.extras.get("tof") is None or self.surchauffe
+        if (self.ctx.extras.get("tof") is None or self.surchauffe
                 or self.t_global - self.derniere_fois.get("bain_soleil", -1e9) < 7200.0):
             return None
+        pos = self.ctx.extras.get("position")
+        p = pos.pose() if pos is not None else None
+        mem = self.ctx.extras.get("memoire")
+        donnees = getattr(mem, "donnees", None) if mem is not None else None
+        h = self.horloge()
+        minute = h.tm_hour * 60 + h.tm_min
+        if vu is not None:
+            self.derniere_fois["bain_soleil"] = self.t_global
+            self.etats["bain_soleil"].x_rel = vu[0]
+            if p is not None and isinstance(donnees, dict):     # il retient quelle fenetre donne du soleil, et quand
+                plan_vie.noter_soleil(donnees, (pos._cle or [None])[0], pos.plan, p[0], p[1], minute)
+            return "bain_soleil"
+        if p is None or not isinstance(donnees, dict) or not 9 <= h.tm_hour < 19 or self._rng_vie.random() >= 0.3:
+            return None
+        f = plan_vie.fenetre_au_soleil(donnees, (pos._cle or [None])[0], pos.plan, minute)
+        cible = plan_vie.devant_la_fenetre(pos.plan, f) if f is not None else None
+        if cible is None or math.hypot(cible[0] - p[0], cible[1] - p[1]) < 0.8:
+            return None
         self.derniere_fois["bain_soleil"] = self.t_global
-        self.etats["bain_soleil"].x_rel = vu[0]
-        return "bain_soleil"
+        self.etats["va_soleil"].cible = cible
+        return "va_soleil"                      # sans voir la tache : il sait qu'a cette heure, le soleil est la
 
     # -- le plan de la maison (position.py, etats_plan.py) ----------------------------------------------------------------
+    def _balle_sur_plan(self):
+        """Ou il a vu sa balle en dernier (sur le plan du lieu actuel) -> un point 40 cm avant elle, ou None."""
+        pos = self.ctx.extras.get("position")
+        p = pos.pose() if pos is not None else None
+        b = self.balle_plan
+        if b is None:
+            mem = self.ctx.extras.get("memoire")
+            b = ((getattr(mem, "donnees", None) or {}).get("balle_plan") if mem is not None else None)
+        if p is None or not b or b[0] != (pos._cle or [None])[0]:
+            return None
+        return plan_vie.avant(p[:2], (b[1], b[2]), 0.4)
+
+    def _point_imprimante(self, nom_imprimante):
+        """Le point du plan « imprimante » (ou « imprimante <nom> », ou le nom de l'imprimante) -> devant, ou None."""
+        pos = self.ctx.extras.get("position")
+        p = pos.pose() if pos is not None else None
+        if p is None or pos.plan is None or self.mode_calme or self.tombe:
+            return None
+        nom = str(nom_imprimante or "").lower()
+        candidats = [(k, v) for k, v in pos.plan.points.items()
+                     if k.lower() in (nom, f"imprimante {nom}") or (k.lower().startswith("imprimante") and not nom)]
+        if not candidats:
+            candidats = [(k, v) for k, v in pos.plan.points.items() if k.lower().startswith("imprimante")]
+        if not candidats:
+            return None
+        return float(candidats[0][1][0]), float(candidats[0][1][1])
+
+    def _recharge_avant(self):
+        """Il passe a sa station AVANT un grand moment (un retour habituel dans 15-45 min, la ronde dans l'heure) si sa
+        batterie est a moins de 50 % : en forme pour l'accueil."""
+        if (self._batterie_pct is None or self._batterie_pct >= 50 or self._station_cible() is None
+                or self.t_global - self.derniere_fois.get("recharge_avant", -1e9) < 7200.0):
+            return None
+        h = self.horloge()
+        maintenant = h.tm_hour * 60 + h.tm_min
+        bientot = False
+        mem = self.ctx.extras.get("memoire")
+        if mem is not None and isinstance(getattr(mem, "donnees", None), dict):
+            for qui in (mem.donnees.get("retours") or {}):
+                prevu = vivant.retour_prevu(mem.donnees, qui, getattr(h, "tm_wday", 0) >= 5)
+                if qui not in self.presents and prevu is not None and 15 <= prevu - maintenant <= 45:
+                    bientot = True
+        ronde = self.ctx.extras.get("ronde")
+        if ronde and self.ctx.extras.get("garde") and 0 <= ronde[0] * 60 + ronde[1] - maintenant <= 60:
+            bientot = True
+        if not bientot:
+            return None
+        self.derniere_fois["recharge_avant"] = self.t_global
+        self.recharge_jusqua = self.t_global + 1800.0
+        self.etats["va_station"].cible = self._station_cible()
+        print(f"[{self.t_global:6.1f}s] il passe a sa station avant ({self._batterie_pct:.0f} %)", flush=True)
+        return "va_station"
+
+    def _habitude_du_moment(self):
+        """Sa place a ce moment de la journee (appris : la ou il se repose le plus a cette heure), parfois."""
+        pos = self.ctx.extras.get("position")
+        p = pos.pose() if pos is not None else None
+        if p is None or self._rng_vie.random() >= 0.05 or self.humeur.energie < 0.35:
+            return None
+        lieu = (pos._cle or [None])[0]
+        f = self.lieux_heure.favori(lieu, self.horloge().tm_hour)
+        if f is None or math.hypot(f[0] - p[0], f[1] - p[1]) < 1.2 or pos.plan.dans_zone_interdite(*f):
+            return None
+        self.etats["va_habitude"].cible = f
+        return "va_habitude"
+
+    def _plan_vie_tick(self, state):
+        """Une fois par seconde : ce qu'il apprend du plan (sa place selon l'heure, sa balle) et les changements du decor."""
+        pos = self.ctx.extras.get("position")
+        if pos is None or self.t_global - self._t_lieu_note < 1.0:
+            return
+        dt, self._t_lieu_note = min(5.0, self.t_global - self._t_lieu_note), self.t_global
+        p = pos.pose()
+        if p is None:
+            return
+        lieu = (pos._cle or [None])[0]
+        if self.courant.nom in ("chill", "look", "nap", "compagnie", "au_soleil", "solitude"):
+            self.lieux_heure.noter(lieu, self.horloge().tm_hour, p[0], p[1], dt)
+        b = self.vus.get("balle")
+        if b is not None and (self.balle_plan is None or b[0] > self.balle_plan[3]):
+            bp = pos.vers_plan(b[1], b[2])
+            if bp is not None:
+                self.balle_plan = (lieu, round(bp[0], 2), round(bp[1], 2), b[0])
+                mem = self.ctx.extras.get("memoire")
+                if mem is not None and isinstance(getattr(mem, "donnees", None), dict):
+                    mem.donnees["balle_plan"] = list(self.balle_plan)
+        while getattr(pos, "a_signaler", None):
+            x, y = pos.a_signaler.pop(0)
+            self._previent(f"changement:{x:.2f}|{y:.2f}")
+            if (self.courant.nom in ("chill", "look", "wander") and not self.mode_calme and not self.discret
+                    and self.t_global - self.derniere_fois.get("va_changement", -1e9) >= 600.0):
+                self.derniere_fois["va_changement"] = self.t_global
+                self.etats["va_changement"].cible = plan_vie.avant(p[:2], (x, y), 0.4)
+                self.objet_nouveau = 0.4
+                self._bascule("va_changement")  # tiens, ce n'etait pas la : il va voir
+
     def _station_cible(self):
         """Point d'approche de sa station sur le plan, s'il sait ou il est ; sinon None."""
         pos = self.ctx.extras.get("position")
@@ -2425,6 +2609,7 @@ class Brain:
         self._verifie_lumiere()
         self._verifie_soleil()
         self._regarde_le_chat(state)
+        self._plan_vie_tick(state)
         flop = self.succes.juge(self.t_global, bool(self.presents))
         if flop is not None:
             print(f"[{self.t_global:6.1f}s] {flop} : tombe a plat", flush=True)

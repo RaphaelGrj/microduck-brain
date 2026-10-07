@@ -254,6 +254,11 @@
     "Rentrer à sa station": "Go to his dock", "Faire la ronde": "Do the rounds", "Effacer zones et points": "Clear zones and points",
     "Il n'est pas dans ce lieu.": "He isn't at this place.", "Il cherche où il est (un marqueur vu par sa caméra l'aidera).": "He's working out where he is (a marker seen by his camera will help).",
     "L'envoyer ici ?": "Send him here?", "Il y va (s'il sait où il est)": "He's going (if he knows where he is)", "Effacé": "Cleared",
+    "🗝️ Chasse au trésor": "🗝️ Treasure hunt", "🎾 Va chercher ta balle": "🎾 Fetch your ball",
+    "Il cherche le trésor": "Hunting for treasure", "Il te guide": "Showing you the way", "Il va chercher sa balle": "Fetching his ball",
+    "Il va à la porte": "Going to the door", "Il va voir l'impression": "Checking the print", "Il regarde l'impression": "Looking at the print",
+    "Il va à sa place": "Going to his spot", "Il va au soleil": "Off to the sun", "Au soleil": "In the sun",
+    "Il va voir ce qui a changé": "Checking what changed",
     "Touche le plan pour l'y envoyer. Zones interdites et points nommés : dessinés avec le casque (appli Quest), ou effacés ici.": "Tap the plan to send him there. No-go zones and named spots: drawn with the headset (Quest app), or cleared here.", "Il s'isole un peu": "Going off alone", "Joyeux anniversaire !": "Happy birthday!", "Le chat joue !": "The cat is playing!", "Sieste près du chat": "Napping near the cat",
     "Il a le hoquet": "He has hiccups", "Hoquet passé !": "Hiccups gone!", "Oups !": "Oops!", "Il fait son nid": "Making his nest", "Il inspecte": "Inspecting", "Il rejoue ton rythme": "Playing your rhythm back", "Il dit ton nom": "Saying your name", "Il se fait tout petit": "Making himself small", "Bain de soleil": "Sunbathing", "Avec son doudou": "With his favourite toy", "Il va voir son doudou": "Off to his favourite toy", "Il rit avec toi": "Laughing along", "Il fait le malin": "Showing off", "C'est l'heure du câlin": "Cuddle time",
     // lot 9 : minuteurs, rappels, reveil, humeur, bilan du mois

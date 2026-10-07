@@ -65,12 +65,17 @@ VOCABULAIRE = {
     "trouve": "commande:trouve", "je t'ai trouve": "commande:trouve",
     "suis moi": "suis_moi", "au pied": "suis_moi",
     "je te suis": "je_te_suis", "montre moi": "je_te_suis", "on y va": "je_te_suis",
+    "cherche le tresor": "commande:tresor", "chasse au tresor": "commande:tresor",
+    "va chercher ta balle": "commande:cherche_balle", "ou est ta balle": "commande:cherche_balle",
+    "rentre a ta station": "commande:station", "va te coucher": "commande:station",
+    "fais ta ronde": "commande:ronde",
 }
+GUIDE = ("emmene moi a la {}", "emmene moi au {}", "emmene moi a {}", "emmene moi {}", "guide moi {}")
 CONFIANCE_MIN = 0.6             # confiance moyenne des mots (Vosk) en dessous de laquelle on "n'a pas compris"
 
 
 class Commandes:
-    def __init__(self, fabrique_reconnaisseur, nom="canard", horloge=time.monotonic, maison=None):
+    def __init__(self, fabrique_reconnaisseur, nom="canard", horloge=time.monotonic, maison=None, lieux=None):
         """`fabrique_reconnaisseur(grammaire_json)` -> objet facon vosk.KaldiRecognizer (AcceptWaveform, Result).
         `maison` : phrases domotiques de ha.toml ([[action]] voix = ...) -> evenement "maison:<id>" (pont_ha appelle
         le service HA ; seule la COMMANDE reconnue sort du canard, jamais le son)."""
@@ -79,6 +84,9 @@ class Commandes:
         self.vocabulaire = dict(VOCABULAIRE)
         for phrase, evt in (maison or {}).items():
             self.vocabulaire.setdefault(phrase, evt)    # les commandes du canard gardent la priorite
+        for lieu in lieux or ():                    # points et pieces de son plan : « emmene-moi a la cuisine »
+            for modele in GUIDE:
+                self.vocabulaire.setdefault(modele.format(lieu), f"emmene:{lieu}")
         # le nom seul, nom + commande, et la commande seule (dite juste apres le nom, apres une pause)
         phrases = sorted({f"{self.nom} {p}" for p in self.vocabulaire} | set(self.vocabulaire) | {self.nom})
         self.reco = fabrique_reconnaisseur(json.dumps(phrases + ["[unk]"], ensure_ascii=False))

@@ -131,8 +131,11 @@ def assembler(client, args, log=print, cfg=None, cerveau=None, appli_cfg=None, b
         if modele and Path(modele).expanduser().exists():
             import commandes as cmd
             maison = {a["voix"]: a["voix_evt"] for a in (cfg or {}).get("actions", []) if a.get("voix")}
+            import lieux as lieux_lus
+            import plan_vie
+            noms_lieux = plan_vie.noms(lieux_lus.Lieux(log=lambda m: None).plan())   # (lus au demarrage)
             commandes = cmd.Commandes(cmd.fabrique_vosk(Path(modele).expanduser()), nom=cerveau.get("nom", "canard"),
-                                      maison=maison)
+                                      maison=maison, lieux=noms_lieux)
             log(f"commandes vocales locales : '{cerveau.get('nom', 'canard')} ...' (modele {modele}, hors ligne)")
         elif modele:
             log(f"commandes vocales : modele absent ({modele})")

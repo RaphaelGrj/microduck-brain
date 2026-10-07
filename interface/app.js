@@ -23,7 +23,10 @@ const ETATS = {
   suis_moi: "Il te suit", mene: "Il te montre le chemin", repond: "Il te répond", jaloux: "Jaloux !",
   va_souvenir: "Il va flâner", souvenir: "Un bon souvenir", mefiant_lieu: "Méfiant", excite: "Lance-la !",
   solitude: "Un peu seul", va_station: "Il rentre à sa station", accoste: "Il se met sur sa station", ronde: "Il fait sa ronde",
-  va_piece: "Il vient te voir", va_point: "Il y va", va_solitude: "Il s'isole un peu", anniversaire: "Joyeux anniversaire !", chat_joue: "Le chat joue !", va_chat: "Sieste près du chat",
+  va_piece: "Il vient te voir", va_point: "Il y va",
+  tresor: "Il cherche le trésor", guide: "Il te guide", va_balle: "Il va chercher sa balle", va_entree: "Il va à la porte",
+  va_imprimante: "Il va voir l'impression", regarde_impression: "Il regarde l'impression", va_habitude: "Il va à sa place",
+  va_soleil: "Il va au soleil", au_soleil: "Au soleil", va_changement: "Il va voir ce qui a changé", va_solitude: "Il s'isole un peu", anniversaire: "Joyeux anniversaire !", chat_joue: "Le chat joue !", va_chat: "Sieste près du chat",
   hoquet: "Il a le hoquet", gueri: "Hoquet passé !", gaffe: "Oups !", nid: "Il fait son nid", inspecte: "Il inspecte", rythme: "Il rejoue ton rythme", nomme: "Il dit ton nom", petit: "Il se fait tout petit", bain_soleil: "Bain de soleil", doudou: "Avec son doudou", va_doudou: "Il va voir son doudou", rit: "Il rit avec toi", cabotine: "Il fait le malin", reclame: "C'est l'heure du câlin", choregraphie: "Il fait son tour", baillement: "Il bâille", baillement_contagieux: "Il bâille", fausse_chute: "Fausse chute !",
 };
 window.ETATS_LIBELLES = ETATS;
@@ -721,6 +724,7 @@ function dessinerPlanMaison(p, toile, messageVide) {
   if (rep.chargeur) g.fillText("🔌", ...ecran(rep.chargeur[0], rep.chargeur[1]));
   if (rep.entree) g.fillText("🚪", ...ecran(rep.entree[0], rep.entree[1]));
   for (const m of Object.values(rep.marqueurs || {})) g.fillText("🏷️", ...ecran(m[0], m[1]));
+  for (const c of (toile._position && toile._position.changements) || []) g.fillText("❓", ...ecran(c[0], c[1]));  // le decor a change
   const ici = toile._position;                         // lui, s'il est dans ce lieu et sait ou il est
   if (ici) {
     const [u, w] = ecran(ici.x, ici.y), a = -ici.cap - Math.PI / 2;

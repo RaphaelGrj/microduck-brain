@@ -177,13 +177,19 @@ class CacheCache(Etat):
 
     def __init__(self):
         self.cible = None                        # coin ou se cacher (odom), choisi par le cerveau ; None = droit devant
+        self.cible_plan = None                   # ou une vraie cachette sur le plan (plan_vie.cachette) : trajet
 
     def entre(self, brain):
         from navigation import AllerVers
         brain.ctx.sound("greet")
         self.phase, self.t_phase, self.resultat = "aller", 0.0, None
         self.nav = AllerVers(self.cible) if self.cible is not None else None
+        self.trajet = None
+        if self.cible_plan is not None and brain.ctx.extras.get("position") is not None:
+            from etats_plan import Trajet
+            self.trajet = Trajet(brain.ctx.extras["position"], self.cible_plan)
         self.prochain_indice = None
+        self.t_glousse = 0.0
 
     def duree(self, brain):
         return self.ALLER_MAX_S + self.CACHE_MAX_S + 20.0
@@ -217,7 +223,10 @@ class CacheCache(Etat):
         if self.phase == "aller":
             ctx.head((0.0, 0.3, 0.0, 0.0))
             o = s.get("odom")
-            if self.nav is not None and o is not None:
+            if self.trajet is not None:
+                statut, vx, vyaw = self.trajet.commande(brain, t)
+                fini = statut != "avance"
+            elif self.nav is not None and o is not None:
                 statut, vx, vyaw = self.nav.commande(o["position"][0], o["position"][1], o["yaw"], lib)
                 fini = statut in ("arrive", "bloque")
             else:                                # droit devant 3 s, si c'est libre
@@ -237,6 +246,10 @@ class CacheCache(Etat):
                 self.prochain_indice = t + brain.rng.uniform(20.0, 40.0)
             if dt >= 3.0 and lib is not None and lib["devant"] < self.TROUVE_M:
                 self._trouve(brain, t)
+            elif (lib is not None and lib["devant"] < 1.0 and t - self.t_glousse >= 15.0
+                  and getattr(brain, "_rng_vie", brain.rng).random() < 0.02):
+                self.t_glousse = t
+                ctx.sound("chirp")               # tu passes tout pres... il glousse
             elif dt >= self.CACHE_MAX_S:
                 self.resultat = "abandon"
                 ctx.sound("inquire")             # "vous ne me cherchez pas ?"
@@ -258,6 +271,9 @@ class CacheCache(Etat):
     def sort(self, brain):
         if brain.ctx.sitting and not brain.reste_assis():
             brain.ctx.toggle_sit()
+        pos = brain.ctx.extras.get("position")
+        if pos is not None:
+            pos.chemin = []
         brain.ctx.calme()
 
 

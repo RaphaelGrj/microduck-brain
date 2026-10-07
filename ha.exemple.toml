@@ -147,6 +147,14 @@ nom = "A_REMPLIR"                   # le même prénom
 entite = "A_REMPLIR"                # la même entité
 etat = "off"
 
+# Arrivée anticipée (avec un plan du lieu) : quand ton téléphone approche, il va t'attendre à la vraie porte d'entrée.
+# Une entité « bientôt là » dans HA (template binary_sensor sur la distance de proximité, ou une zone autour de la maison).
+# [[declencheur]]
+# evenement = "arrivee_proche"
+# nom = "Raphaël"                   # qui arrive (comme pour l'accueil)
+# entite = "binary_sensor.raphael_arrive_bientot"
+# etat = "on"
+
 [[declencheur]]
 evenement = "compagnie"
 entite = "A_REMPLIR"                # ex. "binary_sensor.bureau_occupe_depuis_1h" (un modèle HA)

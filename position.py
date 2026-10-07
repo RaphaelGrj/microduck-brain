@@ -42,6 +42,11 @@ class PositionPlan(threading.Thread):
         self.tof_plan = []                        # derniers points du capteur, repere du plan (casque)
         self._det = None
         self.bloque_zone = False                  # lu par etats_base.Ctx.move : pas un pas vers une zone interdite
+        self.chercher = set()                     # marqueurs recherches hors plan (le tresor) : camera active
+        self.vus_marqueurs = {}                   # id -> instant (time.time) de la derniere vue
+        self.indices = {}                         # changements du decor : case -> {n, x, y, premier, dernier}
+        self.changements = []                     # [(x, y, instant)] signales (appli) ; a_signaler : pour le cerveau
+        self.a_signaler = []
 
     # -- alimentation ---------------------------------------------------------------------------------------------
     def etat_robot_hook(self, brain, state):
@@ -67,6 +72,8 @@ class PositionPlan(threading.Thread):
             with self.verrou:
                 self.plan, self.loc = None, None
             return
+        if not meme_scan:
+            self.indices, self.changements, self.a_signaler = {}, [], []
         with self.verrou:
             if meme_scan and self.loc is not None:      # seules les annotations ont change : on garde le nuage
                 self.loc.plan = pl
@@ -97,6 +104,8 @@ class PositionPlan(threading.Thread):
                 x, y, cap, _ = loc.estimation()
                 c, si = math.cos(cap), math.sin(cap)
                 self.tof_plan = [(round(x + c * px - si * py, 3), round(y + si * px + c * py, 3)) for px, py, _ in pts[:64]]
+                if loc.estimation()[3] <= SUR_M:
+                    self._compare_au_plan(self.tof_plan)
         self._voir_marqueurs(s)
         self.bloque_zone = self._zone_devant()
 
@@ -109,7 +118,7 @@ class PositionPlan(threading.Thread):
         return self.plan.dans_zone_interdite(p[0] + distance * math.cos(p[2]), p[1] + distance * math.sin(p[2]))
 
     def _voir_marqueurs(self, s):
-        if self.grab is None or self.plan is None or not (self.plan.reperes.get("marqueurs")):
+        if self.grab is None or self.plan is None or not (self.plan.reperes.get("marqueurs") or self.chercher):
             return
         now = time.monotonic()
         if now - self._t_marqueurs < self.MARQUEURS_S or not (s.get("frames") or {}).get("camera"):
@@ -122,8 +131,9 @@ class PositionPlan(threading.Thread):
         if img is None:
             return
         self._det = self._det or marqueurs_mod.detecteur()
-        connus = self.plan.reperes["marqueurs"]
+        connus = self.plan.reperes.get("marqueurs") or {}
         for ident, x, y, cn in marqueurs_mod.detecter(img, s["frames"]["camera"], det=self._det):
+            self.vus_marqueurs[ident] = time.time()
             m = connus.get(str(ident))
             if m is None:
                 continue
@@ -132,6 +142,29 @@ class PositionPlan(threading.Thread):
                 issue = self.loc.recaler(px, py, pc)
             self.dernier_marqueur = (time.time(), ident)
             self.log(f"position : marqueur {ident} vu -> ({px:.2f}, {py:.2f}) [{issue}]")
+
+    # -- le decor a-t-il change ? -------------------------------------------------------------------------------------
+    CASE_CHANGEMENT_M = 0.2
+    INDICES_MIN = 60               # points vus la ou le plan ne connait rien...
+    DUREE_MIN_S = 1800.0           # ... sur au moins 30 min (pas une jambe qui passe, pas le chat qui traverse)
+
+    def _compare_au_plan(self, points):
+        """Des points d'obstacle la ou le plan n'a rien a moins de 25 cm : un meuble deplace, un carton pose. Signale
+        une fois par case, quand c'est durable."""
+        pl, dist, now = self.plan, self.plan.distance(), time.time()
+        for x, y in points:
+            i, j = pl.case(x, y)
+            if not (0 <= i < pl.hauteur and 0 <= j < pl.largeur) or pl.grille[i, j] != plan_mod.LIBRE or dist[i, j] < 0.25:
+                continue
+            cle = (math.floor(x / self.CASE_CHANGEMENT_M), math.floor(y / self.CASE_CHANGEMENT_M))
+            e = self.indices.setdefault(cle, {"n": 0, "x": x, "y": y, "premier": now, "dernier": now, "signale": False})
+            e["n"] += 1
+            e["dernier"] = now
+            if not e["signale"] and e["n"] >= self.INDICES_MIN and e["dernier"] - e["premier"] >= self.DUREE_MIN_S:
+                e["signale"] = True
+                self.changements = (self.changements + [(round(x, 2), round(y, 2), round(now))])[-10:]
+                self.a_signaler.append((x, y))
+                self.log(f"position : quelque chose a change en ({x:.2f}, {y:.2f}) (pas sur le plan)")
 
     def run(self):
         while self.actif:
@@ -203,4 +236,4 @@ class PositionPlan(threading.Thread):
         return {"plan": True, "lieu": (self._cle or [None])[0], "x": round(x, 3), "y": round(y, 3), "cap": round(cap, 3),
                 "ecart": round(ecart, 3), "sur": ecart <= SUR_M, "nuage": nuage, "tof": list(self.tof_plan),
                 "chemin": [[round(a, 3), round(b, 3)] for a, b in self.chemin], "piece": self.piece(),
-                "marqueur": self.dernier_marqueur}
+                "marqueur": self.dernier_marqueur, "changements": list(self.changements)}
