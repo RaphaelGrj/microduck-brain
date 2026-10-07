@@ -31,7 +31,7 @@ from etats_base import (DT_DEFAUT, SONS_CANARD, FATIGUE_BAS, FATIGUE_MIN, FATIGU
                         V_PROMENADE, V_ROTATION, Chill, Ctx, Ecoute, Etat, Geste, Humeur, LookAround, Nap, Sequence,
                         TurnInPlace, Wander, _regarder, fatigue)
 from etats_jeux import CacheCache, JeuBalle, Soleil
-from etats_appli import Parcours, PosePhoto
+from etats_appli import Parcours, PosePhoto, Signal
 from diagnostic import Diagnostic
 from etats_maison import AlarmeFumee, AssisDemande, AutoTestReveil, Toupie
 from etats_taquineries import (Aspirateur, Baillement, CompteEternuements, DernierMot, Esquive, FausseChute,
@@ -215,6 +215,7 @@ class Brain:
             "compagnie": Compagnie(),
             # lances depuis l'application : parcours d'obstacles, balle guidee, pose pour une photo
             "parcours": Parcours(), "pose_photo": PosePhoto(),
+            "signal": Signal(),                                   # minuteur, rappel, reveil doux (application)
             "va_social": VaAuCoin("va_social", "cherche_attention", "voir quelqu'un avant d'aller se recharger"),
         }
         self.etats["taquin"].taquinerie = True
@@ -379,6 +380,19 @@ class Brain:
                         and self.courant.nom not in ("alarme", "porte", "ecoute")):
                     self.etats["pose_photo"].geste = detail
                     self._bascule("pose_photo")
+                continue
+            if base == "signal":
+                # application : minuteur fini, rappel, reveil doux. Demande expresse : meme en mode calme ou en sieste,
+                # mais jamais a terre, dans les bras ni pendant l'alarme (alors : l'appli a deja notifie le telephone).
+                genre, _, ident = (detail or "").partition("|")
+                if genre in Signal.SEQUENCES and not self.tombe and not self.porte \
+                        and self.courant.nom not in ("alarme", "porte"):
+                    self.etats["signal"].genre, self.etats["signal"].ident = genre, ident
+                    self._bascule("signal")
+                continue
+            if base == "signal_stop":
+                if self.courant.nom == "signal":
+                    self.etats["signal"].arreter(self, "arrete")
                 continue
             if base == "message_annule":
                 self.messages_perso = [m for m in self.messages_perso if m[0] != detail]
@@ -633,6 +647,9 @@ class Brain:
             if base in ("caresse", "main") and self._derniere_position is not None:
                 # la ou l'on s'occupe de lui : la que l'on viendra tenir compagnie (Compagnie)
                 self.exploration.preference(*self._derniere_position, "social", 10.0, self.t_global)
+            if base in ("caresse", "main") and self.courant.nom == "signal":
+                self.etats["signal"].arreter(self, "caresse")   # « c'est bon, j'ai compris »
+                continue
             if base == "caresse":
                 if self.courant.nom == "nap" or self.mode_calme:
                     self.ctx.sound("coo")       # caresse pendant le sommeil : un roucoulement, sans se reveiller
@@ -1625,7 +1642,8 @@ class Brain:
         if not joints or len(joints) < 9:
             return
         immobile = self.courant.nom == "chill" or (     # sieste : pas pendant qu'il s'assoit ni qu'il se releve
-            self.courant.nom == "nap" and 6.0 <= self.t_etat < self.fin_etat - 4.0)
+            self.courant.nom == "nap" and 6.0 <= self.t_etat < self.fin_etat - 4.0) or (
+            self.courant.nom == "signal" and self.etats["signal"].au_repos(self.t_etat))   # entre deux cycles
         courants = state.get("currents_ma")
         courants = courants[5:9] if courants and len(courants) >= 9 else None
         for e in self.detecteur_caresse.mise_a_jour(self.t_global, getattr(self.ctx, "tete_cmd", None),
@@ -1659,6 +1677,21 @@ class Brain:
             if heure == cle[1] and minute == cle[2] and getattr(h, "tm_wday", 0) in jours:
                 print(f"[{self.t_global:6.1f}s] routine {heure:02d}:{minute:02d} : {evt}", flush=True)
                 self.evenement(evt)
+
+    HUMEUR_PAS_S = 15 * 60
+    HUMEUR_POINTS = 7 * 24 * 4                  # une semaine, un point par quart d'heure
+
+    def _note_humeur(self):
+        """Graphique d'humeur de l'application : energie et eveil, un point par quart d'heure, une semaine (memoire)."""
+        mur = self.ctx.extras.get("mur", time.time)()
+        mem = self.ctx.extras.get("memoire")
+        if mem is None or not hasattr(mem, "donnees"):
+            return
+        h = mem.donnees.setdefault("humeur", [])
+        if h and mur - h[-1][0] < self.HUMEUR_PAS_S:
+            return
+        h.append([round(mur), round(self.humeur.energie, 2), round(self.humeur.eveil, 2)])
+        del h[:-self.HUMEUR_POINTS]
 
     def _verifie_bonjour(self):
         h = self.horloge()
@@ -1794,6 +1827,7 @@ class Brain:
             self._verifie_bonjour()                 # apres les evenements : un "calme_on" en attente passe d'abord
         if self.routines:
             self._verifie_routines()
+        self._note_humeur()
         self._verifie_autotest()
         self._verifie_jour_special()
         self.humeur.avance(dt, self.courant.nom, self.vivacite())

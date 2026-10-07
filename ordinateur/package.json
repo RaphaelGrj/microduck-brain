@@ -1,7 +1,7 @@
 {
   "name": "microduck",
   "productName": "Microduck",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Application Microduck pour ordinateur : trouve ton canard sur le Wi-Fi et ouvre son interface.",
   "author": "RaphaelGrj",
   "license": "Apache-2.0",

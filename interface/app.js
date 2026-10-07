@@ -18,7 +18,7 @@ const ETATS = {
   coup_oeil: "Un coup d'œil", compagnie: "Il te tient compagnie", va_compagnie: "Il vient te voir",
   penaud: "Penaud", cajole: "Content", compris: "Compris !", pas_guide: "Il marche (télécommande)",
   regard_guide: "Il regarde (télécommande)", retrait: "Trop de bruit, il s'éloigne", jour_special: "Jour spécial !",
-  fier: "Il est fier", ou_es_tu: "Je suis là !", parcours: "Il fait son parcours", pose_photo: "Il prend la pose", choregraphie: "Il fait son tour", baillement: "Il bâille", baillement_contagieux: "Il bâille", fausse_chute: "Fausse chute !",
+  fier: "Il est fier", ou_es_tu: "Je suis là !", parcours: "Il fait son parcours", pose_photo: "Il prend la pose", signal: "Il te signale quelque chose", choregraphie: "Il fait son tour", baillement: "Il bâille", baillement_contagieux: "Il bâille", fausse_chute: "Fausse chute !",
 };
 window.ETATS_LIBELLES = ETATS;
 const JOUR = { promenades: ["promenade", "promenades"], siestes: ["sieste", "siestes"], jeux: ["jeu", "jeux"],
@@ -290,7 +290,7 @@ async function chargerJournee() {
 const JOURS_COURTS = ["L", "M", "M", "J", "V", "S", "D"];          // 0 = lundi, comme le canard (tm_wday)
 const ACTIONS_ROUTINE = { vient_me_voir: "Il vient me voir", salut: "Salut", danse: "Danse", toupie: "Toupie",
   jouer_balle: "Jeu de balle", jouer_soleil: "1-2-3 soleil", jouer_cache: "Cache-cache", ou_es_tu: "Il se signale",
-  diagnostic: "Diagnostic", calme_on: "Mode calme : oui", calme_off: "Mode calme : non" };
+  diagnostic: "Diagnostic", calme_on: "Mode calme : oui", calme_off: "Mode calme : non", reveil: "Réveil doux" };
 function ligneRoutine(r) {
   r = r || { heure: "18:00", jours: [0, 1, 2, 3, 4], action: "vient_me_voir" };
   const d = document.createElement("div"); d.className = "routine";

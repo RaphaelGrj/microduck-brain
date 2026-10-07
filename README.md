@@ -67,6 +67,9 @@ Limites, propres à iOS pour une page web servie en `http` sur le réseau local 
 
 Une vraie appli de l'App Store demanderait un Mac et un compte développeur Apple (99 €/an).
 
+**Carte Home Assistant** : `homeassistant/microduck-card.js` (état, batterie, humeur, mode calme, boutons) ; installation
+dans `homeassistant/README.md`.
+
 **Sur ordinateur** (Windows, macOS, Linux) : `ordinateur/`, application Electron qui trouve le canard toute seule.
 GitHub la construit à chaque version : <https://github.com/RaphaelGrj/microduck-brain/releases>. Mode d'emploi :
 `ordinateur/README.md`.

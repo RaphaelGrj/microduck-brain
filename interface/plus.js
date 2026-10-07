@@ -229,6 +229,7 @@
       s.points.forEach((y, i) => { if (y != null) { g.beginPath(); g.arc(X(i), Y(y), 3, 0, 7); g.fill(); } });
     }
   }
+  window.graphe = graphe;                        // (maison.js : graphique d'humeur)
   let usure = null;
   const jourLisible = (j) => { const [a, d] = j.split("-").map(Number); const t = new Date(a, 0, d); return t.toLocaleDateString("fr-FR", { day: "numeric", month: "short" }); };
   function dessinerUsure() {

@@ -130,3 +130,61 @@ class PosePhoto(Etat):
     def pas(self, brain, t):
         brain.ctx.move()
         brain.ctx.head(self.fn(min(t, self.sommet)))
+
+
+class Signal(Etat):
+    """Minuteur fini, rappel, reveil doux (application) : il le signale en sons de canard, par cycles, jusqu'a ce qu'on
+    l'arrete (bouton de l'appli, caresse, main tendue) ou au bout de CYCLES. Demande expres de l'habitant : il joue meme
+    en mode calme ou pendant la sieste (comme une notification), jamais a terre, dans les bras ou pendant l'alarme.
+    Le reveil monte doucement : roucoulements d'abord, puis pepiements, puis bonjour."""
+    nom = "signal"
+    PAUSE_S = 20.0
+    SEQUENCES = {
+        "minuteur": [[("surpris", "chirp"), ("oui", "chirp"), ("curieux", "inquire")]] * 3,
+        "rappel": [[("curieux", "inquire"), ("oui", "chirp")]] * 2,
+        "reveil": [[("fatigue", "coo"), ("etirement", "coo")], [("curieux", "chirp"), ("oui", "chirp")],
+                   [("content", "greet"), ("oui", "wheee")]],
+    }
+
+    def __init__(self):
+        self.genre, self.ident = "minuteur", ""
+
+    def entre(self, brain):
+        self.cycles = self.SEQUENCES.get(self.genre, self.SEQUENCES["rappel"])
+        self.etapes, t = [], 0.0
+        for k, cycle in enumerate(self.cycles):
+            for geste, son in cycle:
+                d, fn = gestures.GESTES[geste]
+                self.etapes.append((t, d, fn, son))
+                t += d + 0.3
+            if k < len(self.cycles) - 1:
+                t += self.PAUSE_S
+        self.total, self.joues, self.arrete = t, set(), False
+
+    def duree(self, brain):
+        return self.total + 0.3
+
+    def arreter(self, brain, comment):
+        if not self.arrete:
+            self.arrete = True
+            brain._previent(f"signal_fin:{self.genre}|{self.ident}|{comment}")
+            brain.fin_etat = brain.t_etat
+
+    def au_repos(self, t):
+        """Entre deux cycles, tete immobile depuis 1 s : une caresse peut y etre reconnue (elle l'arrete)."""
+        return all(not (t0 - 0.2 <= t < t0 + d + 1.0) for t0, d, _, _ in self.etapes)
+
+    def pas(self, brain, t):
+        brain.ctx.move()
+        tete = (0.0, 0.0, 0.0, 0.0)
+        for i, (t0, d, fn, son) in enumerate(self.etapes):
+            if t0 <= t < t0 + d:
+                if i not in self.joues:
+                    self.joues.add(i)
+                    brain.ctx.sound(son, meme_en_silence=not brain.discret)   # (pas si quelqu'un telephone)
+                tete = fn(t - t0)
+        brain.ctx.head(tete)
+
+    def sort(self, brain):
+        self.arreter(brain, "fini")
+        super().sort(brain)
