@@ -168,7 +168,8 @@ def test_manifeste_android():
     m = (Path(__file__).parent / "android" / "AndroidManifest.xml").read_text(encoding="utf-8")
     permissions = set(re.findall(r'uses-permission android:name="([^"]+)"', m))
     assert permissions == {"android.permission.INTERNET", "android.permission.POST_NOTIFICATIONS",
-                           "android.permission.RECEIVE_BOOT_COMPLETED"}      # reseau, notifications, veille apres redemarrage
+                           "android.permission.RECEIVE_BOOT_COMPLETED",       # reseau, notifications, veille apres redemarrage
+                           "android.permission.ACCESS_NETWORK_STATE"}         # Android 14 : tache de fond qui attend le reseau
     assert 'android:targetSdkVersion="34"' in m and 'android:allowBackup="false"' in m
 
 
