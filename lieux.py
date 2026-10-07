@@ -9,6 +9,10 @@ un nouveau ; on peut aussi choisir, renommer, archiver, restaurer ou supprimer u
 - « Bascule automatique » se coupe lieu par lieu : il propose alors le lieu dans l'appli au lieu d'y basculer.
 - La carte d'un lieu est gardee pour etre REGARDEE dans l'appli. Elle ne sert pas encore a se deplacer : l'odometrie
   repart de zero a chaque demarrage, il faudra un recalage (balises UWB, chargeur) pour la reutiliser.
+- Le PLAN d'un lieu (plan.py : scan du Meta Quest 3, converti sur le canard) est son plan definitif, celui sur lequel
+  il se situe (localisation.py). Un plan par lieu : demenager = un nouveau lieu (nouveau Wi-Fi) et un nouveau scan ;
+  rescanner = remplacer le plan du lieu. Range dans lieux.json avec le lieu (donc dans la sauvegarde du canard, et
+  supprime avec lui).
 
 Fichier local : lieux.json a cote de la memoire (MICRODUCK_LIEUX pour un autre chemin). Rien ne sort du canard,
 sauf vers le telephone appaire (nom des lieux et des reseaux).
@@ -188,7 +192,7 @@ class Lieux:
             elif quoi == "restaurer":
                 l["archive"] = False
             elif quoi == "supprimer":
-                del self.d["lieux"][lid]
+                del self.d["lieux"][lid]                 # (son plan part avec lui)
                 if self.suggestion == lid:
                     self.suggestion = None
             elif quoi == "lier":
@@ -212,7 +216,8 @@ class Lieux:
             return {
                 "actuel": self.d["actuel"], "reseau": (self.reseau or {}).get("ssid"), "suggestion": self.suggestion,
                 "lieux": [{"id": lid, "nom": l["nom"], "reseaux": sorted({r["ssid"] for r in l["reseaux"] if r.get("ssid")}),
-                           "archive": l["archive"], "auto": l["auto"], "vu": l["vu"], "carte": bool(l["carte"])}
+                           "archive": l["archive"], "auto": l["auto"], "vu": l["vu"], "carte": bool(l["carte"]),
+                           "plan": l.get("plan")}
                           for lid, l in sorted(self.d["lieux"].items(), key=lambda kv: -kv[1]["vu"])],
             }
 
@@ -222,6 +227,42 @@ class Lieux:
             if lid == self.d["actuel"]:
                 return self.carte_actuelle() or {}
             return (self.d["lieux"].get(lid) or {}).get("carte") or {}
+
+    # -- plans definitifs (scan du Quest) -------------------------------------------------------------------------------
+    def importer_plan(self, lid, contenu, nom=None):
+        """`contenu` : un export de l'appli Quest (« microduck-quest-1 ») ou un plan deja converti (« microduck-plan-1 »,
+        une sauvegarde). Remplace le plan du lieu. -> (resume du plan, avertissements) ; ValueError si illisible."""
+        import plan as P
+        import plan_quest
+        with self.verrou:
+            l = self.d["lieux"].get(lid)
+            if l is None:
+                raise ValueError("lieu inconnu")
+            nom = nom_propre(nom) or l["nom"]
+            if isinstance(contenu, dict) and contenu.get("format") == plan_quest.FORMAT:
+                pl, avert = plan_quest.convertir(contenu, nom)
+            else:
+                pl, avert = P.Plan.depuis_dict(contenu), []
+                pl.nom = nom
+            l["plan"], l["plan_donnees"] = pl.resume(), pl.vers_dict()
+            self._sauver()
+            self.log(f"lieu {l['nom']} : plan importe ({pl.source}, {l['plan']['taille_m'][0]} x {l['plan']['taille_m'][1]} m)")
+            return l["plan"], list(avert)
+
+    def plan(self, lid=None):
+        """Le plan (dict « microduck-plan-1 ») d'un lieu - par defaut le lieu actuel - ou None."""
+        with self.verrou:
+            return (self.d["lieux"].get(lid or self.d["actuel"]) or {}).get("plan_donnees")
+
+    def supprimer_plan(self, lid):
+        with self.verrou:
+            l = self.d["lieux"].get(lid)
+            if l is None:
+                return False
+            l.pop("plan", None)
+            l.pop("plan_donnees", None)
+            self._sauver()
+            return True
 
     def nom_actuel(self):
         with self.verrou:

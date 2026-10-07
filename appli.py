@@ -20,6 +20,9 @@ API :
   GET  /api/carte           carte des zones parcourues depuis le demarrage (repere de l'odometrie)
   GET  /api/lieux           les lieux (lieux.py) ; GET /api/lieu-carte?id=... la carte gardee d'un lieu
   POST /api/lieu            {"action": ..., "id": ..., "nom": ...} (basculer, renommer, archiver, restaurer, ...)
+  GET  /api/plan?id=...     le plan definitif d'un lieu (scan du Quest, plan.py) ; POST /api/plan {"id", "nom",
+                            "contenu": export Quest ou plan sauvegarde} l'importe (converti sur le canard) ;
+                            POST /api/plan-supprimer {"id"} le retire
   GET  /api/design          schemas de couleurs et filaments du design space ; POST /api/design pour les garder
   GET  /api/alertes?depuis=T les alertes (chute, batterie, garde, incendie, impressions...) apres l'instant T (s)
   GET  /api/reglages        heures calmes, bonjour, repas... ; POST /api/reglages pour les changer (reglages.py)
@@ -761,6 +764,13 @@ class Appli:
                         except (OSError, ValueError):
                             self._json(200, DESIGN_VIDE)
                     return
+                if url.path == "/api/plan":
+                    if not self._autorise():
+                        return
+                    if appli.lieux is None:
+                        return self._json(404, {"erreur": "lieux non geres"})
+                    p = appli.lieux.plan(parse_qs(url.query).get("id", [None])[0] or None)
+                    return self._json(200, p) if p is not None else self._json(404, {"erreur": "pas de plan"})
                 if url.path in ("/api/lieux", "/api/lieu-carte"):
                     if not self._autorise():
                         return
@@ -794,7 +804,8 @@ class Appli:
                                   "/api/restauration", "/api/installation", "/api/configuration", "/api/tester-ha",
                                   "/api/tester-imprimante", "/api/redemarrer", "/api/choregraphies", "/api/comportement",
                                   "/api/regard", "/api/mise-a-jour", "/api/photo", "/api/message", "/api/parcours", "/api/carnet",
-                                  "/api/imprimer", "/api/invites", "/api/minuteur", "/api/rappel"):
+                                  "/api/imprimer", "/api/invites", "/api/minuteur", "/api/rappel", "/api/plan",
+                                  "/api/plan-supprimer"):
                     return self._json(404, {"erreur": "inconnu"})
                 if chemin == "/api/installation":
                     return self._installation()
@@ -804,7 +815,8 @@ class Appli:
                     return self._imprimer()
                 try:
                     n = min(int(self.headers.get("Content-Length", "0")),
-                            {"/api/design": 65536, "/api/restauration": 8 * 1024 * 1024}.get(chemin, 4096))
+                            {"/api/design": 65536, "/api/restauration": 8 * 1024 * 1024,
+                             "/api/plan": 16 * 1024 * 1024}.get(chemin, 4096))
                     corps = json.loads(self.rfile.read(n) or b"{}")
                     if not isinstance(corps, dict):
                         raise ValueError
@@ -1013,6 +1025,19 @@ class Appli:
                     except OSError:
                         return self._json(500, {"erreur": "enregistrement impossible"})
                     return self._json(200, {"ok": True})
+                if chemin in ("/api/plan", "/api/plan-supprimer"):
+                    if appli.lieux is None:
+                        return self._json(404, {"erreur": "lieux non geres"})
+                    lid = corps.get("id") if isinstance(corps.get("id"), str) else appli.lieux.d["actuel"]
+                    if chemin == "/api/plan-supprimer":
+                        ok = appli.lieux.supprimer_plan(lid)
+                        return self._json(200 if ok else 404, {"ok": True} if ok else {"erreur": "lieu inconnu"})
+                    try:
+                        resume, avert = appli.lieux.importer_plan(lid, corps.get("contenu"),
+                                                                  corps.get("nom") if isinstance(corps.get("nom"), str) else None)
+                    except (ValueError, KeyError, TypeError) as e:
+                        return self._json(400, {"erreur": str(e)[:200] or "plan illisible"})
+                    return self._json(200, {"ok": True, "plan": resume, "avertissements": avert})
                 if chemin == "/api/lieu":
                     if appli.lieux is None:
                         return self._json(404, {"erreur": "lieux non geres"})
