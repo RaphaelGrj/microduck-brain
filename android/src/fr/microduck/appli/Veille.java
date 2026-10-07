@@ -36,6 +36,15 @@ public class Veille extends JobService {
 
     /** Programme la verification periodique (et une tout de suite si `maintenant`). Rien tant que le canard est inconnu. */
     static void planifier(Context c, boolean maintenant) {
+        try {
+            planifierOuEchouer(c, maintenant);
+        } catch (RuntimeException e) {
+            // jamais un plantage de l'appli pour la veille (permission refusee, quota de taches...) : sans elle, l'appli
+            // marche, il n'y a juste pas de notifications en arriere-plan
+        }
+    }
+
+    private static void planifierOuEchouer(Context c, boolean maintenant) {
         if (prefs(c).getString("url", null) == null) return;
         JobScheduler js = (JobScheduler) c.getSystemService(Context.JOB_SCHEDULER_SERVICE);
         ComponentName cn = new ComponentName(c, Veille.class);
