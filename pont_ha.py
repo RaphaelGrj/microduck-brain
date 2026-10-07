@@ -385,7 +385,9 @@ class PublieurMQTT:
                ("tour_assis", "tour : assis / debout", "mdi:seat", "tour_assis"),
                ("diagnostic", "lancer le diagnostic", "mdi:stethoscope", "diagnostic"),
                ("ou_es_tu", "ou es-tu ?", "mdi:map-marker-question", "ou_es_tu"),
-               ("signal_stop", "arrete le signal (minuteur, reveil)", "mdi:bell-off", "signal_stop"))
+               ("signal_stop", "arrete le signal (minuteur, reveil)", "mdi:bell-off", "signal_stop"),
+               ("suis_moi", "suis-moi", "mdi:shoe-print", "suis_moi"),
+               ("je_te_suis", "montre-moi le chemin", "mdi:walk", "je_te_suis"))
 
     def __init__(self, mq, log=print, sur_evenement=None):
         import paho.mqtt.client as mqtt

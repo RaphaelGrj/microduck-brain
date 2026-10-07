@@ -423,6 +423,7 @@ def test_gags_spontanes_seulement_avec_un_familier_et_de_l_energie():
     assert not {e[1] for e in b.journal} & {"fausse_chute", "fausse_notif"}
     b, c, _ = cerveau(seed=1)
     b.humeur.energie = 0.3
+    b.humeur.avance = lambda *a, **k: None          # (l'energie reste basse pendant tout l'essai)
     b.P_GAG = 1.0
     b.malice.permise = lambda brain, nom, humain=False: nom == "fausse_chute"
     b.t_global = 0.0

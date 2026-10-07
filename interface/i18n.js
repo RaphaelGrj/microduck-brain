@@ -241,6 +241,10 @@
     "Chaque semaine, toute seule": "Every week, on its own", "Récupérer la dernière": "Get the latest",
     "Pas encore faite : au prochain passage du téléphone à la maison.": "Not done yet: next time the phone is home.",
     "À toi de jouer !": "Your turn!",
+    "🐾 Suis-moi": "🐾 Follow me", "🦆 Je te suis": "🦆 I'll follow you", "Il boude": "He's sulking", "Réconciliés !": "Friends again!",
+    "Il attend quelqu'un": "He's waiting for someone", "Il va à la porte": "He's going to the door", "Il te suit": "He's following you",
+    "Il te montre le chemin": "He's showing the way", "Il te répond": "He's answering you", "Jaloux !": "Jealous!",
+    "Il va flâner": "He's wandering off", "Un bon souvenir": "A good memory", "Méfiant": "Wary", "Lance-la !": "Throw it!",
     // lot 9 : minuteurs, rappels, reveil, humeur, bilan du mois
     "Minuteurs et rappels": "Timers and reminders", "🔕 Arrêter son signal": "🔕 Stop his signal", "Durée en minutes": "Duration in minutes",
     "Pour quoi ? (pâtes, lessive…)": "What for? (pasta, laundry…)", "Nom du minuteur": "Timer name", "Lancer": "Start",
@@ -359,6 +363,7 @@
     [/^« (.+) » ajouté$/, (m) => `“${m[1]}” added`],
     [/^Minuteur : (.+?) min$/, (m) => `Timer: ${m[1]} min`], [/^Minuteur : (.+)$/, (m) => `Timer: ${m[1]}`],
     [/^Dernière : (.+) · (\d+) gardées? dans le téléphone$/, (m) => `Latest: ${m[1]} · ${m[2]} kept on the phone`],
+    [/^(\d+) jours? de vie((?: · .+)?)$/, (m) => `${m[1]} day${m[1] > 1 ? "s" : ""} old${m[2].replace("encore un peu timide", "still a little shy").replace("de plus en plus sûr de lui", "more and more confident")}`],
     [/^Rappel pour (.+)$/, (m) => `Reminder for ${m[1]}`], [/^Annuler (.+)$/, (m) => `Cancel ${t(m[1])}`],
     [/^(\d\d:\d\d)( · chaque jour)? · pour (tout le monde|.+)$/, (m) => `${m[1]}${m[2] ? " · every day" : ""} · for ${m[3] === "tout le monde" ? "everyone" : m[3]}`],
     [/^Énergie \(moyenne (\d+) %\)$/, (m) => `Energy (average ${m[1]} %)`], [/^Éveil \(moyenne (\d+) %\)$/, (m) => `Alertness (average ${m[1]} %)`],

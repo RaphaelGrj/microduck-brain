@@ -63,6 +63,8 @@ VOCABULAIRE = {
     "la balle": "jeu_balle", "joue a la balle": "jeu_balle", "va chercher": "jeu_balle",
     "cache toi": "jeu_cache", "cache cache": "jeu_cache",
     "trouve": "commande:trouve", "je t'ai trouve": "commande:trouve",
+    "suis moi": "suis_moi", "au pied": "suis_moi",
+    "je te suis": "je_te_suis", "montre moi": "je_te_suis", "on y va": "je_te_suis",
 }
 CONFIANCE_MIN = 0.6             # confiance moyenne des mots (Vosk) en dessous de laquelle on "n'a pas compris"
 

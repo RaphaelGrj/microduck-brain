@@ -18,7 +18,10 @@ const ETATS = {
   coup_oeil: "Un coup d'œil", compagnie: "Il te tient compagnie", va_compagnie: "Il vient te voir",
   penaud: "Penaud", cajole: "Content", compris: "Compris !", pas_guide: "Il marche (télécommande)",
   regard_guide: "Il regarde (télécommande)", retrait: "Trop de bruit, il s'éloigne", jour_special: "Jour spécial !",
-  fier: "Il est fier", ou_es_tu: "Je suis là !", parcours: "Il fait son parcours", pose_photo: "Il prend la pose", signal: "Il te signale quelque chose", choregraphie: "Il fait son tour", baillement: "Il bâille", baillement_contagieux: "Il bâille", fausse_chute: "Fausse chute !",
+  fier: "Il est fier", ou_es_tu: "Je suis là !", parcours: "Il fait son parcours", pose_photo: "Il prend la pose", signal: "Il te signale quelque chose",
+  boude: "Il boude", reconcilie: "Réconciliés !", attend_porte: "Il attend quelqu'un", va_porte: "Il va à la porte",
+  suis_moi: "Il te suit", mene: "Il te montre le chemin", repond: "Il te répond", jaloux: "Jaloux !",
+  va_souvenir: "Il va flâner", souvenir: "Un bon souvenir", mefiant_lieu: "Méfiant", excite: "Lance-la !", choregraphie: "Il fait son tour", baillement: "Il bâille", baillement_contagieux: "Il bâille", fausse_chute: "Fausse chute !",
 };
 window.ETATS_LIBELLES = ETATS;
 const JOUR = { promenades: ["promenade", "promenades"], siestes: ["sieste", "siestes"], jeux: ["jeu", "jeux"],
@@ -153,6 +156,9 @@ function afficher(e) {
   texte("#maj-version", e.version || "—");
 
   barres("#traits", e.caractere.traits || {}, TRAITS);
+  const age = e.caractere.age_jours;
+  $("#age").hidden = age == null;
+  if (age != null) texte("#age", `${age} jour${age > 1 ? "s" : ""} de vie` + (age < 21 ? " · encore un peu timide" : age < 60 ? " · de plus en plus sûr de lui" : ""));
   const sons = e.caractere.sons || {};
   const total = Object.values(sons).reduce((a, b) => a + b, 0) || 1;
   barres("#sons", Object.fromEntries(Object.entries(sons).map(([k, v]) => [k, v / total])), {});
