@@ -245,6 +245,10 @@
     "Il attend quelqu'un": "He's waiting for someone", "Il va à la porte": "He's going to the door", "Il te suit": "He's following you",
     "Il te montre le chemin": "He's showing the way", "Il te répond": "He's answering you", "Jaloux !": "Jealous!",
     "Il va flâner": "He's wandering off", "Un bon souvenir": "A good memory", "Méfiant": "Wary", "Lance-la !": "Throw it!",
+    "Son plan": "Its floor plan", "Importer un plan (scan Quest)": "Import a floor plan (Quest scan)", "Remplacer le plan": "Replace the floor plan",
+    "Exporter le plan": "Export the floor plan", "Retirer le plan": "Remove the floor plan", "Plan retiré": "Floor plan removed",
+    "Plan indisponible": "Floor plan unavailable", "Conversion du scan sur le canard…": "Converting the scan on the duck…",
+    "Ce fichier n'est pas un scan ni un plan": "This file is neither a scan nor a floor plan",
     "Un peu seul": "Some alone time", "Il s'isole un peu": "Going off alone", "Joyeux anniversaire !": "Happy birthday!", "Le chat joue !": "The cat is playing!", "Sieste près du chat": "Napping near the cat",
     "Il a le hoquet": "He has hiccups", "Hoquet passé !": "Hiccups gone!", "Oups !": "Oops!", "Il fait son nid": "Making his nest", "Il inspecte": "Inspecting", "Il rejoue ton rythme": "Playing your rhythm back", "Il dit ton nom": "Saying your name", "Il se fait tout petit": "Making himself small", "Bain de soleil": "Sunbathing", "Avec son doudou": "With his favourite toy", "Il va voir son doudou": "Off to his favourite toy", "Il rit avec toi": "Laughing along", "Il fait le malin": "Showing off", "C'est l'heure du câlin": "Cuddle time",
     // lot 9 : minuteurs, rappels, reveil, humeur, bilan du mois
@@ -329,6 +333,8 @@
   };
   // libelles avec des chiffres ou des noms
   const REGLES = [
+    [/^Plan importé : ([\d.]+) × ([\d.]+) m, (\d+) meubles$/, (m) => `Floor plan imported: ${m[1]} × ${m[2]} m, ${m[3]} pieces of furniture`],
+    [/^Plan refusé : (.+)$/, (m) => `Floor plan rejected: ${m[1]}`],
     [/^il y a (\d+) s$/, (m) => `${m[1]} s ago`], [/^il y a (\d+) min$/, (m) => `${m[1]} min ago`], [/^il y a (\d+) h$/, (m) => `${m[1]} h ago`],
     [/^Batterie (\d)( · dans le canard)?$/, (m) => `Battery ${m[1]}${m[2] ? " · in the duck" : ""}`],
     [/^(.+) × (\d+)$/, (m) => `${t(m[1])} × ${m[2]}`], [/^Retirer (.+)$/, (m) => `Remove ${m[1]}`], [/^Supprimer (.+)$/, (m) => `Delete ${m[1]}`],

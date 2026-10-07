@@ -618,7 +618,8 @@ function ligneLieu(l, d) {
   const a = document.createElement("span"); a.textContent = l.nom;
   if (l.id === d.actuel) { const t = document.createElement("span"); t.className = "etiquette ici"; t.textContent = "ici"; a.append(" ", t); }
   const b = document.createElement("span"); b.className = "discret";
-  b.textContent = l.reseaux.length ? "📶 " + l.reseaux.join(", ") : "aucun Wi-Fi lié";
+  b.textContent = (l.reseaux.length ? "📶 " + l.reseaux.join(", ") : "aucun Wi-Fi lié")
+    + (l.plan ? ` · 🗺️ plan ${l.plan.taille_m[0]} × ${l.plan.taille_m[1]} m` : "");
   sum.append(a, b);
   const actions = document.createElement("div"); actions.className = "actions";
   const bouton = (texte, f, classe) => {
@@ -626,7 +627,12 @@ function ligneLieu(l, d) {
     x.addEventListener("click", f); actions.append(x);
   };
   if (l.id !== d.actuel && !l.archive) bouton("Y aller", () => lieu("basculer", l.id), "principal");
-  bouton("Sa carte", () => voirLieu(l));
+  bouton(l.plan ? "Son plan" : "Sa carte", () => voirLieu(l));
+  bouton(l.plan ? "Remplacer le plan" : "Importer un plan (scan Quest)", () => importerPlan(l));
+  if (l.plan) {
+    bouton("Exporter le plan", () => exporterPlan(l));
+    bouton("Retirer le plan", () => { if (confirm(`Retirer le plan de « ${l.nom} » ? (Exporte-le d'abord pour le garder.)`)) retirerPlan(l); }, "danger");
+  }
   if (!l.archive) {
     bouton("Renommer", () => { const n = prompt("Nom du lieu", l.nom); if (n && n.trim()) lieu("renommer", l.id, n.trim()); });
     if (d.reseau && !l.reseaux.includes(d.reseau)) bouton(`Lier « ${d.reseau} »`, () => lieu("lier", l.id));
@@ -641,10 +647,82 @@ function ligneLieu(l, d) {
   return li;
 }
 
+// Plan definitif d'un lieu (scan du Meta Quest 3, converti sur le canard : plan.py, plan_quest.py)
+function choisirFichierJson() {
+  return new Promise((ok) => {
+    const i = document.createElement("input"); i.type = "file"; i.accept = ".json,application/json";
+    i.addEventListener("change", () => ok(i.files[0] || null)); i.click();
+  });
+}
+
+async function importerPlan(l) {
+  const f = await choisirFichierJson();
+  if (!f) return;
+  let contenu;
+  try { contenu = JSON.parse(await f.text()); } catch (x) { toast("Ce fichier n'est pas un scan ni un plan"); return; }
+  toast("Conversion du scan sur le canard…");
+  try {
+    const r = await api("/api/plan", { id: l.id, nom: l.nom, contenu });
+    toast(`Plan importé : ${r.plan.taille_m[0]} × ${r.plan.taille_m[1]} m, ${r.plan.objets} meubles`);
+    for (const a of r.avertissements || []) toast("⚠️ " + a);
+  } catch (e) { toast(e.message === "code" ? "Code refusé" : "Plan refusé : " + e.message); }
+  rafraichirLieux();
+}
+
+async function exporterPlan(l) {
+  try {
+    const p = await api("/api/plan?id=" + encodeURIComponent(l.id));
+    enregistrerFichier(`plan-${l.nom.replace(/[^\p{L}\p{N}_-]+/gu, "_")}.json`, "application/json", JSON.stringify(p));
+  } catch (x) { toast("Plan indisponible"); }
+}
+
+async function retirerPlan(l) {
+  try { await api("/api/plan-supprimer", { id: l.id }); toast("Plan retiré"); } catch (x) { toast("Microduck ne répond pas"); }
+  rafraichirLieux();
+}
+
+function dessinerPlanMaison(p, toile, messageVide) {
+  toile.hidden = false; messageVide.hidden = true;
+  const css = getComputedStyle(document.documentElement), v = (n) => css.getPropertyValue(n).trim();
+  const dpr = window.devicePixelRatio || 1, L = toile.clientWidth, H = toile.clientHeight;
+  toile.width = L * dpr; toile.height = H * dpr;
+  const g = toile.getContext("2d"); g.scale(dpr, dpr); g.clearRect(0, 0, L, H);
+  const r = p.resolution, [x0, y0] = p.origine, lx = p.largeur * r, ly = p.hauteur * r;
+  const e = Math.min((L - 16) / ly, (H - 16) / lx);          // meme orientation que sa carte : devant = haut, gauche = gauche
+  const cu = L / 2 + (y0 + ly / 2) * e, cw = H / 2 + (x0 + lx / 2) * e;
+  const ecran = (x, y) => [cu - y * e, cw - x * e];
+  // la grille (plages ligne par ligne) -> une image d'une case par pixel, posee a l'echelle
+  const img = new ImageData(p.largeur, p.hauteur), couleurs = [[244, 239, 230, 255], [70, 74, 82, 255], [0, 0, 0, 0]];
+  let k = 0;
+  for (let n = 0; n < p.rle.length; n += 2) {
+    const c = couleurs[p.rle[n]];
+    for (let m = 0; m < p.rle[n + 1]; m++, k++) img.data.set(c, k * 4);   // case k : colonne j = x, ligne i = y
+  }
+  const tampon = document.createElement("canvas"); tampon.width = p.largeur; tampon.height = p.hauteur;
+  tampon.getContext("2d").putImageData(img, 0, 0);
+  g.save();
+  const [u0, w0] = ecran(x0, y0);
+  g.translate(u0, w0); g.transform(0, -1, -1, 0, 0, 0);           // colonnes (x) vers le haut, lignes (y) vers la gauche
+  g.imageSmoothingEnabled = false;
+  g.drawImage(tampon, 0, 0, p.largeur * r * e, p.hauteur * r * e);
+  g.restore();
+  g.font = "12px system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillStyle = v("--texte");
+  for (const o of p.objets || []) if (o.nom && o.type !== "door_frame") g.fillText(o.nom, ...ecran(...o.centre));
+  g.font = "16px system-ui, sans-serif";
+  const rep = p.reperes || {};
+  if (rep.chargeur) g.fillText("🔌", ...ecran(rep.chargeur[0], rep.chargeur[1]));
+  if (rep.entree) g.fillText("🚪", ...ecran(rep.entree[0], rep.entree[1]));
+  for (const m of Object.values(rep.marqueurs || {})) g.fillText("🏷️", ...ecran(m[0], m[1]));
+}
+
 async function voirLieu(l) {
   const d = $("#vue-lieu");
   texte("#vue-lieu-titre", l.nom);
   d.showModal();
+  if (l.plan) {
+    try { dessinerPlanMaison(await api("/api/plan?id=" + encodeURIComponent(l.id)), $("#plan-lieu"), $("#plan-lieu-vide")); return; }
+    catch (x) { /* plan illisible : sa carte, a defaut */ }
+  }
   try { dessinerCarte(await api("/api/lieu-carte?id=" + encodeURIComponent(l.id)), $("#plan-lieu"), $("#plan-lieu-vide")); }
   catch (x) { dessinerCarte(null, $("#plan-lieu"), $("#plan-lieu-vide")); }
 }
