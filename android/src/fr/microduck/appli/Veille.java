@@ -38,7 +38,7 @@ public class Veille extends JobService {
     static void planifier(Context c, boolean maintenant) {
         try {
             planifierOuEchouer(c, maintenant);
-        } catch (RuntimeException e) {
+        } catch (Throwable e) {
             // jamais un plantage de l'appli pour la veille (permission refusee, quota de taches...) : sans elle, l'appli
             // marche, il n'y a juste pas de notifications en arriere-plan
         }
@@ -64,8 +64,11 @@ public class Veille extends JobService {
     public boolean onStartJob(final JobParameters p) {
         new Thread(new Runnable() {
             public void run() {
-                try { verifier(Veille.this); } catch (Exception e) { /* canard injoignable : la prochaine fois */ }
-                jobFinished(p, false);
+                // Tourne aussi appli FERMEE : rien ici ne doit jamais la faire planter (Throwable, pas seulement Exception)
+                try { verifier(Veille.this); } catch (Throwable e) { /* canard injoignable, ou autre : la prochaine fois */ }
+                finally {
+                    try { jobFinished(p, false); } catch (Throwable e) { /* tache deja annulee par Android */ }
+                }
             }
         }).start();
         return true;
