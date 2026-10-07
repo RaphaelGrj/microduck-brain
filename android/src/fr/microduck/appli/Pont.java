@@ -48,6 +48,47 @@ public class Pont {
         Veille.planifier(c, true);
     }
 
+    /** Sauvegarde automatique (Veille) : reglage, date de la derniere, fichiers gardes. */
+    @JavascriptInterface
+    public String sauvegardesAuto() {
+        try {
+            org.json.JSONObject o = new org.json.JSONObject().put("actif", Veille.prefs(c).getBoolean("sauvegarde_auto", true))
+                    .put("derniere", Veille.prefs(c).getLong("derniere_sauvegarde", 0L) / 1000);
+            JSONArray l = new JSONArray();
+            java.io.File[] f = Veille.dossierSauvegardes(c).listFiles();
+            if (f != null) {
+                java.util.Arrays.sort(f);
+                for (int i = f.length - 1; i >= 0; i--) l.put(f[i].getName());
+            }
+            return o.put("fichiers", l).toString();
+        } catch (Exception e) {
+            return "{}";
+        }
+    }
+
+    @JavascriptInterface
+    public void reglerSauvegardeAuto(boolean actif) {
+        Veille.prefs(c).edit().putBoolean("sauvegarde_auto", actif).apply();
+        if (actif) Veille.planifier(c, true);
+    }
+
+    /** Copier une sauvegarde automatique la ou l'on veut (selecteur d'Android), pour la garder ou la restaurer ailleurs. */
+    @JavascriptInterface
+    public void exporterSauvegarde(final String nom) {
+        if (nom == null || !nom.matches("microduck-sauvegarde-[0-9-]+\\.json")) return;
+        try {
+            java.io.File f = new java.io.File(Veille.dossierSauvegardes(c), nom);
+            final byte[] octets = new byte[(int) f.length()];
+            java.io.FileInputStream in = new java.io.FileInputStream(f);
+            int lu = 0;
+            while (lu < octets.length) { int n = in.read(octets, lu, octets.length - lu); if (n < 0) break; lu += n; }
+            in.close();
+            ecran.runOnUiThread(new Runnable() {
+                public void run() { ecran.enregistrer(nom, "application/json", octets); }
+            });
+        } catch (Exception e) { /* fichier disparu */ }
+    }
+
     @JavascriptInterface
     public void alertes(String json) {
         try {

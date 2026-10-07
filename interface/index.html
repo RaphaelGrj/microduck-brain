@@ -116,6 +116,32 @@
           <h3 class="sous-titre">Où l'a-t-il vu ?</h3>
           <ul id="vus" class="liste"></ul>
         </div>
+        <div class="carte" id="carte-minuteurs">
+          <h2>Minuteurs et rappels</h2>
+          <button id="signal-stop" class="principal large" hidden>🔕 Arrêter son signal</button>
+          <div class="boutons minuteurs-rapides">
+            <button data-minutes="5">5 min</button><button data-minutes="10">10 min</button>
+            <button data-minutes="15">15 min</button><button data-minutes="30">30 min</button>
+          </div>
+          <div class="message-form">
+            <input id="min-duree" type="number" min="1" max="1440" inputmode="numeric" placeholder="min" aria-label="Durée en minutes">
+            <input id="min-nom" maxlength="40" placeholder="Pour quoi ? (pâtes, lessive…)" aria-label="Nom du minuteur">
+            <button id="min-lancer" class="principal">Lancer</button>
+          </div>
+          <details class="rappel-form" data-parent>
+            <summary>Un rappel à heure fixe</summary>
+            <div class="message-form">
+              <input id="rap-texte" maxlength="200" placeholder="Arroser les plantes" aria-label="Le rappel">
+              <input id="rap-heure" type="time" value="18:00" aria-label="Heure">
+              <input id="rap-pour" list="msg-noms" maxlength="40" placeholder="Pour qui ? (vide : tout le monde)" aria-label="Pour qui ?">
+            </div>
+            <label class="reglage"><span>Chaque jour</span><input type="checkbox" id="rap-quotidien" class="case"></label>
+            <button id="rap-ajouter" class="large">Programmer</button>
+          </details>
+          <ul id="planning" class="liste-choix"></ul>
+          <p class="discret petit">À l'heure dite, il le signale en sons de canard, même en mode calme. Une caresse
+            l'arrête. Le réveil doux se règle dans Réglages → Sa journée → Routines.</p>
+        </div>
         <div class="carte">
           <h2>Messages</h2>
           <p class="discret petit">Laisse un message pour quelqu'un : quand il le verra (à son retour, ou tout de suite
@@ -438,6 +464,11 @@
           <h2>Sauvegarde</h2>
           <p class="discret petit">Ce qu'il a appris (habitants, personnalité, lieux, batteries), tes schémas et ses
             réglages, dans un fichier sur ce téléphone. Jamais le jeton Home Assistant.</p>
+          <div id="sauvegarde-auto" hidden>
+            <div class="reglage"><div><b>Chaque semaine, toute seule</b><p class="discret" id="sauvegarde-auto-info">—</p></div>
+              <input type="checkbox" id="sauvegarde-auto-actif" class="case"></div>
+            <button id="sauvegarde-auto-recuperer" class="large">Récupérer la dernière</button>
+          </div>
           <div class="boutons">
             <button id="sauvegarder" class="principal">Enregistrer</button>
             <label class="bouton-like">Restaurer…<input id="restaurer" type="file" accept=".json,application/json" hidden></label>
@@ -464,6 +495,18 @@
             <button id="vue-photo-effacer" class="danger">Effacer</button></div>
           <form method="dialog"><button class="large">Fermer</button></form>
         </dialog>
+        <div class="carte">
+          <h2>Son humeur</h2>
+          <canvas id="humeur-graphe" class="graphe" aria-label="Énergie et éveil sur 7 jours"></canvas>
+          <p id="humeur-vide" class="discret">Il faut quelques heures de vie pour tracer son humeur.</p>
+          <ul class="legende" id="humeur-legende"></ul>
+        </div>
+        <div class="carte">
+          <h2>Bilan du mois</h2>
+          <select id="bilan-mois" aria-label="Mois"></select>
+          <canvas id="bilan-carte" class="bilan-carte" aria-label="Carte du bilan du mois"></canvas>
+          <button id="bilan-exporter" class="large">Enregistrer l'image</button>
+        </div>
         <div class="carte">
           <h2>Sa semaine</h2>
           <div id="semaine" class="semaine" aria-label="Activités des 7 derniers jours"></div>
@@ -756,5 +799,6 @@
   <script src="studio.js"></script>
   <script src="lib/qrcode.js"></script>
   <script src="plus.js"></script>
+  <script src="maison.js"></script>
 </body>
 </html>

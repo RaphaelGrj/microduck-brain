@@ -18,7 +18,8 @@ CURSEURS = ("joueur", "bavard", "taquin")
 # routines programmables (liste fermee) : action de l'appli -> evenement du cerveau
 ROUTINES = {"vient_me_voir": "routine_compagnie", "salut": "tour_salut", "danse": "commande:danse",
             "toupie": "tour_toupie", "jouer_balle": "jeu_balle", "jouer_soleil": "jeu_soleil", "jouer_cache": "jeu_cache",
-            "ou_es_tu": "ou_es_tu", "diagnostic": "diagnostic", "calme_on": "calme_on", "calme_off": "calme_off"}
+            "ou_es_tu": "ou_es_tu", "diagnostic": "diagnostic", "calme_on": "calme_on", "calme_off": "calme_off",
+            "reveil": "signal:reveil|reveil"}          # reveil doux : roucoulements, pepiements, bonjour (Signal)
 
 
 def heure(v):

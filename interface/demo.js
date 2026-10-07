@@ -45,6 +45,14 @@
   const carnetDemo = [{ id: "c1", type: "impression", texte: "Coque de tête noire, PLA Galaxy Black", date: "2026-10-02", piece: "coque-superieure-origine" },
     { id: "c2", type: "nettoyage", texte: "Semelles dépoussiérées", date: "2026-10-05" }];
   const invitesDemo = [{ code: "mamy-k7p2", nom: "Mamie", jusqua: H + 86400 }];
+  // lot 9 : minuteurs, rappels, statistiques (60 jours d'activites, une semaine d'humeur)
+  const planningDemo = { minuteurs: [], rappels: [{ id: "r1", texte: "Arroser les plantes", heure: "18:00", pour: "Clémence", quotidien: true, quand: H + 7200 }] };
+  const ACT = ["promenades", "siestes", "jeux", "caresses", "danses", "accueils", "folles_courses", "blagues"];
+  const statsDemo = { balle: { parties: 23, reussies: 15, tirs: 34, record: 5 },
+    jours: Array.from({ length: 45 }, (_, k) => ({ date: new Date(Date.now() - (45 - k) * 86400000).toISOString().slice(0, 10),
+      compte: Object.fromEntries(ACT.map((a, i) => [a, Math.max(0, Math.round(3 + 2.5 * Math.sin(k * 0.7 + i) - i * 0.4))])) })),
+    humeur: Array.from({ length: 7 * 96 }, (_, k) => { const t = H - (7 * 96 - k) * 900, hr = new Date(t * 1000).getHours();
+      const jour = hr >= 8 && hr < 23; return [t, +(0.35 + (jour ? 0.35 : 0) + 0.12 * Math.sin(k / 9)).toFixed(2), +(jour ? 0.55 + 0.25 * Math.sin(k / 5) : 0.12).toFixed(2)]; }) };
   function courbe(n, base, pente, bruit) { return Array.from({ length: n }, (_, k) => Math.round(base + pente * k + bruit * Math.sin(k * 1.7))); }
   const JOURS_USURE = Array.from({ length: 21 }, (_, k) => `2026-${String(259 + k).padStart(3, "0")}`);
   const usureDemo = { servos: { jours: JOURS_USURE, servos: Object.fromEntries(["left_hip_yaw", "left_hip_roll", "left_hip_pitch",
@@ -128,6 +136,7 @@
     if (JEUX[nom]) { if (!calme) changer(JEUX[nom], nom.startsWith("jouer") ? 25 : 6); force = nom; }
     else if (REGARDS[nom]) { tete = REGARDS[nom]; changer("regard_guide", 6); }
     else if (nom === "ou_es_tu") changer("ou_es_tu", 4);
+    else if (nom === "signal_stop") changer("chill", 10);
     else if (nom === "assis") { assis = !assis; changer("assis_demande", 3); }
     else if (nom === "stop" || nom === "fin_jeu") { assis = false; changer("chill", 10); }
     else if (nom === "calme_on" || nom === "calme_off") { calme = nom === "calme_on"; finEtat = 0; }
@@ -308,6 +317,23 @@
       return { ok: true };
     }
     if (chemin === "/api/usure") return usureDemo;
+    if (chemin === "/api/stats") return statsDemo;
+    if (chemin === "/api/planning") return { maintenant: Date.now() / 1000, ...planningDemo };
+    if (chemin === "/api/minuteur" || chemin === "/api/rappel") {
+      const liste = chemin === "/api/minuteur" ? planningDemo.minuteurs : planningDemo.rappels;
+      if (corps.action === "annuler") { liste.splice(liste.findIndex((x) => x.id === corps.id), 1); return { ok: true }; }
+      if (chemin === "/api/minuteur") {
+        const m = { id: "m" + Date.now(), nom: corps.nom || "Minuteur", duree: corps.secondes, fin: Date.now() / 1000 + corps.secondes };
+        liste.push(m);
+        setTimeout(() => { liste.splice(liste.indexOf(m), 1); changer("signal", 8);
+          alertes.push({ t: Date.now() / 1000, type: "minuteur", titre: `Minuteur : ${m.nom}`, texte: "C'est l'heure !", importante: true }); },
+          Math.min(corps.secondes, 20) * 1000);           // (en demo : 20 s au plus, pour voir la fin)
+        return { ok: true, element: m };
+      }
+      const r = { id: "r" + Date.now(), texte: corps.texte, heure: corps.heure, pour: corps.pour || null, quotidien: !!corps.quotidien, quand: Date.now() / 1000 + 3600 };
+      liste.push(r);
+      return { ok: true, element: r };
+    }
     if (chemin === "/api/carnet") {
       if (!corps) return { liste: carnetDemo, types: [] };
       if (corps.action === "supprimer") { carnetDemo.splice(carnetDemo.findIndex((e) => e.id === corps.id), 1); return { ok: true }; }

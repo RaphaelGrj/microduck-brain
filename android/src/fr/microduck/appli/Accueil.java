@@ -61,9 +61,13 @@ public class Accueil extends Activity {
         }
         Veille.planifier(this, false);
         String connu = prefs.getString("url", null);
-        if (getIntent().getBooleanExtra("reprendre", false) && connu != null) {
+        String action = getIntent().getStringExtra("action");   // raccourci de l'icone (appui long)
+        if (connu != null && action != null && action.matches("[a-z_]{2,20}")) {
+            startActivity(new Intent(this, Canard.class).putExtra("url", connu + "/#action=" + action));
+        } else if (getIntent().getBooleanExtra("reprendre", false) && connu != null) {
             startActivity(new Intent(this, Canard.class).putExtra("url", connu + "/"));   // notification ou widget
         }
+        installerRaccourcis();
 
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
@@ -148,6 +152,33 @@ public class Accueil extends Activity {
         defile.setBackgroundColor(Color.WHITE);
         defile.addView(col);
         setContentView(defile);
+    }
+
+    /** Raccourcis de l'icone (appui long, Android 7.1+) : par reflexion, l'APK se compile avec l'API 23. */
+    private void installerRaccourcis() {
+        if (android.os.Build.VERSION.SDK_INT < 25) return;
+        String[][] liste = {
+            {"ou_es_tu", L("Où es-tu ?", "Where are you?")},
+            {"jouer_balle", L("Jouer à la balle", "Play ball")},
+            {"calme_on", L("Mode calme", "Quiet mode")},
+            {"minuteur_10", L("Minuteur 10 min", "10 min timer")},
+        };
+        try {
+            Class<?> constructeur = Class.forName("android.content.pm.ShortcutInfo$Builder");
+            java.util.ArrayList<Object> infos = new java.util.ArrayList<Object>();
+            for (String[] r : liste) {
+                Intent i = new Intent(this, Accueil.class).setAction(Intent.ACTION_VIEW).putExtra("action", r[0])
+                        .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                Object b = constructeur.getConstructor(android.content.Context.class, String.class).newInstance(this, r[0]);
+                constructeur.getMethod("setShortLabel", CharSequence.class).invoke(b, r[1]);
+                constructeur.getMethod("setIcon", android.graphics.drawable.Icon.class)
+                        .invoke(b, android.graphics.drawable.Icon.createWithResource(this, R.drawable.icone));
+                constructeur.getMethod("setIntent", Intent.class).invoke(b, i);
+                infos.add(constructeur.getMethod("build").invoke(b));
+            }
+            Object sm = getSystemService("shortcut");
+            sm.getClass().getMethod("setDynamicShortcuts", java.util.List.class).invoke(sm, infos);
+        } catch (Exception e) { /* lanceur sans raccourcis : tant pis */ }
     }
 
     /** Une version plus recente sur GitHub ? Le bouton ouvre son telechargement dans le navigateur (installation par Android). */

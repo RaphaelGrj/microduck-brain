@@ -43,6 +43,9 @@ API :
                             (son nom), X-Fichier (nom .bgcode/.gcode), X-Lancer (1 : imprimer tout de suite). Le
                             telephone le telecharge (catalogue) : le canard ne sort jamais sur Internet.
   GET  /api/invites         codes invites ; POST {"heures": 24, "nom": ...} pour en creer un, {"action": "revoquer", "code"}
+  GET  /api/planning        minuteurs et rappels (planning.py) ; POST /api/minuteur {"secondes", "nom"},
+                            POST /api/rappel {"texte", "heure": "HH:MM", "pour", "quotidien"} ; {"action": "annuler", "id"}
+  GET  /api/stats           bilan du mois et graphique d'humeur : 60 jours d'activites, humeur d'une semaine, balle
   GET  /api/sante           test de vie, sans code (pour savoir si le canard repond)
 Le code se passe dans l'en-tete `X-Microduck-Code` (ou `?code=` pour le flux).
 """
@@ -72,7 +75,7 @@ COMMANDES = {
     "salut": "tour_salut", "toupie": "tour_toupie", "assis": "tour_assis", "danse": "commande:danse",
     "stop": "commande:stop", "stop_taquinerie": "stop_taquinerie", "diagnostic": "diagnostic",
     "calme_on": "calme_on", "calme_off": "calme_off", "garde_on": "garde_on", "garde_off": "garde_off",
-    "oublier_carte": "oublier_carte", "ou_es_tu": "ou_es_tu",
+    "oublier_carte": "oublier_carte", "ou_es_tu": "ou_es_tu", "signal_stop": "signal_stop",
     "batterie_1": "batterie_mise:1", "batterie_2": "batterie_mise:2", "batterie_3": "batterie_mise:3",
     "avance": "guide:avance", "gauche": "guide:gauche", "droite": "guide:droite",
     "regard_gauche": "regard:gauche", "regard_droite": "regard:droite", "regard_haut": "regard:haut",
@@ -195,9 +198,9 @@ BATTERIE_FAIBLE_PCT, BATTERIE_REMONTEE_PCT = 20.0, 30.0
 INSTALLATION_S = 30 * 60             # sans code : l'installation reste ouverte 30 min apres le demarrage
 # profil enfant (code enfant) : regarder, jouer, le retrouver ; ni reglages, ni telecommande des pas, ni sauvegarde
 ENFANT_LECTURE = {"/api/role", "/api/etat", "/api/flux", "/api/carte", "/api/alertes", "/api/design", "/api/lieux", "/api/lieu-carte",
-                  "/api/imprimantes", "/api/choregraphies", "/api/comportements", "/api/messages", "/api/parcours"}
-ENFANT_ECRITURE = {"/api/commande", "/api/message", "/api/parcours"}
-COMMANDES_ENFANT = {"jouer_balle", "jouer_cache", "jouer_soleil", "fin_jeu", "salut", "toupie", "danse", "stop",
+                  "/api/imprimantes", "/api/choregraphies", "/api/comportements", "/api/messages", "/api/parcours", "/api/planning", "/api/stats"}
+ENFANT_ECRITURE = {"/api/commande", "/api/message", "/api/parcours", "/api/minuteur"}
+COMMANDES_ENFANT = {"signal_stop", "jouer_balle", "jouer_cache", "jouer_soleil", "fin_jeu", "salut", "toupie", "danse", "stop",
                     "stop_taquinerie", "ou_es_tu", "regard_gauche", "regard_droite", "regard_haut", "regard_bas",
                     "regard_centre"}
 SECTIONS_A_REDEMARRER = {"home_assistant", "habitant", "imprimante_directe", "appareil", "cerveau"}
@@ -237,7 +240,8 @@ def fichiers_sauvegardes(appli):
     import reglages
     return {"memoire.json": memoire.CHEMIN_DEFAUT, "lieux.json": lieux.CHEMIN_DEFAUT,
             "design.json": appli.fichier_design, "reglages.json": appli.fichier_reglages or reglages.CHEMIN_DEFAUT,
-            "carnet.json": carnet.chemin_defaut(), "jeux.json": appli.fichier_jeux()}
+            "carnet.json": carnet.chemin_defaut(), "jeux.json": appli.fichier_jeux(),
+            "planning.json": __import__("planning").chemin_defaut()}
 
 
 def appliquer_restaurations(chemins, log=print):
@@ -283,6 +287,10 @@ class Appli:
         self.lieux = None                       # lieux.Lieux, branche par canard.py (sinon : pas de section Lieux)
         self.photos = None                      # photos.Photos (journal photo, mode photo), branche par canard.py
         self.usure = {}                         # courbes d'usure (servos, batteries), photographiees toutes les 30 s
+        self.stats = {}                         # bilan du mois, graphique d'humeur (toutes les 30 s)
+        self._t_stats = -1e9
+        import planning as planning_mod
+        self.planning = planning_mod.Planning()
         self._t_usure = -1e9
         import messages as messages_mod
         self.messages = messages_mod.Messages()
@@ -326,6 +334,13 @@ class Appli:
         if dg is not None and now - self._t_usure >= 30.0:
             self._t_usure = now
             self.usure = {"servos": dg.servos.courbes(), "batteries": dg.batterie.courbes()}
+        if now - self._t_stats >= 30.0:
+            self._t_stats = now
+            mem = brain.ctx.extras.get("memoire") if hasattr(brain, "ctx") else None
+            dm = getattr(mem, "donnees", None) or {}
+            self.stats = {"jours": list(dm.get("historique_jours") or [])[-60:] + (brain.semaine()[-1:] if hasattr(brain, "semaine") else []),
+                          "humeur": list(dm.get("humeur") or []), "balle": dict(dm.get("balle") or {})}
+        self._verifier_planning()
         if now - self._t_carte >= PERIODE_CARTE_S:
             self._t_carte = now
             self.carte = carte(brain, state)
@@ -396,6 +411,22 @@ class Appli:
                  else f"{atteints} point(s) sur {total}" if issue != "refuse"
                  else "Debout, au calme, avec des étapes de 4 m au plus.")
         self.alerter("parcours", titres.get(issue, "Parcours"), texte, False)
+
+    def _verifier_planning(self):
+        """Minuteurs finis, rappels arrives : notification du telephone, et le canard le signale (sons de canard)."""
+        finis, arrives = self.planning.echus()
+        for m in finis:
+            self.alerter("minuteur", f"Minuteur : {m['nom']}", "C'est l'heure !", True)
+            self.evenements.put(f"signal:minuteur|{m['id']}")
+        for r in arrives:
+            if r.get("pour"):
+                msg = self.messages.ajouter(r["pour"], r["texte"], "Rappel")
+                if msg is not None:                      # il le dira a la personne (ou a son retour)
+                    self.evenements.put(f"message:{msg['id']}|{msg['pour']}")
+                self.alerter("rappel", f"Rappel pour {r['pour']}", r["texte"], False)
+            else:
+                self.alerter("rappel", "Rappel", r["texte"], True)
+                self.evenements.put(f"signal:rappel|{r['id']}")
 
     RESUME_VACANCES_H = 20
     POSE_ATTENTE_S = 1.6
@@ -656,6 +687,14 @@ class Appli:
                         self._json(200, {"liste": [{"code": k, **v} for k, v in appli.invites.items()
                                                    if v["jusqua"] > time.time()]})
                     return
+                if url.path == "/api/planning":
+                    if self._autorise():
+                        self._json(200, appli.planning.etat())
+                    return
+                if url.path == "/api/stats":
+                    if self._autorise():
+                        self._json(200, appli.stats)
+                    return
                 if url.path == "/api/usure":
                     if self._autorise():
                         self._json(200, appli.usure)
@@ -752,7 +791,7 @@ class Appli:
                                   "/api/restauration", "/api/installation", "/api/configuration", "/api/tester-ha",
                                   "/api/tester-imprimante", "/api/redemarrer", "/api/choregraphies", "/api/comportement",
                                   "/api/regard", "/api/mise-a-jour", "/api/photo", "/api/message", "/api/parcours", "/api/carnet",
-                                  "/api/imprimer", "/api/invites"):
+                                  "/api/imprimer", "/api/invites", "/api/minuteur", "/api/rappel"):
                     return self._json(404, {"erreur": "inconnu"})
                 if chemin == "/api/installation":
                     return self._installation()
@@ -863,6 +902,18 @@ class Appli:
                         appli.photos.supprimer(corps.get("id") if action == "supprimer" else None)
                         return self._json(200, {"ok": True})
                     return self._json(400, {"erreur": "action inconnue"})
+                if chemin in ("/api/minuteur", "/api/rappel"):
+                    if corps.get("action") == "annuler":
+                        ok = appli.planning.annuler(str(corps.get("id")))
+                        return self._json(200 if ok else 404, {"ok": ok})
+                    if chemin == "/api/minuteur":
+                        m = appli.planning.minuteur(corps.get("secondes"), corps.get("nom"))
+                    else:
+                        m = appli.planning.rappel(corps.get("texte"), corps.get("heure"), corps.get("pour") or "",
+                                                  bool(corps.get("quotidien")))
+                    if m is None:
+                        return self._json(400, {"erreur": "duree (5 s a 24 h) ou texte et heure HH:MM attendus"})
+                    return self._json(200, {"ok": True, "element": m})
                 if chemin == "/api/invites":
                     if corps.get("action") == "revoquer":
                         return self._json(200 if appli.revoquer_invite(corps.get("code")) else 404, {"ok": True})

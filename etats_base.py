@@ -87,13 +87,14 @@ class Ctx:
     # duree d'ouverture du bec par son (s) : le bec bouge avec la voix (robot.mouth, que seul le cerveau pilote)
     BEC_S = {"chirp": 0.25, "peck": 0.15, "greet": 0.5, "coo": 0.6, "inquire": 0.45, "alarm": 0.8, "wheee": 1.2}
 
-    def sound(self, tag):
-        """La voix du canard (robot.sound) : alarm, greet, inquire, peck, chirp, coo, wheee. Muette en mode calme."""
+    def sound(self, tag, meme_en_silence=False):
+        """La voix du canard (robot.sound) : alarm, greet, inquire, peck, chirp, coo, wheee. Muette en mode calme, sauf
+        `meme_en_silence` : un signal demande expres (minuteur, rappel, reveil de l'application)."""
         if tag not in SONS_CANARD:
             self.sons_refuses = getattr(self, "sons_refuses", 0) + 1
             print(f"  (son {tag!r} refuse : le canard ne s'exprime qu'avec ses sons de canard)", flush=True)
             return
-        if getattr(self, "silence", False):
+        if getattr(self, "silence", False) and not meme_en_silence:
             return
         try:
             r = self.client.request("robot.sound", {"tag": tag})

@@ -85,8 +85,40 @@ public class Veille extends JobService {
         }
         pr.edit().putBoolean("joignable", true).apply();
         majWidget(c, etat);
+        sauvegarder(c, url, code);
         double depuis = Double.longBitsToDouble(pr.getLong("depuis", Double.doubleToLongBits(System.currentTimeMillis() / 1000.0 - 3600)));
         alertes(c, new JSONObject(lire(url + "/api/alertes?depuis=" + depuis, code)).getJSONArray("alertes"));
+    }
+
+    static final long SEMAINE_MS = 7L * 24 * 3600 * 1000;
+    static final int SAUVEGARDES_GARDEES = 4;
+
+    static java.io.File dossierSauvegardes(Context c) {
+        java.io.File d = c.getExternalFilesDir("sauvegardes");             // Android/data/fr.microduck.appli/files/...
+        return d != null ? d : new java.io.File(c.getFilesDir(), "sauvegardes");
+    }
+
+    /** Une fois par semaine, sa sauvegarde (memoire, lieux, design, reglages...) dans le telephone : les 4 dernieres. */
+    static void sauvegarder(Context c, String url, String code) {
+        SharedPreferences pr = prefs(c);
+        long maintenant = System.currentTimeMillis();
+        if (!pr.getBoolean("sauvegarde_auto", true) || maintenant - pr.getLong("derniere_sauvegarde", 0L) < SEMAINE_MS) return;
+        try {
+            String json = lire(url + "/api/sauvegarde", code);            // (code enfant : refuse, rien n'est fait)
+            java.io.File d = dossierSauvegardes(c);
+            d.mkdirs();
+            String nom = "microduck-sauvegarde-" + new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.FRANCE)
+                    .format(new java.util.Date(maintenant)) + ".json";
+            java.io.FileOutputStream out = new java.io.FileOutputStream(new java.io.File(d, nom));
+            out.write(json.getBytes("UTF-8"));
+            out.close();
+            java.io.File[] f = d.listFiles();
+            if (f != null && f.length > SAUVEGARDES_GARDEES) {
+                java.util.Arrays.sort(f);
+                for (int i = 0; i < f.length - SAUVEGARDES_GARDEES; i++) f[i].delete();
+            }
+            pr.edit().putLong("derniere_sauvegarde", maintenant).apply();
+        } catch (Exception e) { /* la semaine prochaine (ou au prochain passage) */ }
     }
 
     /** Une notification par alerte plus recente que la derniere vue (curseur partage avec l'appli ouverte). */

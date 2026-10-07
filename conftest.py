@@ -9,3 +9,4 @@ def _dossiers_temporaires(tmp_path, monkeypatch):
     monkeypatch.setenv("MICRODUCK_JEUX", str(tmp_path / "jeux.json"))
     monkeypatch.setenv("MICRODUCK_CARNET", str(tmp_path / "carnet.json"))
     monkeypatch.setenv("MICRODUCK_INVITES", str(tmp_path / "invites.json"))
+    monkeypatch.setenv("MICRODUCK_PLANNING", str(tmp_path / "planning.json"))

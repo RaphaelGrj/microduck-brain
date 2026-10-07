@@ -411,3 +411,12 @@ button[aria-pressed=true] { background: var(--orange-fonce); color: var(--accent
 .code-couleur #couleur-hex[aria-invalid=true] { border-color: var(--danger); }
 .code-couleur button { flex: 0 0 auto; }
 .liste-choix code { font: .85rem ui-monospace, monospace; color: var(--discret); }
+
+/* Lot 9 : minuteurs, rappels, bilan du mois */
+.minuteurs-rapides { grid-template-columns: repeat(4, 1fr); margin-bottom: 10px; }
+.minuteurs-rapides button { white-space: nowrap; padding: 0 4px; }
+.rappel-form summary { cursor: pointer; margin: 4px 0 10px; color: var(--orange-fonce); font-weight: 600; }
+#planning .compte { font: 600 1.05rem ui-monospace, monospace; }
+.bilan-carte { display: block; width: 100%; aspect-ratio: 4 / 5; margin: 10px 0; border-radius: 16px; }
+#bilan-mois { width: 100%; min-height: 44px; border-radius: 10px; border: 1px solid var(--bord); background: var(--carte);
+  color: var(--texte); font: inherit; padding: 0 10px; }
