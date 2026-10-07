@@ -171,3 +171,24 @@ def test_apercu_du_design(serveur, tmp_path):  # noqa: F811
     assert "apercu" not in json.loads(requete(serveur.port, "/api/design")[1])
     serveur.apercu_design = {"couleurs": {"pieds": "#000000"}, "t": time.time() - 3600}
     assert "apercu" not in json.loads(requete(serveur.port, "/api/design")[1]), "un vieil apercu oublie s'efface"
+
+
+def test_appairage_du_casque_par_accord_du_parent(serveur):  # noqa: F811
+    """Le casque trouve le canard, demande l'acces (sans code) ; le code ne lui est remis qu'apres accord, une fois."""
+    s, r = requete(serveur.port, "/api/casque-demande", code=None, corps={})
+    k = json.loads(r)["id"]
+    assert s == 200 and requete(serveur.port, "/api/casque-demande", code=None, corps={})[1] == r, "une seule par adresse"
+    assert json.loads(requete(serveur.port, f"/api/casque-demande?id={k}", code=None)[1]) == {"etat": "attente"}
+    c = json.loads(requete(serveur.port, "/api/casque")[1])
+    assert [d["id"] for d in c["demandes"]] == [k] and serveur.alertes[-1]["type"] == "casque"
+    assert requete(serveur.port, "/api/casque", corps={"action": "accepter", "id": "faux"})[0] == 404
+    assert requete(serveur.port, "/api/casque", corps={"action": "accepter", "id": k})[0] == 200
+    assert json.loads(requete(serveur.port, f"/api/casque-demande?id={k}", code=None)[1]) == {"etat": "accepte", "code": CODE}
+    assert requete(serveur.port, f"/api/casque-demande?id={k}", code=None)[0] == 404, "le code ne part qu'une fois"
+    # refus
+    k2 = json.loads(requete(serveur.port, "/api/casque-demande", code=None, corps={})[1])["id"]
+    requete(serveur.port, "/api/casque", corps={"action": "refuser", "id": k2})
+    assert json.loads(requete(serveur.port, f"/api/casque-demande?id={k2}", code=None)[1]) == {"etat": "refuse"}
+    # expiree
+    serveur.demandes_casque[k2]["t"] -= 3600
+    assert requete(serveur.port, f"/api/casque-demande?id={k2}", code=None)[0] == 404

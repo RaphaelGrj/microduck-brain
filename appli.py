@@ -32,6 +32,9 @@ API :
                             sans simulateur (rien de cela n'existe sur le vrai robot) - jumeau.py
   GET  /api/casque          le casque Quest : connecte ?, son mode, simulateur et scene, adresses a taper pour
                             l'appairer ; POST {"action": "balle" | "chargeur" | "scene", "scene"} (canard jumeau)
+  POST /api/casque-demande  (sans code, reseau local) un casque demande l'acces -> {"id"} ; GET ?id=... : "attente",
+                            "refuse" ou "accepte" + le code, UNE fois, apres accord d'un parent dans l'appli
+                            (POST /api/casque {"action": "accepter" | "refuser", "id"})
   POST /api/design-apercu   {"couleurs": {...}} : couleurs du design space vues tout de suite dans le casque, sans les
                             enregistrer ({} : fin de l'apercu)
   GET  /api/vue             une image de sa camera (casque, « etre le canard ») - seulement si les photos sont permises
@@ -321,6 +324,7 @@ class Appli:
         self.photos = None                      # photos.Photos (journal photo, mode photo), branche par canard.py
         self.position = None                    # position.PositionPlan (plan du lieu), branche par canard.py
         self.casque = {}                        # dernier contact du casque Quest : {"t", "mode", "ip"}
+        self.demandes_casque = {}               # id -> {"t", "ip", "etat"} : un casque demande l'acces (appairage)
         self.apercu_design = None               # {"couleurs", "t"} : design space vu dans le casque, non enregistre
         self.sons_recents = collections.deque(maxlen=20)   # (instant, son) : ses derniers sons (canard jumeau)
         self.grab = None                        # image camera (vue en direct du casque, opt-in photos), canard.py
@@ -582,6 +586,30 @@ class Appli:
             except queue.Empty:
                 return out
 
+    # -- appairage du casque : il demande, un parent accepte dans l'appli, le code lui est remis une fois -----------
+    DEMANDE_S = 5 * 60
+
+    def nettoyer_demandes(self):
+        for k in [k for k, v in self.demandes_casque.items() if time.time() - v["t"] > self.DEMANDE_S]:
+            del self.demandes_casque[k]
+        return self.demandes_casque
+
+    def demander_casque(self, ip):
+        """-> (code HTTP, reponse). Une demande en attente par adresse, trois au plus en tout."""
+        import secrets
+        if self.code is None:
+            return 409, {"erreur": "canard pas encore installe (choisir son code depuis le telephone)"}
+        self.nettoyer_demandes()
+        for k, v in self.demandes_casque.items():
+            if v["ip"] == ip and v["etat"] == "attente":
+                return 200, {"id": k}
+        if sum(1 for v in self.demandes_casque.values() if v["etat"] == "attente") >= 3:
+            return 429, {"erreur": "trop de demandes en attente"}
+        k = secrets.token_urlsafe(12)
+        self.demandes_casque[k] = {"t": time.time(), "ip": ip, "etat": "attente"}
+        self.alerter("casque", "Un casque demande l'accès", f"Depuis {ip} : à accepter dans Réglages → Casque.", True)
+        return 200, {"id": k}
+
     # -- cote reseau --------------------------------------------------------------------------------------------
     def code_valide(self, essai, ip):
         """-> "parent" (code de l'appli), "enfant" (code enfant : jeux et regard seulement) ou None."""
@@ -684,6 +712,16 @@ class Appli:
                     return self._json(200, {"ok": True, "appli": "microduck", "version": appli.version,
                                             "installation": appli.en_installation(),
                                             "nom": ((appli.brut.get("cerveau") or {}).get("nom") or "Microduck")})
+                if url.path == "/api/casque-demande":
+                    # le casque attend l'accord d'un parent ; le code ne part qu'une fois, vers l'adresse qui a demande
+                    appli.nettoyer_demandes()
+                    d = appli.demandes_casque.get(parse_qs(url.query).get("id", [""])[0])
+                    if d is None or d["ip"] != self.client_address[0]:
+                        return self._json(404, {"etat": "inconnue"})
+                    if d["etat"] == "accepte":
+                        appli.demandes_casque.pop(parse_qs(url.query)["id"][0], None)
+                        return self._json(200, {"etat": "accepte", "code": appli.code})
+                    return self._json(200, {"etat": d["etat"]})
                 if url.path == "/api/etat":
                     if self._autorise():
                         self._json(200, appli.etat)
@@ -748,7 +786,9 @@ class Appli:
                             "simulateur": gt is not None, "scene": (gt or {}).get("scene"),
                             "scenes": list(jumeau.SCENES), "changer_scene": os.environ.get("MICRODUCK_JUMEAU") == "1",
                             "adresses": [f"http://{ip}:{appli.port}" for ip in jumeau.adresses_locales()],
-                            "apercu": appli.apercu_design is not None})
+                            "apercu": appli.apercu_design is not None,
+                            "demandes": [{"id": k, "ip": v["ip"], "age": round(time.time() - v["t"])}
+                                         for k, v in appli.nettoyer_demandes().items() if v["etat"] == "attente"]})
                     return
                 if url.path == "/api/jumeau":
                     if self._autorise():
@@ -895,10 +935,13 @@ class Appli:
                                   "/api/regard", "/api/mise-a-jour", "/api/photo", "/api/message", "/api/parcours", "/api/carnet",
                                   "/api/imprimer", "/api/invites", "/api/minuteur", "/api/rappel", "/api/plan",
                                   "/api/plan-supprimer", "/api/plan-annoter", "/api/verite", "/api/aller",
-                                  "/api/jumeau-balle", "/api/jumeau-caresse", "/api/casque", "/api/design-apercu"):
+                                  "/api/jumeau-balle", "/api/jumeau-caresse", "/api/casque", "/api/design-apercu",
+                                  "/api/casque-demande"):
                     return self._json(404, {"erreur": "inconnu"})
                 if chemin == "/api/installation":
                     return self._installation()
+                if chemin == "/api/casque-demande":
+                    return self._json(*appli.demander_casque(self.client_address[0]))
                 if not self._autorise():
                     return
                 if chemin == "/api/imprimer":
@@ -922,6 +965,12 @@ class Appli:
                         if code == 200 and appli.position is not None:
                             appli.position.recaler(0.0, 0.0, 0.0)  # il SAIT qu'il est au chargeur (repere du plan)
                         return self._json(code, rep)
+                    if action in ("accepter", "refuser"):
+                        d = appli.nettoyer_demandes().get(str(corps.get("id")))
+                        if d is None or d["etat"] != "attente":
+                            return self._json(404, {"erreur": "demande inconnue ou expiree"})
+                        d["etat"] = "accepte" if action == "accepter" else "refuse"
+                        return self._json(200, {"ok": True})
                     if action == "scene":
                         code, rep = jumeau.demander_scene(corps.get("scene"))
                         if code == 200:

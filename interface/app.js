@@ -922,6 +922,16 @@ async function rafraichirCasque() {
   texte("#casque-etat", c.connecte ? `Casque connecté — mode ${c.mode}`
     : depuis != null ? `Casque vu il y a ${depuis < 120 ? depuis + " s" : Math.round(depuis / 60) + " min"} (${c.mode})`
     : "Casque jamais connecté");
+  $("#casque-demandes").replaceChildren(...(c.demandes || []).map((d) => {
+    const div = document.createElement("div"); div.className = "suggestion";
+    const p = document.createElement("p"); p.textContent = `Un casque demande l'accès (${d.ip})`;
+    const ok = document.createElement("button"); ok.className = "principal"; ok.textContent = "Accepter";
+    ok.addEventListener("click", () => actionCasque({ action: "accepter", id: d.id }, "Casque appairé"));
+    const non = document.createElement("button"); non.textContent = "Refuser";
+    non.addEventListener("click", () => actionCasque({ action: "refuser", id: d.id }, "Refusé"));
+    const b = document.createElement("div"); b.className = "boutons"; b.append(ok, non);
+    div.append(p, b); return div;
+  }));
   $("#casque-adresses").replaceChildren(...(c.adresses.length ? c.adresses : ["(adresse introuvable)"]).map((a) => {
     const li = document.createElement("li"); li.textContent = a; return li;
   }));

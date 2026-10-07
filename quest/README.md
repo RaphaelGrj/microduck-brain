@@ -13,9 +13,13 @@ le précédent.
 | **Jumeau** | Le canard **simulé** (`duck-sim`, sur le PC) dessiné dans ta pièce, à sa taille, animé en direct et piloté par son vrai cerveau et sa vraie appli : tout s'essaie avant la livraison. **Gâchette** tenue puis relâchée : lancer la balle. **Grip** la main sur sa tête : le caresser. **A** : ses couleurs (ci-dessous). Détails : « Le canard jumeau », plus bas. |
 | **Être le canard** | Sa tête suit la tienne, le joystick le fait marcher (pas guidés, avec les garde-fous de la télécommande). Tu vois ce qu'il voit, **seulement si les photos sont permises** dans ses réglages. |
 
-**Appairage** (une fois, puis à chaque changement de canard) : au premier lancement, ou en **cliquant le joystick
-gauche** à tout moment, le casque demande au clavier l'adresse du canard puis le code de son appli. Les deux sont
-affichés dans l'appli du téléphone : *Réglages → Casque (Meta Quest) → Appairer le casque*. Le casque les garde.
+**Appairage** (une fois, puis à chaque changement de canard), **sans rien taper** : au premier lancement, ou en
+**cliquant le joystick gauche** à tout moment, le casque cherche le canard sur le Wi-Fi (port 8090 : le vrai canard,
+ou ton PC qui fait tourner le canard jumeau) et lui demande l'accès. Dans l'appli du téléphone, *Réglages → Casque
+(Meta Quest)* : **Accepter**. Le casque reçoit l'adresse et le code, et les garde.
+
+**Sans câble** : *Build And Run* installe l'appli dans le casque une fois pour toutes (*Bibliothèque → Sources
+inconnues → Microduck XR*). Ensuite, plus besoin du câble : elle parle au canard (ou au PC) par le Wi-Fi.
 
 Les modes autres que Scan parlent au canard par son appli (réseau local, code parent). Ils ne reçoivent que des
 positions, sauf le mode « Être le canard », qui reçoit une image **en opt-in**.
@@ -64,7 +68,7 @@ Seuls les meubles et la position des murs sortent du casque, vers ton PC ou ton 
    - Sur l'objet **MRUK** créé : *Scene Settings → Data Source* = **Device**, et cocher *Load Scene On Startup*.
    - Sur **OVRCameraRig → OVR Manager** : *Quest Features → General → Scene Support* = **Required**, et dans
      *Permission Requests On Startup*, cocher **Scene**. Toujours dans *Quest Features → General*, cocher
-     **Requires System Keyboard** (le clavier du casque, pour l'appairage).
+     **Requires System Keyboard** (inutile pour l'appairage, qui se fait sans clavier ; sans effet si décoché).
 6. Copier le dossier `quest/Assets/Microduck/` de ce dépôt dans le dossier `Assets/` du projet.
    `ExportPlan.cs` apparaît dans Unity.
 7. *GameObject → Create Empty*, le nommer `Microduck`. Glisser dessus, **dans cet ordre** (c'est l'ordre des
@@ -77,6 +81,8 @@ Seuls les meubles et la position des murs sortent du casque, vers ton PC ou ton 
 8. *Edit → Project Settings → Player → Android* : *Company Name* = ton nom ; vérifier que le *Package Name* vaut par
    exemple `com.raphaelgrj.microduckscan`. Pour l'envoi au canard plus tard, mettre aussi *Allow downloads over
    HTTP* = **Always allowed** (le canard parle en http sur le réseau local).
+   Toujours dans *Player → Android*, section **Icon** : glisser `Assets/Microduck/Icone/microduck.png` dans les
+   cases d'icône (le même logo que l'appli du téléphone).
 9. Brancher le Quest en USB-C et accepter « Autoriser le débogage USB » dans le casque. Puis *File → Build Profiles*
    → **Build And Run**. L'appli se lance dans le casque ; plus tard, on la retrouve dans *Bibliothèque → Sources
    inconnues*.
