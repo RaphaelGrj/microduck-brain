@@ -25,6 +25,8 @@ namespace UnityEngine
     }
     public class Behaviour : Component { public bool enabled { get; set; } }
     public class Coroutine { }
+    public class YieldInstruction { }
+    public sealed class WaitForSeconds : YieldInstruction { public WaitForSeconds(float s) { } }
     public class MonoBehaviour : Behaviour { public Coroutine StartCoroutine(IEnumerator r) => null; }
     public enum PrimitiveType { Sphere, Capsule, Cylinder, Cube, Plane, Quad }
     public class GameObject : Object
@@ -119,6 +121,7 @@ namespace UnityEngine
     public static class PlayerPrefs
     {
         public static bool HasKey(string k) => false; public static string GetString(string k) => "";
+        public static string GetString(string k, string d) => d; public static void DeleteKey(string k) { }
         public static void SetString(string k, string v) { } public static void Save() { }
     }
     public enum TouchScreenKeyboardType { Default, ASCIICapable, NumbersAndPunctuation, URL, NumberPad, PhonePad, NamePhonePad, EmailAddress }

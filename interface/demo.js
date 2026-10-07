@@ -311,7 +311,7 @@
     if (chemin === "/api/role") return { role: "parent" };
     if (chemin === "/api/casque") return corps ? { ok: true } : { connecte: false, dernier: null, mode: null, simulateur: false,
       scene: null, scenes: ["maison", "testball", "apartment", "arena", "arena_chat"], changer_scene: false,
-      adresses: ["http://192.168.1.50:8090"], apercu: false };
+      adresses: ["http://192.168.1.50:8090"], apercu: false, demandes: [] };
     if (chemin === "/api/design-apercu") return { ok: true };
     if (chemin === "/api/choregraphies") {
       if (corps && corps.jouer) { changer("choregraphie", 6); return { ok: true }; }

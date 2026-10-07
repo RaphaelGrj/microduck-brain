@@ -17,15 +17,48 @@ public class Canard : MonoBehaviour
     public static Canard Ici;
     public bool Configure => !string.IsNullOrWhiteSpace(adresse);
 
-    // Adresse et code saisis DANS le casque (appairage, MenuMicroduck) : gardes d'une seance a l'autre, ils priment
-    // sur ceux de l'inspecteur. Changer de canard (PC -> vrai canard) ne demande donc pas de recompiler.
+    // Adresse et code obtenus par l'appairage (MenuMicroduck : le casque trouve le canard sur le Wi-Fi, un parent
+    // accepte dans l'appli) : gardes d'une seance a l'autre. Renseignes dans l'inspecteur, ces derniers priment.
+    // Changer de canard (PC -> vrai canard) ne demande donc pas de recompiler.
     const string CLE_ADRESSE = "microduck_adresse", CLE_CODE = "microduck_code";
 
     void Awake()
     {
         Ici = this;
-        if (PlayerPrefs.HasKey(CLE_ADRESSE)) adresse = PlayerPrefs.GetString(CLE_ADRESSE);
-        if (PlayerPrefs.HasKey(CLE_CODE)) code = PlayerPrefs.GetString(CLE_CODE);
+        if (!string.IsNullOrWhiteSpace(adresse)) return;
+        string a = PlayerPrefs.GetString(CLE_ADRESSE, "");
+        if (AdresseValide(a))
+        {
+            adresse = a;
+            code = PlayerPrefs.GetString(CLE_CODE, "");
+        }
+        else
+        {
+            PlayerPrefs.DeleteKey(CLE_ADRESSE);          // une adresse incomplete gardee par erreur : oubliee
+            PlayerPrefs.DeleteKey(CLE_CODE);
+        }
+    }
+
+    /// http://a.b.c.d:port (ou un nom), complete.
+    public static bool AdresseValide(string a) =>
+        System.Text.RegularExpressions.Regex.IsMatch(a ?? "", @"^https?://[A-Za-z0-9.\-]*[A-Za-z0-9](:\d+)?$")
+        && !(a ?? "").EndsWith(".");
+
+    /// Requete SANS code vers une adresse quelconque (decouverte et demande d'appairage) -> (texte, code HTTP).
+    public static IEnumerator Brut(string url, string json, int delai, Action<string, long> fini)
+    {
+        using (var r = json == null ? UnityWebRequest.Get(url) : new UnityWebRequest(url, "POST"))
+        {
+            if (json != null)
+            {
+                r.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(json));
+                r.downloadHandler = new DownloadHandlerBuffer();
+                r.SetRequestHeader("Content-Type", "application/json");
+            }
+            r.timeout = delai;
+            yield return r.SendWebRequest();
+            fini(r.result == UnityWebRequest.Result.Success ? r.downloadHandler.text : null, r.responseCode);
+        }
     }
 
     public void Retenir(string nouvelleAdresse, string nouveauCode)
