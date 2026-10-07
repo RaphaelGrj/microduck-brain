@@ -424,6 +424,14 @@
           <h2 id="vue-lieu-titre"></h2>
           <canvas id="plan-lieu" class="plan"></canvas>
           <p id="plan-lieu-vide" class="discret">Pas de carte gardée pour ce lieu.</p>
+          <div id="plan-actions" class="actions" hidden>
+            <p class="discret petit" id="plan-position"></p>
+            <p class="discret petit">Touche le plan pour l'y envoyer. Zones interdites et points nommés : dessinés avec le
+              casque (appli Quest), ou effacés ici.</p>
+            <button id="plan-station">Rentrer à sa station</button>
+            <button id="plan-ronde">Faire la ronde</button>
+            <button id="plan-effacer" class="danger">Effacer zones et points</button>
+          </div>
           <form method="dialog"><button class="large">Fermer</button></form>
         </dialog>
         <div class="carte" data-parent>

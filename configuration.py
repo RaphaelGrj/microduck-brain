@@ -49,7 +49,11 @@ def valider(section, valeur, ancienne=None):
     `ancienne` : la section actuelle, pour garder un secret que l'appli n'a pas renvoye (SECRET ou vide)."""
     ancienne = ancienne if ancienne is not None else {}
     if section == "cerveau" and isinstance(valeur, dict):
-        return {"nom": texte(valeur.get("nom")) or "canard", "garde": bool(valeur.get("garde", False))}
+        out = {"nom": texte(valeur.get("nom")) or "canard", "garde": bool(valeur.get("garde", False))}
+        ronde = texte(valeur.get("ronde"), 5)
+        if ronde and re.fullmatch(r"([01]?\d|2[0-3]):[0-5]\d", ronde):
+            out["ronde"] = ronde                # ronde du soir sur le plan, avec le mode garde
+        return out
     if section == "appli" and isinstance(valeur, dict):
         code = valeur.get("code")
         if code in (None, "", SECRET):
@@ -90,6 +94,10 @@ def valider(section, valeur, ancienne=None):
             out.append({"nom": texte(i.get("nom")) or adresse, "type": i["type"], "adresse": adresse,
                         **({"cle_api": cle} if isinstance(cle, str) and cle else {})})
         return out
+    if section == "piece" and isinstance(valeur, list):
+        # presence par piece (capteurs HA) : nom tel que sur le plan du lieu (scan Quest), entite binary_sensor
+        return [{"nom": texte(p.get("nom")), "entite": entite(p.get("entite"))} for p in valeur[:20]
+                if isinstance(p, dict) and texte(p.get("nom")) and entite(p.get("entite"))]
     if section == "appareil" and isinstance(valeur, list):
         out = []
         for a in valeur[:30]:
@@ -99,7 +107,7 @@ def valider(section, valeur, ancienne=None):
     return None
 
 
-SECTIONS = ("cerveau", "appli", "home_assistant", "habitant", "imprimante_directe", "appareil")
+SECTIONS = ("cerveau", "appli", "home_assistant", "habitant", "imprimante_directe", "appareil", "piece")
 
 
 def lire(chemin=None):

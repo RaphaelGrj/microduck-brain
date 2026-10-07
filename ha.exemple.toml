@@ -201,6 +201,15 @@ entite = "A_REMPLIR"                # ex. "light.salon"
 # garde = true                      # maison vide (présence HA) et il entend une voix, un choc, on frappe : événement
                                     # HA "microduck_garde" {type: voix|choc|bruit|porte} pour tes automatisations
                                     # (notification...). Seul le TYPE de son est envoyé, jamais le son.
+# ronde = "22:30"                   # avec le mode garde et un plan du lieu (scan Quest) : ronde du soir dans chaque
+                                    # pièce (lumière restée allumée ?) -> événement HA "microduck_ronde", puis sa station
+
+# ---- 7 ter. Présence par pièce (facultatif) : il vient te voir dans la pièce où tu es ----------------------------
+# Un capteur de présence par pièce (mmWave, mouvement...). Le nom doit être celui de la pièce sur son plan (Réglages ->
+# Lieux -> son plan). Sans plan du lieu, ces capteurs sont simplement ignorés.
+# [[piece]]
+# nom = "Salon"
+# entite = "binary_sensor.presence_salon"
 
 # ---- 7 bis. Application Microduck (téléphone, sans Home Assistant) ---------------------------------
 # Le canard sert lui-même son application : sur le téléphone (même Wi-Fi), ouvre http://<ip-du-canard>:8090, entre le

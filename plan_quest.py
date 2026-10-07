@@ -8,7 +8,7 @@ L'appli Unity du dossier quest/ (ExportPlan.cs) ecrit un fichier « microduck-qu
    "pieces": [{"nom": "...", "ancres": [{"label": "WALL_FACE", "matrice": [16 nombres, ligne par ligne],
                                          "plan": [xmin, ymin, largeur, hauteur] | null,
                                          "volume": [xmin, ymin, zmin, xmax, ymax, zmax] | null,
-                                         "contour": [[x, y], ...]}]}]}
+                                         "contour": [[x, y], ...], "uuid": "..."}]}]}
 Coordonnees Unity : metres, x a droite, y en haut, z devant (main gauche) ; « matrice » : repere local de l'ancre ->
 monde. Un plan (mur, porte, fenetre, sol) est dans le plan local XY de son ancre ; un volume (meuble) est une boite
 locale. Tout ce qui depend des conventions du Quest est la, et seulement la.
@@ -218,6 +218,14 @@ def convertir(export, nom="Maison", resolution=P.RESOLUTION):
         marqs[str(int(r["id"]))] = [round(float(m[0]), 3), round(float(m[1]), 3), round(cap, 4)]
     if marqs:
         reps["marqueurs"] = marqs
+    if sols and "chargeur" in reperes and "devant" in reperes:
+        # pour le casque (modes realite mixte) : chargeur et « devant » dans le repere de l'ancre du SOL, qui, elle,
+        # se retrouve d'une seance a l'autre (le repere « monde » du Quest, lui, change a chaque demarrage)
+        sol = sols[0]
+        inv = np.linalg.inv(_matrice(sol))
+        local = lambda p: [round(float(v), 5) for v in (inv @ np.append(np.asarray(p, dtype=float), 1.0))[:3]]  # noqa: E731
+        reps["quest"] = {"ancre": sol.get("uuid"), "chargeur": local(reperes["chargeur"]["pos"]),
+                         "devant": local(reperes["devant"]["pos"])}
     plan.objets = objets
     plan.reperes = reps
     plan.pieces = [{"nom": p.get("nom") or f"Pièce {k + 1}",

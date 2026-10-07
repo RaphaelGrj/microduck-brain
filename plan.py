@@ -12,6 +12,8 @@ distance), 2 = hors du plan (dehors, ou pas scanne).
 
 Format de fichier (JSON, « microduck-plan-1 ») : la grille en plages (rle : valeur, longueur, valeur, longueur... ligne
 par ligne depuis le coin (origine)), les objets, les pieces, les reperes. Lisible par l'appli sans bibliotheque.
+Annotations (dessinees dans le casque ou l'appli, gardees si l'on remplace le scan) : `zones` interdites (polygones
+qu'il ne franchit jamais : escalier, litiere, cuisine pendant les repas) et `points` nommes (« panier », « gamelle »).
 """
 import json
 import math
@@ -30,7 +32,7 @@ DISTANCE_MAX = 0.5               # champ de distance aux obstacles, plafonne (lo
 
 class Plan:
     def __init__(self, grille, origine, resolution=RESOLUTION, nom="Plan", source="?", objets=None, pieces=None,
-                 reperes=None, date=None):
+                 reperes=None, date=None, zones=None, points=None):
         self.grille = np.asarray(grille, dtype=np.uint8)
         self.origine = (float(origine[0]), float(origine[1]))
         self.resolution = float(resolution)
@@ -38,7 +40,10 @@ class Plan:
         self.objets, self.pieces = list(objets or []), list(pieces or [])
         self.reperes = dict(reperes or {})
         self.date = date if date is not None else round(time.time())
+        self.zones = [z for z in (zones or []) if isinstance(z, dict) and len(z.get("contour") or []) >= 3]
+        self.points = {str(k): v for k, v in (points or {}).items() if isinstance(v, (list, tuple)) and len(v) >= 2}
         self._distance = None
+        self._interdit = None
 
     # -- geometrie ----------------------------------------------------------------------------------------------------
     @property
@@ -68,6 +73,50 @@ class Plan:
 
     def libre(self, x, y):
         return self.valeur(x, y) == LIBRE
+
+    # -- zones interdites -----------------------------------------------------------------------------------------------
+    def interdit(self):
+        """Masque (hauteur, largeur) des cases dans une zone interdite (calcule une fois, refait si les zones changent)."""
+        if self._interdit is None:
+            X, Y = self.centres()
+            m = np.zeros(self.grille.shape, dtype=bool)
+            for z in self.zones:
+                m |= dans_polygone(X, Y, [tuple(p[:2]) for p in z["contour"]])
+            self._interdit = m
+        return self._interdit
+
+    def dans_zone_interdite(self, x, y):
+        i, j = self.case(x, y)
+        return 0 <= i < self.hauteur and 0 <= j < self.largeur and bool(self.interdit()[i, j])
+
+    def zone_de(self, x, y):
+        for z in self.zones:
+            if dans_polygone(np.array([x]), np.array([y]), [tuple(p[:2]) for p in z["contour"]])[0]:
+                return z.get("nom") or "zone interdite"
+        return None
+
+    def piece_de(self, x, y):
+        """Nom de la piece (scan Quest) qui contient (x, y), ou None."""
+        for p in self.pieces:
+            if len(p.get("contour") or []) >= 3 and dans_polygone(np.array([x]), np.array([y]),
+                                                                   [tuple(q) for q in p["contour"]])[0]:
+                return p.get("nom")
+        return None
+
+    def annoter(self, zones=None, points=None):
+        """Remplace les annotations (zones interdites, points nommes) ; valeurs nettoyees. -> self."""
+        if zones is not None:
+            propres = []
+            for z in zones[:30]:
+                c = [[round(float(p[0]), 3), round(float(p[1]), 3)] for p in (z.get("contour") or [])[:60]
+                     if isinstance(p, (list, tuple)) and len(p) >= 2 and all(math.isfinite(float(v)) for v in p[:2])]
+                if len(c) >= 3:
+                    propres.append({"nom": str(z.get("nom") or "zone interdite")[:40], "contour": c})
+            self.zones, self._interdit = propres, None
+        if points is not None:
+            self.points = {str(k)[:40]: [round(float(v[0]), 3), round(float(v[1]), 3)] for k, v in list(points.items())[:40]
+                           if isinstance(v, (list, tuple)) and len(v) >= 2 and all(math.isfinite(float(c)) for c in v[:2])}
+        return self
 
     def rogne(self, marge=5):
         """Retire les bandes « hors du plan » autour (garde `marge` cases)."""
@@ -127,7 +176,7 @@ class Plan:
         return {"format": FORMAT, "nom": self.nom, "source": self.source, "date": self.date,
                 "resolution": self.resolution, "origine": [round(self.origine[0], 4), round(self.origine[1], 4)],
                 "largeur": self.largeur, "hauteur": self.hauteur, "rle": rle, "objets": self.objets,
-                "pieces": self.pieces, "reperes": self.reperes}
+                "pieces": self.pieces, "reperes": self.reperes, "zones": self.zones, "points": self.points}
 
     @classmethod
     def depuis_dict(cls, d):
@@ -143,7 +192,7 @@ class Plan:
             raise ValueError("grille du plan abimee")
         grille = np.repeat(valeurs, longueurs).reshape(h, l)
         return cls(grille, d["origine"], d.get("resolution", RESOLUTION), d.get("nom", "Plan"), d.get("source", "?"),
-                   d.get("objets"), d.get("pieces"), d.get("reperes"), d.get("date"))
+                   d.get("objets"), d.get("pieces"), d.get("reperes"), d.get("date"), d.get("zones"), d.get("points"))
 
     def image(self, chemin, px_par_case=3):
         """Apercu PNG (comme dans l'appli : devant du chargeur en haut, sa gauche a gauche) : libre clair, obstacles
@@ -175,7 +224,8 @@ class Plan:
     def resume(self):
         return {"nom": self.nom, "source": self.source, "date": self.date,
                 "taille_m": [round(self.largeur * self.resolution, 2), round(self.hauteur * self.resolution, 2)],
-                "objets": len(self.objets), "chargeur": "chargeur" in self.reperes}
+                "objets": len(self.objets), "chargeur": "chargeur" in self.reperes, "zones": len(self.zones),
+                "points": len(self.points)}
 
 
 # -- remplissage de la grille (outils communs aux sources) --------------------------------------------------------------

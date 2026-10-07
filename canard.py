@@ -173,6 +173,21 @@ def assembler(client, args, log=print, cfg=None, cerveau=None, appli_cfg=None, b
         if appli is not None:
             appli.lieux = lieux
             lieux.carte_actuelle = lambda: appli.carte
+        # ou il est sur le plan du lieu (scan du Quest) : un fil a part ; rien tant que le lieu n'a pas de plan
+        import position as position_mod
+        grab = None
+        if "--sans-camera" not in args:
+            import vision
+            grab = lambda: vision.grab_frame(timeout=2.0)          # noqa: E731 - marqueurs (recalage)
+        pos = position_mod.PositionPlan(lieux, tof=extras.get("tof"), grab=grab, log=log)
+        extras["position"] = pos
+        fils.append(pos)
+        crochets.append(pos.etat_robot_hook)
+        if appli is not None:
+            appli.position, appli.grab = pos, grab
+    heure_ronde = lire_heure(cerveau.get("ronde")) if cerveau.get("ronde") else None
+    if heure_ronde is not None:
+        extras["ronde"] = heure_ronde                     # ronde du soir (avec le mode garde), sur le plan
     imprimantes = None
     if (brut or {}).get("imprimante_directe"):
         import imprimantes as imprimantes_mod              # Prusa / Elegoo suivies en direct, sans Home Assistant

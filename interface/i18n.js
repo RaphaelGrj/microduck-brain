@@ -249,7 +249,12 @@
     "Exporter le plan": "Export the floor plan", "Retirer le plan": "Remove the floor plan", "Plan retiré": "Floor plan removed",
     "Plan indisponible": "Floor plan unavailable", "Conversion du scan sur le canard…": "Converting the scan on the duck…",
     "Ce fichier n'est pas un scan ni un plan": "This file is neither a scan nor a floor plan",
-    "Un peu seul": "Some alone time", "Il s'isole un peu": "Going off alone", "Joyeux anniversaire !": "Happy birthday!", "Le chat joue !": "The cat is playing!", "Sieste près du chat": "Napping near the cat",
+    "Un peu seul": "Some alone time", "Il rentre à sa station": "Heading to his dock", "Il se met sur sa station": "Getting on his dock",
+    "Il fait sa ronde": "Doing his rounds", "Il vient te voir": "Coming to see you", "Il y va": "On his way",
+    "Rentrer à sa station": "Go to his dock", "Faire la ronde": "Do the rounds", "Effacer zones et points": "Clear zones and points",
+    "Il n'est pas dans ce lieu.": "He isn't at this place.", "Il cherche où il est (un marqueur vu par sa caméra l'aidera).": "He's working out where he is (a marker seen by his camera will help).",
+    "L'envoyer ici ?": "Send him here?", "Il y va (s'il sait où il est)": "He's going (if he knows where he is)", "Effacé": "Cleared",
+    "Touche le plan pour l'y envoyer. Zones interdites et points nommés : dessinés avec le casque (appli Quest), ou effacés ici.": "Tap the plan to send him there. No-go zones and named spots: drawn with the headset (Quest app), or cleared here.", "Il s'isole un peu": "Going off alone", "Joyeux anniversaire !": "Happy birthday!", "Le chat joue !": "The cat is playing!", "Sieste près du chat": "Napping near the cat",
     "Il a le hoquet": "He has hiccups", "Hoquet passé !": "Hiccups gone!", "Oups !": "Oops!", "Il fait son nid": "Making his nest", "Il inspecte": "Inspecting", "Il rejoue ton rythme": "Playing your rhythm back", "Il dit ton nom": "Saying your name", "Il se fait tout petit": "Making himself small", "Bain de soleil": "Sunbathing", "Avec son doudou": "With his favourite toy", "Il va voir son doudou": "Off to his favourite toy", "Il rit avec toi": "Laughing along", "Il fait le malin": "Showing off", "C'est l'heure du câlin": "Cuddle time",
     // lot 9 : minuteurs, rappels, reveil, humeur, bilan du mois
     "Minuteurs et rappels": "Timers and reminders", "🔕 Arrêter son signal": "🔕 Stop his signal", "Durée en minutes": "Duration in minutes",
@@ -333,6 +338,7 @@
   };
   // libelles avec des chiffres ou des noms
   const REGLES = [
+    [/^Il est (?:dans « (.+) »|sur le plan) \(à (\d+) cm près\)\.$/, (m) => `He is ${m[1] ? "in “" + m[1] + "”" : "on the plan"} (within ${m[2]} cm).`],
     [/^Plan importé : ([\d.]+) × ([\d.]+) m, (\d+) meubles$/, (m) => `Floor plan imported: ${m[1]} × ${m[2]} m, ${m[3]} pieces of furniture`],
     [/^Plan refusé : (.+)$/, (m) => `Floor plan rejected: ${m[1]}`],
     [/^il y a (\d+) s$/, (m) => `${m[1]} s ago`], [/^il y a (\d+) min$/, (m) => `${m[1]} min ago`], [/^il y a (\d+) h$/, (m) => `${m[1]} h ago`],

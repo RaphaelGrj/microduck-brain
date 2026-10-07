@@ -244,10 +244,26 @@ class Lieux:
             else:
                 pl, avert = P.Plan.depuis_dict(contenu), []
                 pl.nom = nom
+            ancien = l.get("plan_donnees") or {}
+            if not pl.zones and not pl.points and (ancien.get("zones") or ancien.get("points")):
+                pl.annoter(ancien.get("zones"), ancien.get("points"))   # rescanner garde zones et points dessines
             l["plan"], l["plan_donnees"] = pl.resume(), pl.vers_dict()
             self._sauver()
             self.log(f"lieu {l['nom']} : plan importe ({pl.source}, {l['plan']['taille_m'][0]} x {l['plan']['taille_m'][1]} m)")
             return l["plan"], list(avert)
+
+    def annoter(self, lid, zones=None, points=None):
+        """Zones interdites et/ou points nommes du plan d'un lieu (dessines dans le casque ou l'appli). -> resume ;
+        ValueError si le lieu n'a pas de plan."""
+        import plan as P
+        with self.verrou:
+            l = self.d["lieux"].get(lid or self.d["actuel"])
+            if l is None or not l.get("plan_donnees"):
+                raise ValueError("ce lieu n'a pas encore de plan")
+            pl = P.Plan.depuis_dict(l["plan_donnees"]).annoter(zones, points)
+            l["plan"], l["plan_donnees"] = pl.resume(), pl.vers_dict()
+            self._sauver()
+            return l["plan"]
 
     def plan(self, lid=None):
         """Le plan (dict « microduck-plan-1 ») d'un lieu - par defaut le lieu actuel - ou None."""

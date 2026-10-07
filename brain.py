@@ -35,6 +35,7 @@ from etats_appli import Parcours, PosePhoto, Signal
 import vivant
 from vivant import AttendPorte, Boude, Habituation, JeTeSuis, Reponse, SuisMoi
 import personnage
+from etats_plan import Accoste, Ronde, VaSurPlan, point_approche
 from personnage import (BainSoleil, Doudou, Gaffe, Gouts, Hoquet, Inspecte, Nid, Nomme, ObservateurChat, Petit,
                          Rythme, Solitude, Succes)
 from diagnostic import Diagnostic
@@ -256,6 +257,11 @@ class Brain:
             "anniversaire": Sequence("anniversaire", [("content", "wheee"), ("fier", "chirp"), ("content", "wheee")]),
             "chat_joue": Sequence("chat_joue", [("curieux", "chirp"), ("content", "wheee")]),
             "va_chat": VaAuCoin("va_chat", "nap", "faire la sieste pres du chat"),
+            # sur le plan de la maison (position.py) : station de charge, ronde du soir, piece ou l'on est, point demande
+            "va_station": VaSurPlan("va_station", "accoste", "rentrer a sa station", si_echec="nap"),
+            "accoste": Accoste(), "ronde": Ronde(),
+            "va_piece": VaSurPlan("va_piece", "cherche_attention", "voir dans la piece ou l'on est"),
+            "va_point": VaSurPlan("va_point", "chill", "la ou on l'envoie"),
         }
         self.etats["taquin"].taquinerie = True
         self.malice = Malice(self.ctx.extras.get("memoire"))
@@ -314,6 +320,9 @@ class Brain:
         self._soleil_vu = None                  # (x relatif, fraction) : tache de soleil vue par la camera
         self._rituels_faits = set()             # (jour, qui) : rituel deja reclame aujourd'hui
         self.sollicitations = []                # t_global des sollicitations recentes (besoin de solitude)
+        self.pieces_occupees = {}               # piece -> t_global : presence par piece (capteurs HA, [[piece]])
+        self.dernier_releve_ronde = None
+        self._jour_ronde = None
         self.observateur_chat = ObservateurChat()
         self._t_chat_note = -1e9
         self.anniversaire = 0                   # aujourd'hui : son anniversaire (nombre d'annees), 0 sinon
@@ -694,6 +703,25 @@ class Brain:
             if base == "commande":
                 self._sur_commande(detail)
                 continue
+            if base == "presence_piece":
+                piece, _, etat = detail.partition("|")
+                if etat == "on":
+                    self.pieces_occupees[piece] = self.t_global
+                else:
+                    self.pieces_occupees.pop(piece, None)
+                continue
+            if base == "aller":
+                # « va la » (appli, casque) : un point du plan, s'il sait ou il est et qu'un chemin existe
+                try:
+                    x, y = (float(v) for v in detail.split("|")[:2])
+                except ValueError:
+                    continue
+                pos = self.ctx.extras.get("position")
+                if (pos is not None and pos.pose() is not None and not self.mode_calme and not self.tombe
+                        and not self.ctx.sitting and self.courant.nom not in ("alarme", "porte", "nap", "signal")):
+                    self.etats["va_point"].cible = (x, y)
+                    self._bascule("va_point")
+                continue
             if base in ("meteo", "orage"):
                 self._sur_meteo("orage" if base == "orage" else detail)
                 continue
@@ -1050,8 +1078,18 @@ class Brain:
             return
         if quoi == "stop":
             self.evenements[0:0] = ["non", "fin_jeu"]      # coupe une taquinerie, termine un jeu
-            if self.courant.nom in ("assis_demande", "suis_moi", "mene", "va_porte", "va_souvenir"):
+            if self.courant.nom in ("assis_demande", "suis_moi", "mene", "va_porte", "va_souvenir", "va_station",
+                                    "accoste", "ronde", "va_piece", "va_point"):
+                self.suivant_force = None
                 self.fin_etat = self.t_etat
+        elif quoi == "station":
+            cible = self._station_cible()
+            if cible is not None and not self.tombe:
+                self.etats["va_station"].cible = cible
+                self._bascule("va_station")             # « va te coucher » / bouton : il rentre a sa station
+        elif quoi == "ronde":
+            if self._ronde_possible():
+                self._bascule("ronde")
         elif quoi == "assis" and not self.ctx.sitting:
             self._bascule("assis_demande")
         elif quoi == "debout" and self.courant.nom == "assis_demande":
@@ -1156,7 +1194,11 @@ class Brain:
             # pas trop loin (sauf batterie basse : on ne gaspille pas les derniers pourcents a marcher)
             if self.courant.nom not in ("nap", "va_au_coin", "va_chargeur"):
                 if batterie_basse:
-                    # batterie basse : seulement vers le chargeur appris, jamais pour un simple coin prefere
+                    # batterie basse : sa station sur le plan s'il sait ou il est ; sinon le chargeur appris
+                    station = self._station_cible()
+                    if station is not None and self.courant.nom not in ("va_station", "accoste"):
+                        self.etats["va_station"].cible = station
+                        return "va_station"
                     if self.chargeur is not None and self._atteignable(self.chargeur, (0.3, 4.0)):
                         self.etats["va_chargeur"].cible = self.chargeur
                         return "va_chargeur"
@@ -1187,6 +1229,8 @@ class Brain:
         seul = self._besoin_de_solitude()
         if seul is not None:
             return seul
+        if self._heure_de_la_ronde():
+            return "ronde"
         # Occupation autonome / recherche d'attention : rien ne s'est passe depuis longtemps -> le canard ne reste
         # pas simplement passif. Priorite sur les initiatives habituelles (look/turn/wander/RARES), mais seulement
         # si le delai minimal est passe (ne jamais insister).
@@ -1206,6 +1250,10 @@ class Brain:
             if (self.presents or chat_visible) and self.ignores < 2:
                 self.etats["cherche_attention"].cible = "humain" if self.presents else "chat"
                 self._t_tentative, self._tentative_jugee = self.t_global, False
+                piece = self._piece_a_rejoindre() if self.presents else None
+                if piece is not None:
+                    self.etats["va_piece"].cible = piece
+                    return "va_piece"                   # d'abord la piece ou quelqu'un est (capteurs HA)
                 return "cherche_attention"
             if (self.ignores >= 2 and self.presents and self.timidite() == 0.0
                     and self.t_global - self.derniere_fois.get("boude", -1e9) >= 7200.0 and self.rng.random() < 0.5):
@@ -2052,6 +2100,50 @@ class Brain:
         self.derniere_fois["bain_soleil"] = self.t_global
         self.etats["bain_soleil"].x_rel = vu[0]
         return "bain_soleil"
+
+    # -- le plan de la maison (position.py, etats_plan.py) ----------------------------------------------------------------
+    def _station_cible(self):
+        """Point d'approche de sa station sur le plan, s'il sait ou il est ; sinon None."""
+        pos = self.ctx.extras.get("position")
+        if pos is None or pos.pose() is None or pos.plan is None or not pos.plan.reperes.get("chargeur"):
+            return None
+        return point_approche(pos.plan.reperes["chargeur"])
+
+    def _ronde_possible(self):
+        pos = self.ctx.extras.get("position")
+        batterie_ok = self._batterie_pct is None or self._batterie_pct >= self.BATTERIE_BASSE_PCT + 15
+        return (pos is not None and pos.pose() is not None and pos.plan is not None and bool(pos.plan.pieces)
+                and batterie_ok and not self.tombe and not self.ctx.sitting and self.ctx.extras.get("tof") is not None)
+
+    def _heure_de_la_ronde(self):
+        """Ronde du soir : mode garde actif, a l'heure reglee ([cerveau] ronde = "22:30"), une fois par jour."""
+        heure = self.ctx.extras.get("ronde")
+        if not heure or not self.ctx.extras.get("garde"):
+            return False
+        h = self.horloge()
+        maintenant = h.tm_hour * 60 + h.tm_min
+        jour = getattr(h, "tm_yday", None)
+        if jour == self._jour_ronde or not 0 <= maintenant - (heure[0] * 60 + heure[1]) <= 30:
+            return False
+        if not self._ronde_possible():
+            return False
+        self._jour_ronde = jour
+        return True
+
+    def _piece_a_rejoindre(self):
+        """Centre de la piece ou un capteur HA a vu quelqu'un recemment (10 min), si ce n'est pas la sienne."""
+        pos = self.ctx.extras.get("position")
+        if pos is None or pos.pose() is None or pos.plan is None or not self.pieces_occupees:
+            return None
+        recentes = [(t, n) for n, t in self.pieces_occupees.items() if self.t_global - t <= 600.0]
+        if not recentes:
+            return None
+        nom = max(recentes)[1]
+        if nom == pos.piece():
+            return None
+        from etats_plan import centre
+        p = next((q for q in pos.plan.pieces if q.get("nom") == nom and len(q.get("contour") or []) >= 3), None)
+        return centre(p["contour"]) if p else None
 
     # -- vivant III ---------------------------------------------------------------------------------------------------
     def _maj_humeur_jour(self):
