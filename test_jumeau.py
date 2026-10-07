@@ -123,3 +123,51 @@ def test_modele_anime_par_corps():
         l = np.array(i["l"]).reshape(3, 4)
         assert np.allclose(l[:, :3] @ l[:, :3].T, np.eye(3), atol=1e-4), "rotation pure"
         assert np.abs(l[:, 3]).max() < 0.2, "la piece reste pres de son corps"
+
+
+def test_casque_etat_et_appairage(serveur, simu):  # noqa: F811
+    s, r = requete(serveur.port, "/api/casque")
+    c = json.loads(r)
+    assert s == 200 and not c["connecte"] and c["simulateur"] and c["scene"] == "scene_maison.xml"
+    assert all(a.startswith("http://") and a.endswith(f":{serveur.port}") for a in c["adresses"])
+    # le casque se presente (en-tete X-Microduck-Casque) : l'appli le voit connecte, dans son mode
+    import urllib.request
+    req = urllib.request.Request(f"http://127.0.0.1:{serveur.port}/api/xr",
+                                 headers={"X-Microduck-Code": CODE, "X-Microduck-Casque": "Jumeau"})
+    urllib.request.urlopen(req, timeout=5).read()
+    c = json.loads(requete(serveur.port, "/api/casque")[1])
+    assert c["connecte"] and c["mode"] == "Jumeau" and c["ip"] == "127.0.0.1"
+
+
+def test_casque_commandes_du_jumeau(serveur, simu, tmp_path, monkeypatch):  # noqa: F811
+    _, ctl = simu
+    assert requete(serveur.port, "/api/casque", corps={"action": "balle"})[0] == 200
+    t = json.loads(ctl.read_text())["throw"]["testball"]
+    assert t["pos"][0] == pytest.approx(0.6) and t["vel"][0] < 0, "devant lui, roulant vers lui"
+
+    class Pos:
+        recale = None
+
+        def recaler(self, x, y, cap):
+            Pos.recale = (x, y, cap)
+    serveur.position = Pos()
+    assert requete(serveur.port, "/api/casque", corps={"action": "chargeur"})[0] == 200
+    assert json.loads(ctl.read_text())["teleport_duck"][0]["pos"] == [0.0, 0.0] and Pos.recale == (0.0, 0.0, 0.0)
+    # changer de scene : seulement sous jumeau.sh (qui relance tout)
+    assert requete(serveur.port, "/api/casque", corps={"action": "scene", "scene": "arena"})[0] == 409
+    monkeypatch.setenv("MICRODUCK_JUMEAU", "1")
+    monkeypatch.setenv("MICRODUCK_SCENE_VOULUE", str(tmp_path / "scene"))
+    assert requete(serveur.port, "/api/casque", corps={"action": "scene", "scene": "../../etc"})[0] == 400
+    assert requete(serveur.port, "/api/casque", corps={"action": "scene", "scene": "arena"})[0] == 200
+    assert (tmp_path / "scene").read_text().strip() == "arena" and serveur.redemarrage_demande
+
+
+def test_apercu_du_design(serveur, tmp_path):  # noqa: F811
+    serveur.fichier_design = tmp_path / "design.json"
+    assert requete(serveur.port, "/api/design-apercu", corps={"couleurs": {"pieds": "#2F6FD6", "bec": "rouge"}})[0] == 200
+    d = json.loads(requete(serveur.port, "/api/design")[1])
+    assert d["apercu"] == {"pieds": "#2f6fd6"} and d["schemas"] == []
+    requete(serveur.port, "/api/design-apercu", corps={"couleurs": {}})
+    assert "apercu" not in json.loads(requete(serveur.port, "/api/design")[1])
+    serveur.apercu_design = {"couleurs": {"pieds": "#000000"}, "t": time.time() - 3600}
+    assert "apercu" not in json.loads(requete(serveur.port, "/api/design")[1]), "un vieil apercu oublie s'efface"

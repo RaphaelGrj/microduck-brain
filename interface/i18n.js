@@ -259,6 +259,18 @@
     "Il va à la porte": "Going to the door", "Il va voir l'impression": "Checking the print", "Il regarde l'impression": "Looking at the print",
     "Il va à sa place": "Going to his spot", "Il va au soleil": "Off to the sun", "Au soleil": "In the sun",
     "Il va voir ce qui a changé": "Checking what changed",
+    "Casque (Meta Quest)": "Headset (Meta Quest)", "Appairer le casque": "Pair the headset", "Afficher le code": "Show the code",
+    "L'appli Microduck XR du casque : son plan en réalité augmentée, et le canard jumeau (le canard simulé sur ton PC, dessiné dans ta pièce).": "The Microduck XR headset app: his floor plan in augmented reality, and the twin duck (the simulated duck on your PC, drawn in your room).",
+    "Dans le casque, clique le joystick gauche, puis tape cette adresse et ce code au clavier. Ils restent gardés dans le casque : pas besoin de recompiler l'appli pour changer de canard.": "In the headset, click the left thumbstick, then type this address and this code on the keyboard. The headset keeps them: no need to rebuild the app to switch ducks.",
+    "Canard jumeau": "Twin duck", "🎾 Lancer la balle": "🎾 Throw the ball", "🔌 Au chargeur": "🔌 Back to the charger",
+    "Changer de scène": "Change scene", "Scène du simulateur": "Simulator scene", "Casque jamais connecté": "Headset never connected",
+    "Balle lancée": "Ball thrown", "Remis à son chargeur": "Back on his charger",
+    "Changement de scène : simulateur et cerveau redémarrent (~1 min)": "Changing scene: simulator and brain restart (~1 min)",
+    "Ma maison (plan scanné)": "My home (scanned plan)", "Appartement de Pollen + balle": "Pollen's apartment + ball",
+    "Appartement de Pollen": "Pollen's apartment", "Arène (sol nu)": "Arena (bare floor)", "Arène + affiche du chat": "Arena + cat poster",
+    "Lancer le canard jumeau avec jumeau.sh pour changer de scène d'ici": "Start the twin duck with jumeau.sh to change scene from here",
+    "👓 Voir dans le casque": "👓 See it in the headset", "Visible dans le casque (mode Jumeau)": "Visible in the headset (Twin mode)",
+    "Chaque retouche apparaît aussitôt sur le canard du casque (mode Jumeau), avant même d'enregistrer.": "Every touch-up shows at once on the headset's duck (Twin mode), even before saving.",
     "Touche le plan pour l'y envoyer. Zones interdites et points nommés : dessinés avec le casque (appli Quest), ou effacés ici.": "Tap the plan to send him there. No-go zones and named spots: drawn with the headset (Quest app), or cleared here.", "Il s'isole un peu": "Going off alone", "Joyeux anniversaire !": "Happy birthday!", "Le chat joue !": "The cat is playing!", "Sieste près du chat": "Napping near the cat",
     "Il a le hoquet": "He has hiccups", "Hoquet passé !": "Hiccups gone!", "Oups !": "Oops!", "Il fait son nid": "Making his nest", "Il inspecte": "Inspecting", "Il rejoue ton rythme": "Playing your rhythm back", "Il dit ton nom": "Saying your name", "Il se fait tout petit": "Making himself small", "Bain de soleil": "Sunbathing", "Avec son doudou": "With his favourite toy", "Il va voir son doudou": "Off to his favourite toy", "Il rit avec toi": "Laughing along", "Il fait le malin": "Showing off", "C'est l'heure du câlin": "Cuddle time",
     // lot 9 : minuteurs, rappels, reveil, humeur, bilan du mois
@@ -391,6 +403,9 @@
     [/^(.+), (lun|mar|mer|jeu|ven|sam|dim)\. (.+)$/, (m) => `${t(m[1])}, ${m[2]}. ${m[3]}`],
     [/^(.+) · (lun|mar|mer|jeu|ven|sam|dim)\. (.+)$/, (m) => `${t(m[1])} · ${m[2]}. ${m[3]}`],
     [/^([✓▶+📍]\s*)(.+)$/u, (m) => m[1] + t(m[2])],
+    [/^Casque connecté — mode (.+)$/, (m) => `Headset connected — ${m[1]} mode`],
+    [/^Casque vu il y a (.+) \((.*)\)$/, (m) => `Headset seen ${m[1]} ago (${m[2]})`],
+    [/^Simulateur en marche — scène : (.+)$/, (m) => `Simulator running — scene: ${t(m[1])}`],
   ];
 
   function t(s) {

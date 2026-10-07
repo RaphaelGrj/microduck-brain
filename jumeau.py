@@ -84,3 +84,93 @@ def lancer(corps, chemin_ctl=None, chemin_gt=None):
     tmp.write_text(json.dumps({"throw": {balle: {"pos": pos, "vel": vel}}}))
     os.replace(tmp, f)
     return 200, {"ok": True}
+
+
+# -- commandes du jumeau depuis l'appli (Reglages -> Casque) ------------------------------------------------------------
+SCENES = ("maison", "testball", "apartment", "arena", "arena_chat")
+
+
+def fichier_scene():
+    """La scene que jumeau.sh (scripts-wsl) lance au prochain tour de sa boucle."""
+    return Path(os.environ.get("MICRODUCK_SCENE_VOULUE", Path.home() / ".cache/duck-sim/scene_voulue"))
+
+
+def _commande(contenu, chemin_ctl=None):
+    f = Path(chemin_ctl) if chemin_ctl is not None else chemin_commande()
+    f.parent.mkdir(parents=True, exist_ok=True)
+    tmp = f.with_suffix(".tmp")
+    tmp.write_text(json.dumps(contenu))
+    os.replace(tmp, f)
+
+
+def _cap(q):
+    w, x, y, z = q
+    return math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+
+
+def balle_devant(chemin_ctl=None, chemin_gt=None, distance=0.6, vitesse=0.4):
+    """La balle a 60 cm devant lui, qui roule doucement vers lui -> (code, reponse)."""
+    gt = lire_verite(chemin_gt)
+    if gt is None:
+        return 404, {"erreur": "pas de simulateur (duck-sim)"}
+    d = gt["ducks"][0]
+    cap = _cap(d.get("quat", [1, 0, 0, 0]))
+    x, y = d["pos"][0] + distance * math.cos(cap), d["pos"][1] + distance * math.sin(cap)
+    _commande({"throw": {"testball": {"pos": [x, y, 0.036],
+                                      "vel": [-vitesse * math.cos(cap), -vitesse * math.sin(cap), 0.0]}}}, chemin_ctl)
+    return 200, {"ok": True}
+
+
+def au_chargeur(chemin_ctl=None, chemin_gt=None):
+    """Le canard simule remis a son point de depart (le chargeur, dans la scene de la maison) -> (code, reponse)."""
+    if lire_verite(chemin_gt) is None:
+        return 404, {"erreur": "pas de simulateur (duck-sim)"}
+    _commande({"teleport_duck": [{"index": 0, "pos": [0.0, 0.0], "yaw": 0.0}]}, chemin_ctl)
+    return 200, {"ok": True}
+
+
+def demander_scene(nom):
+    """Ecrit la scene voulue ; jumeau.sh relance duck-sim dessus des que le cerveau sort. -> (code, reponse)."""
+    if nom not in SCENES:
+        return 400, {"erreur": f"scene inconnue (au choix : {', '.join(SCENES)})"}
+    if os.environ.get("MICRODUCK_JUMEAU") != "1":
+        return 409, {"erreur": "le cerveau n'a pas ete lance par jumeau.sh : changer de scene a la main (run-scene.sh)"}
+    f = fichier_scene()
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(nom + "\n")
+    return 200, {"ok": True, "redemarre": True}
+
+
+def adresses_locales():
+    """Les adresses IPv4 de cette machine sur le reseau local (ce qu'on tape dans le casque) : `hostname -I`, aucune
+    connexion ouverte (regle : seul le pont HA parle au reseau, test_regles.py)."""
+    import ipaddress
+    import subprocess
+    try:
+        sortie = subprocess.run(["hostname", "-I"], capture_output=True, text=True, timeout=2).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    out = []
+    for mot in sortie.split():
+        try:
+            ip = ipaddress.ip_address(mot)
+        except ValueError:
+            continue
+        if ip.version == 4 and ip.is_private and not ip.is_loopback and mot not in out:
+            out.append(mot)
+    # le Wi-Fi de la maison d'abord (192.168.x), les reseaux internes (Docker, WSL...) ensuite
+    return sorted(out, key=lambda a: (not a.startswith("192.168."), a))
+
+
+# -- apercu du design space dans le casque (couleurs pas encore enregistrees) -------------------------------------------
+APERCU_S = 15 * 60
+
+
+def valider_apercu(corps):
+    """{"couleurs": {groupe: "#rrggbb"}} -> dict propre, ou None (vide : fin de l'apercu)."""
+    import re
+    c = corps.get("couleurs") if isinstance(corps, dict) else None
+    if not isinstance(c, dict) or not c:
+        return None
+    hexa = re.compile(r"^#[0-9a-fA-F]{6}$")
+    return {str(k)[:40]: str(v).lower() for k, v in list(c.items())[:60] if hexa.match(str(v))}

@@ -7,7 +7,7 @@
 //             schema. Gachette : peindre la piece visee. Grip : enregistrer le schema dans son appli. A : retour au jeu.
 //
 // Ses couleurs sont celles du schema actif de son appli (design space) : un schema change sur le telephone change le
-// canard du casque, en direct ; un schema peint dans le casque s'enregistre dans son appli.
+// canard du casque, en direct (et, avec « Voir dans le casque », chaque retouche avant meme d'enregistrer) ; un schema peint dans le casque s'enregistre dans son appli.
 // Sans simulateur, le canard reste debout, immobile, a son origine : pratique pour choisir ses couleurs.
 // Ses sons : joues si les fichiers sont dans Assets/Resources/SonsCanard/<son> (chirp, coo...) ; sinon une note
 // flottante au-dessus de sa tete.
@@ -66,6 +66,7 @@ public class ModeJumeau : ModeMicroduck
     bool enCouleurs, modifie;
     object design;                           // /api/design tel que lu (filaments, couleurs, schemas, actif)
     string designTexte = "";
+    Dictionary<string, object> apercu;       // couleurs en cours de retouche sur le telephone
     readonly Dictionary<string, string> couleurs = new Dictionary<string, string>();   // groupe -> #rrggbb (en cours)
     readonly List<string[]> nuancier = new List<string[]>();
     int choix, schemaChoisi = -1;
@@ -87,7 +88,7 @@ public class ModeJumeau : ModeMicroduck
             if (enCouleurs)
             {
                 string nom = vise != null && nomGroupe.ContainsKey(vise) ? nomGroupe[vise] : "(vise une piece)";
-                string schema = MiniJson.Champ(design, "actif") as string ?? "Couleurs d'origine";
+                string schema = apercu != null ? "Apercu du telephone" : MiniJson.Champ(design, "actif") as string ?? "Couleurs d'origine";
                 return "COULEURS - " + schema + (modifie ? " (modifie)" : "") + "\nPiece : " + nom
                        + "\nCouleur : " + nuancier[choix][0]
                        + "\nJoystick : couleur / schema   Gachette : peindre   Grip : enregistrer   A : jeu\n" + message;
@@ -320,7 +321,7 @@ public class ModeJumeau : ModeMicroduck
         if (!modeleCharge || Canard.Ici == null || !Canard.Ici.Configure) return;
         if (!ancre) { Ancrer(); return; }
         if (!lecture && Time.time - tLecture >= 1f / 30f) StartCoroutine(Lire());
-        if (!lectureDesign && !modifie && Time.time - tDesign >= 2f) StartCoroutine(LireDesign(false));
+        if (!lectureDesign && !modifie && Time.time - tDesign >= 1f) StartCoroutine(LireDesign(false));
         // mouvements adoucis : 30 poses par seconde, affichage a 72-90 images par seconde
         float k = 1f - Mathf.Exp(-Time.deltaTime * 25f);
         foreach (var kv in corps)
@@ -467,6 +468,24 @@ public class ModeJumeau : ModeMicroduck
         design = MiniJson.Lire(texte);
         Nuancier();
         AppliquerSchema(MiniJson.Champ(design, "actif") as string);
+        // le design space du telephone en cours de retouche (« Voir dans le casque ») : par-dessus le schema actif
+        apercu = MiniJson.Champ(design, "apercu") is Dictionary<string, object> ap ? ap : null;
+        if (apercu != null)
+        {
+            couleurs.Clear();
+            foreach (var kv in apercu) if (kv.Value is string h) couleurs[kv.Key] = h;
+            Peindre();
+        }
+        ((Dictionary<string, object>)design).Remove("apercu");     // jamais renvoye tel quel a l'enregistrement
+    }
+
+    void Peindre()
+    {
+        foreach (var kv in groupes)
+        {
+            var col = couleurs.ContainsKey(kv.Key) ? Couleur(couleurs[kv.Key], origine[kv.Key]) : origine[kv.Key];
+            foreach (var r in kv.Value) r.material.color = col;
+        }
     }
 
     List<object> Schemas() => MiniJson.Liste(MiniJson.Champ(design, "schemas"));
@@ -483,11 +502,7 @@ public class ModeJumeau : ModeMicroduck
                 if (MiniJson.Champ(sc[i], "couleurs") is Dictionary<string, object> c)
                     foreach (var kv in c) if (kv.Value is string h) couleurs[kv.Key] = h;
             }
-        foreach (var kv in groupes)
-        {
-            var col = couleurs.ContainsKey(kv.Key) ? Couleur(couleurs[kv.Key], origine[kv.Key]) : origine[kv.Key];
-            foreach (var r in kv.Value) r.material.color = col;
-        }
+        Peindre();
     }
 
     void Nuancier()

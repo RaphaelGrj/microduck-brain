@@ -855,7 +855,7 @@ document.addEventListener("click", (ev) => {
     document.querySelectorAll(".page").forEach((p) => { p.hidden = p.dataset.page !== b.dataset.onglet; });
     window.scrollTo(0, 0);
     if (b.dataset.onglet === "accueil") rafraichirCarte();
-    if (b.dataset.onglet === "reglages") { rafraichirLieux(); chargerJournee(); initPresence(); afficherMiseEnRoute(); }
+    if (b.dataset.onglet === "reglages") { rafraichirLieux(); chargerJournee(); initPresence(); afficherMiseEnRoute(); suivreCasque(); }
     if (b.dataset.onglet === "jouer" && window.chargerTours) window.chargerTours();
     if (b.dataset.onglet === "caractere" && window.chargerCurseurs) window.chargerCurseurs();
   }
@@ -902,3 +902,49 @@ else {
     if (s.installation) $("#installation").hidden = false; else $("#appairage").hidden = false;
   }).catch(() => { $("#appairage").hidden = false; });
 }
+
+// ---------- casque Meta Quest (Microduck XR) : appairage, etat, canard jumeau ----------
+const SCENES_NOMS = { maison: "Ma maison (plan scanné)", testball: "Appartement de Pollen + balle", apartment: "Appartement de Pollen",
+  arena: "Arène (sol nu)", arena_chat: "Arène + affiche du chat" };
+let minuteurCasque = null;
+function suivreCasque() {
+  clearInterval(minuteurCasque);
+  rafraichirCasque();
+  minuteurCasque = setInterval(() => {
+    if ($('[data-page="reglages"]').hidden || document.hidden) { clearInterval(minuteurCasque); return; }
+    rafraichirCasque();
+  }, 3000);
+}
+async function rafraichirCasque() {
+  let c;
+  try { c = await api("/api/casque"); } catch (e) { texte("#casque-etat", "Microduck ne répond pas"); return; }
+  const depuis = c.dernier ? Math.round(Date.now() / 1000 - c.dernier) : null;
+  texte("#casque-etat", c.connecte ? `Casque connecté — mode ${c.mode}`
+    : depuis != null ? `Casque vu il y a ${depuis < 120 ? depuis + " s" : Math.round(depuis / 60) + " min"} (${c.mode})`
+    : "Casque jamais connecté");
+  $("#casque-adresses").replaceChildren(...(c.adresses.length ? c.adresses : ["(adresse introuvable)"]).map((a) => {
+    const li = document.createElement("li"); li.textContent = a; return li;
+  }));
+  $("#casque-jumeau").hidden = !c.simulateur;
+  if (c.simulateur) {
+    const sc0 = (c.scene || "").replace(/^scene_(apartment_)?/, "").replace(/\.xml$/, "");
+    const sc = { arena_testball: "arena", arena_cat: "arena_chat" }[sc0] || sc0;      // noms des fichiers du fork
+    texte("#casque-scene", `Simulateur en marche — scène : ${SCENES_NOMS[sc] || sc || "?"}`);
+    const sel = $("#casque-scenes");
+    if (!sel.options.length) sel.replaceChildren(...c.scenes.map((n) => new Option(SCENES_NOMS[n] || n, n)));
+    sel.disabled = $("#casque-changer").disabled = !c.changer_scene;
+    $("#casque-changer").title = c.changer_scene ? "" : "Lancer le canard jumeau avec jumeau.sh pour changer de scène d'ici";
+  }
+}
+async function actionCasque(corps, ok) {
+  try { await api("/api/casque", corps); toast(ok); setTimeout(rafraichirCasque, 1500); }
+  catch (e) { toast(e.message === "code" ? "Code refusé" : e.message); }
+}
+$("#casque-balle").addEventListener("click", () => actionCasque({ action: "balle" }, "Balle lancée"));
+$("#casque-chargeur").addEventListener("click", () => actionCasque({ action: "chargeur" }, "Remis à son chargeur"));
+$("#casque-changer").addEventListener("click", () =>
+  actionCasque({ action: "scene", scene: $("#casque-scenes").value }, "Changement de scène : simulateur et cerveau redémarrent (~1 min)"));
+$("#casque-code").addEventListener("click", (e) => {
+  const b = e.currentTarget;
+  b.textContent = b.textContent === "Afficher le code" ? (code || "—") : "Afficher le code";
+});

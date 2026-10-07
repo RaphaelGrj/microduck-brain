@@ -1,4 +1,6 @@
 // Microduck - le menu de l'appli du casque : un seul mode actif ; X / Y (manette gauche) : mode suivant / precedent.
+// Appairage avec le canard (son adresse et son code, au clavier du casque) : au premier lancement, puis a tout moment
+// en cliquant le joystick GAUCHE. L'appli du canard (Reglages -> Casque) affiche l'adresse et le code a taper.
 // A mettre sur le meme objet que les modes (ExportPlan, ModeAtelier, ModeVerite, ModeDessin, ModeDanse, ModeCanard)
 // et que Canard (adresse et code de l'appli du canard).
 using UnityEngine;
@@ -13,6 +15,13 @@ public class MenuMicroduck : MonoBehaviour
     ModeMicroduck[] modes;
     int actif;
     TextMesh texte;
+
+    // -- appairage --------------------------------------------------------------------------------------------------
+    TouchScreenKeyboard clavier;
+    int etapeAppairage = -1;                   // -1 : rien ; 0 : adresse ; 1 : code ; 2 : verification
+    string adresseSaisie = "", messageAppairage = "";
+
+    public string ModeActif => modes != null && modes.Length > 0 ? modes[actif].Nom : "casque";
 
     void Awake() { Ici = this; }
 
@@ -33,11 +42,64 @@ public class MenuMicroduck : MonoBehaviour
         modes = GetComponents<ModeMicroduck>();
         for (int i = 0; i < modes.Length; i++) modes[i].enabled = i == 0;
         if (Canard.Ici != null && Canard.Ici.Configure) StartCoroutine(ReperePlan.Charger());
+        else Appairer();
+    }
+
+    void Appairer()
+    {
+        etapeAppairage = 0;
+        messageAppairage = "";
+        string actuelle = Canard.Ici != null && Canard.Ici.Configure ? Canard.Ici.adresse : "http://192.168.1.";
+        clavier = TouchScreenKeyboard.Open(actuelle, TouchScreenKeyboardType.URL, false, false, false);
+    }
+
+    void SuivreAppairage()
+    {
+        if (clavier == null) return;
+        if (clavier.status == TouchScreenKeyboard.Status.Canceled || clavier.status == TouchScreenKeyboard.Status.LostFocus)
+        {
+            clavier = null;
+            etapeAppairage = -1;
+            messageAppairage = "Appairage annule (joystick gauche : recommencer)";
+            return;
+        }
+        if (clavier.status != TouchScreenKeyboard.Status.Done) return;
+        if (etapeAppairage == 0)
+        {
+            adresseSaisie = clavier.text;
+            etapeAppairage = 1;
+            clavier = TouchScreenKeyboard.Open("", TouchScreenKeyboardType.Default, false, false, true);
+            return;
+        }
+        string code = clavier.text;
+        clavier = null;
+        etapeAppairage = 2;
+        Canard.Ici.Retenir(adresseSaisie, code);
+        StartCoroutine(Verifier());
+    }
+
+    System.Collections.IEnumerator Verifier()
+    {
+        messageAppairage = "Verification...";
+        string rep = null, err = null;
+        yield return Canard.Ici.Lire("/api/casque", (t, e) => { rep = t; err = e; });
+        etapeAppairage = -1;
+        messageAppairage = rep != null ? "Appaire avec " + Canard.Ici.adresse
+                                       : "Pas de reponse (" + err + ") : verifier l'adresse et le code (joystick gauche)";
+        if (rep != null) StartCoroutine(ReperePlan.Charger());
     }
 
     void Update()
     {
         if (modes.Length == 0) return;
+        if (OVRInput.GetDown(OVRInput.Button.PrimaryThumbstick, OVRInput.Controller.LTouch)) Appairer();
+        if (etapeAppairage >= 0)
+        {
+            SuivreAppairage();
+            texte.text = "Microduck - appairage\n\n" + (etapeAppairage == 0 ? "Adresse du canard (Reglages -> Casque de son appli)"
+                         : etapeAppairage == 1 ? "Code de son appli" : messageAppairage);
+            return;
+        }
         if (Outils.X() || Outils.Y())
         {
             modes[actif].enabled = false;
@@ -45,7 +107,7 @@ public class MenuMicroduck : MonoBehaviour
             modes[actif].enabled = true;
             if (!ReperePlan.Pret && Canard.Ici != null && Canard.Ici.Configure) StartCoroutine(ReperePlan.Charger());
         }
-        texte.text = "Microduck - " + modes[actif].Nom + "  (" + (actif + 1) + "/" + modes.Length + ", X / Y : changer)\n\n"
-                     + modes[actif].Consigne;
+        texte.text = "Microduck - " + modes[actif].Nom + "  (" + (actif + 1) + "/" + modes.Length + ", X / Y : changer)\n"
+                     + (messageAppairage.Length > 0 ? messageAppairage + "\n" : "") + "\n" + modes[actif].Consigne;
     }
 }
