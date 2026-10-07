@@ -221,6 +221,7 @@ class Wander(Etat):
     `turn`."""
     nom = "wander"
 
+    GAFFE_M = 0.3                # obstacle vu a moins de 30 cm (surgi au dernier moment) : il « bute » (gaffe)
     SEUIL_PASSAGE_ETROIT = 0.5   # m, de chaque cote : en dessous des deux, pause avant de s'y engager
 
     def entre(self, brain):
@@ -289,6 +290,13 @@ class Wander(Etat):
             brain.obstacle_vu = brain.obstacle_vu + 1 if hasattr(brain, "obstacle_vu") else 1
             brain.fin_etat = brain.t_etat                    # fin de la promenade : on va tourner
             brain.suivant_force = "turn"
+            # Gaffe (personnage.py) : l'obstacle a surgi TOUT pres (il ne l'a vu qu'au dernier moment) -> il bute, se
+            # vexe et contourne en exagerant ; rare, et seulement si l'etat existe (essais minimaux sans lui)
+            rng = getattr(brain, "_rng_vie", None)
+            if (lib["devant"] < self.GAFFE_M and rng is not None and "gaffe" in getattr(brain, "etats", {})
+                    and brain.t_global - brain.derniere_fois.get("gaffe", -1e9) >= 600.0 and rng.random() < 0.35):
+                brain.derniere_fois["gaffe"] = brain.t_global
+                brain.suivant_force = "gaffe"
             return
         brain.ctx.move(vx=V_PROMENADE)
 

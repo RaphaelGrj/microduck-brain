@@ -65,7 +65,7 @@ def sons(c):
 
 def test_balle_partie_fete():
     b, c, _ = cerveau(None)                            # apres le tir, plus de balle devant lui : partie au loin
-    simule(b, 10, evenements=[(0.2, "jeu_balle")])
+    simule(b, 18, evenements=[(0.2, "jeu_balle")])  # (fete + tour de victoire eventuel)
     jeu = b.etats["balle"]
     assert jeu.resultat == "reussi" and "wheee" in sons(c) and ("robot.do", {"skill": "kick_left"}) in c.appels
     assert jeu.ap.vis.run_flag is False, "la camera du controleur est arretee a la fin"

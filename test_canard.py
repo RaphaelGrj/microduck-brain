@@ -44,7 +44,7 @@ def _assemble(args, sock_tof_existe, cfg=None):
 
 def test_assemblage_selon_disponibilite():
     a = _assemble([], sock_tof_existe=True)
-    assert set(a["extras"]) == {"memoire", "choregraphies", "autotest", "circadien", "garde", "tof", "mouvement", "balle", "camera_test", "luminosite", "lieu"}, a["extras"]
+    assert set(a["extras"]) == {"memoire", "choregraphies", "autotest", "circadien", "garde", "tof", "mouvement", "balle", "camera_test", "luminosite", "soleil", "lieu"}, a["extras"]
     assert len(a["extras"]["tof"].beams) == 64 and a["pont"] is None and a["options"] == {}
     a = _assemble(["--sans-camera"], sock_tof_existe=False)
     assert set(a["extras"]) == {"memoire", "choregraphies", "autotest", "circadien", "garde", "lieu"}, "sans tofd ni camera : seulement la memoire"
