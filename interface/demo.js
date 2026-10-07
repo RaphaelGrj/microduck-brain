@@ -127,7 +127,7 @@
       caractere: {
         traits: { curiosite: 0.72, sociabilite: 0.64, espieglerie: 0.58, prudence: 0.41 },
         sons: { greet: 3, chirp: 5, coo: 4, inquire: 2, peck: 1, wheee: 2, alarm: 0.2 },
-        blagues: 3, age_jours: 12,
+        blagues: 3, age_jours: 12, humeur_jour: "joueur",
         etres: [{ nom: "Raphaël", familiarite: 0.92, rencontres: 214 }, { nom: "le chat", familiarite: 0.61, rencontres: 87 }],
       },
     };

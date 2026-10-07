@@ -338,6 +338,9 @@ class Nap(Etat):
         # de tete, jamais pendant l'endormissement (< 2s) ni le reveil (derniers 4s) - juste de quoi distinguer une
         # sieste "vivante" d'une simple pause, sans RL ni capteur supplementaire.
         profond = self.total - 2.0 - 4.0
+        # ses reves rejouent sa journee (personnage.REVES) : le theme est tire de ce qu'il a vecu aujourd'hui
+        import personnage
+        self.theme = personnage.theme_de_reve(getattr(brain, "du_jour", None), getattr(brain, "_rng_vie", brain.rng))
         self.reves = []
         if profond >= 3.0:
             for _ in range(brain.rng.randint(0, 2)):
@@ -365,10 +368,20 @@ class Nap(Etat):
             for reve in self.reves:
                 t0, duree, signe, joue = reve
                 if t0 <= t < t0 + duree:
+                    k = math.sin(math.pi * (t - t0) / duree)      # monte puis redescend a 0 : jamais de saut brusque
+                    if self.theme is not None:
+                        import personnage
+                        _, son, (cou, tete, lacet, roulis) = personnage.REVES[self.theme]
+                        if not joue:
+                            if son:
+                                ctx.sound(son)
+                            reve[3] = True
+                        balance = math.sin(4 * math.pi * (t - t0) / duree) if self.theme == "danse" else signe
+                        ctx.head((cou * k, 0.7 + (tete - 0.7) * k, lacet * signe * k, roulis * balance * k))
+                        break
                     if not joue:
                         ctx.sound("chirp")        # murmure sonore occasionnel (ROADMAP) ; silencieux en mode calme
                         reve[3] = True
-                    k = math.sin(math.pi * (t - t0) / duree)      # monte puis redescend a 0 : jamais de saut brusque
                     ctx.head((0.0, 0.7 + 0.05 * signe * k, 0.08 * signe * k, 0.0))
                     break
 

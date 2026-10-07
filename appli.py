@@ -150,6 +150,7 @@ def instantane(brain, state, version=None):
             "sons": {k: round(v, 2) for k, v in (perso.d.get("sons") or {}).items()} if perso else {},
             "blagues": brain.malice.compte() if hasattr(brain, "malice") else None,
             "age_jours": (lambda a: None if a == float("inf") else int(a))(brain.age()) if hasattr(brain, "age") else None,
+            "humeur_jour": getattr(brain, "humeur_jour", None), "anniversaire": getattr(brain, "anniversaire", 0),
             "etres": etres,
         },
     }

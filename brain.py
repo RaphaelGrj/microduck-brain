@@ -35,7 +35,8 @@ from etats_appli import Parcours, PosePhoto, Signal
 import vivant
 from vivant import AttendPorte, Boude, Habituation, JeTeSuis, Reponse, SuisMoi
 import personnage
-from personnage import (BainSoleil, Doudou, Gaffe, Hoquet, Inspecte, Nid, Nomme, Petit, Rythme, Succes)
+from personnage import (BainSoleil, Doudou, Gaffe, Gouts, Hoquet, Inspecte, Nid, Nomme, ObservateurChat, Petit,
+                         Rythme, Solitude, Succes)
 from diagnostic import Diagnostic
 from etats_maison import AlarmeFumee, AssisDemande, AutoTestReveil, Toupie
 from etats_taquineries import (Aspirateur, Baillement, CompteEternuements, DernierMot, Esquive, FausseChute,
@@ -89,6 +90,7 @@ class Brain:
     P_HOQUET = 0.004            # par passage par chill (x5 dans les 10 min apres un repas) ; une fois par 3 h au plus
     P_DOUDOU = 0.03             # par passage par chill, sa balle vue : il va retrouver son doudou
     P_NID = 0.7                 # avant une sieste de fatigue : deux tours sur lui-meme (une fois par heure au plus)
+    SOLLICITATIONS_MAX = 30     # sollicitations en 30 min (x sociabilite) avant d'avoir besoin d'etre un peu seul
     SOLEIL_PERIODE_S = 600.0    # en journee, au repos : y a-t-il une tache de soleil au sol ? (camera)
     SPECTACLE = ("danse", "zoomies", "signature", "rythme", "hoquet", "gaffe", "fausse_chute", "fausse_notif",
                  "lissage", "ebouriffe", "etirement", "eternuement", "cabotine")   # cabotinage : ses « numeros »
@@ -249,6 +251,11 @@ class Brain:
             "rit": Sequence("rit", [("content", "chirp")]),
             "cabotine": Sequence("cabotine", [("fier", "chirp")]),
             "reclame": Sequence("reclame", [("curieux", "coo")]),
+            # vivant III : solitude, anniversaire, le chat comme modele
+            "solitude": Solitude(), "va_solitude": VaAuCoin("va_solitude", "solitude", "etre un peu seul"),
+            "anniversaire": Sequence("anniversaire", [("content", "wheee"), ("fier", "chirp"), ("content", "wheee")]),
+            "chat_joue": Sequence("chat_joue", [("curieux", "chirp"), ("content", "wheee")]),
+            "va_chat": VaAuCoin("va_chat", "nap", "faire la sieste pres du chat"),
         }
         self.etats["taquin"].taquinerie = True
         self.malice = Malice(self.ctx.extras.get("memoire"))
@@ -306,6 +313,15 @@ class Brain:
         self._t_soleil = -1e9
         self._soleil_vu = None                  # (x relatif, fraction) : tache de soleil vue par la camera
         self._rituels_faits = set()             # (jour, qui) : rituel deja reclame aujourd'hui
+        self.sollicitations = []                # t_global des sollicitations recentes (besoin de solitude)
+        self.observateur_chat = ObservateurChat()
+        self._t_chat_note = -1e9
+        self.anniversaire = 0                   # aujourd'hui : son anniversaire (nombre d'annees), 0 sinon
+        self.humeur_jour = "normal"
+        self.gouts = None                       # gouts musicaux : seulement avec une memoire (graine = sa naissance)
+        if isinstance(donnees_mem, dict) and getattr(self.perso, "sauver", None) is not None:
+            self.gouts = Gouts(donnees_mem, self.perso.d.get("naissance", 0))
+        self._maj_humeur_jour()
         self._rng_vie = random.Random(None if seed is None else seed + 11)   # respiration, saccades : hasard a part
         self.conversation_jusqua = -1e9         # tour de parole : on vient de s'adresser a lui (appel, caresse...)
         self.entree = None                      # (x, y) odom : la ou il accueille d'habitude (porte d'entree)
@@ -534,6 +550,11 @@ class Brain:
             # qu'il soit ou non traite immediatement (differe pendant une conversation, ignore pendant la sieste...).
             self.derniere_interaction = self.t_global
             self.ignores = 0                    # quelqu'un s'est manifeste : le decouragement s'efface
+            if base in ("caresse", "main", "appel", "applaudissements", "commande", "rire", "enonce", "motif"):
+                self.sollicitations = [t for t in self.sollicitations if self.t_global - t <= 1800.0] + [self.t_global]
+                if self.courant.nom == "danse" and base in ("caresse", "main", "rire", "applaudissements") \
+                        and self.gouts is not None:
+                    self.gouts.noter_bon(self.etats["danse"].bpm)   # un bon moment sur cette musique
             if base in ("caresse", "main", "appel", "commande", "applaudissements"):
                 self._reponse_au_babil()        # (pas "voix" : la tele ou une conversation ne lui repondent pas)
             if base in ("telephone", "telephone_fin"):
@@ -733,6 +754,9 @@ class Brain:
                     self.malice.stop_jusqua = max(self.malice.stop_jusqua, self.t_global + 600.0)   # pas de blague
                     self._bascule("petit")              # des voix qui montent : il se fait tout petit
                 continue
+            if base in ("caresse", "appel") and self.courant.nom == "solitude":
+                self.ctx.sound("coo")                   # « oui, oui... » : il reste dans son coin un moment
+                continue
             if base in ("caresse", "main") and self.courant.nom == "hoquet":
                 self._bascule("gueri")                  # une caresse, et le hoquet passe
                 continue
@@ -868,9 +892,8 @@ class Brain:
             elif base == "applaudissements":
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.3)
                 self._bascule("bravo")
-            elif base == "musique" and self.t_global - self.derniere_fois.get("danse", -1e9) >= self.DELAI_DANSE_S:
+            elif base == "musique" and self._envie_de_danser(int(detail) if detail.isdigit() else 100):
                 self.derniere_fois["danse"] = self.t_global
-                self.etats["danse"].bpm = int(detail) if detail.isdigit() else 100
                 self._bascule("danse")
             elif nom == "main":
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.2)
@@ -1037,7 +1060,7 @@ class Brain:
             self.humeur.eveil = min(1.0, self.humeur.eveil + 0.1)
             self._bascule("compliment")
         elif quoi == "danse":
-            self.etats["danse"].bpm = 100
+            self.etats["danse"].bpm, self.etats["danse"].entrain, self.etats["danse"].son = 100, 1.0, "chirp"
             self._bascule("danse")
         elif quoi == "ecoute" and self.courant.nom in ("chill", "look", "jeu_solitaire"):
             self._bascule("attentif")
@@ -1161,6 +1184,9 @@ class Brain:
                 return "fier"
         if self.courant.nom != "chill":
             return "chill"
+        seul = self._besoin_de_solitude()
+        if seul is not None:
+            return seul
         # Occupation autonome / recherche d'attention : rien ne s'est passe depuis longtemps -> le canard ne reste
         # pas simplement passif. Priorite sur les initiatives habituelles (look/turn/wander/RARES), mais seulement
         # si le delai minimal est passe (ne jamais insister).
@@ -1780,8 +1806,8 @@ class Brain:
         return "hiver" if mois in (12, 1, 2) else "ete" if mois in (6, 7, 8) else "mi_saison"
 
     def facteur_sieste(self):
-        """L'hiver, les siestes s'allongent (cocooning)."""
-        return 1.3 if self.saison() == "hiver" else 1.0
+        """L'hiver, les siestes s'allongent (cocooning) ; un jour paresseux aussi."""
+        return (1.3 if self.saison() == "hiver" else 1.0) * personnage.HUMEURS_JOUR[self.humeur_jour][3]
 
     def lit_sante(self):
         """robot.health (robotd) -> dict, ou None si pas de reponse."""
@@ -2027,6 +2053,104 @@ class Brain:
         self.etats["bain_soleil"].x_rel = vu[0]
         return "bain_soleil"
 
+    # -- vivant III ---------------------------------------------------------------------------------------------------
+    def _maj_humeur_jour(self):
+        """L'humeur du jour (personnage.humeur_du_jour), tiree une fois par jour ; sans memoire (essais) : normale."""
+        if getattr(self.perso, "sauver", None) is None:
+            return
+        jour = int(self.ctx.extras.get("mur", time.time)() // 86400)
+        nom = personnage.humeur_du_jour(self.perso.d.get("naissance", 0), jour)
+        if nom != getattr(self, "humeur_jour", None):
+            print(f"[{getattr(self, 't_global', 0.0):6.1f}s] humeur du jour : {nom}", flush=True)
+        self.humeur_jour = nom
+        self.perso.jour = personnage.HUMEURS_JOUR[nom]
+
+    def _envie_de_danser(self, bpm):
+        """Ses gouts : une musique qui ne lui plait pas le laisse froid ; celle qu'il aime, il danse avec entrain ; « sa
+        chanson », il y va meme s'il vient de danser."""
+        danse = self.etats["danse"]
+        danse.bpm, danse.entrain, danse.son = bpm, 1.0, "chirp"
+        delai = self.DELAI_DANSE_S
+        if self.gouts is not None:
+            g, chanson = self.gouts.gout(bpm), self.gouts.chanson(bpm)
+            if chanson:
+                danse.entrain, danse.son, delai = 1.4, "wheee", self.DELAI_DANSE_S / 3
+                print(f"[{self.t_global:6.1f}s] sa chanson ! ({bpm} BPM)", flush=True)
+            elif g <= -0.5:
+                return False                    # ca ne lui plait pas : il ne danse pas
+            elif g >= 0.5:
+                danse.entrain, danse.son = 1.25, "wheee"
+        return self.t_global - self.derniere_fois.get("danse", -1e9) >= delai
+
+    def _besoin_de_solitude(self):
+        recentes = [t for t in self.sollicitations if self.t_global - t <= 1800.0]
+        seuil = self.SOLLICITATIONS_MAX * (0.5 + self.perso.trait("sociabilite"))
+        if (len(recentes) < seuil or self.mode_calme or self.discret
+                or self.t_global - self.derniere_fois.get("solitude", -1e9) < 3600.0):
+            return None
+        self.sollicitations = []
+        self.derniere_fois["solitude"] = self.t_global
+        print(f"[{self.t_global:6.1f}s] beaucoup de monde autour de lui : il a besoin d'etre un peu seul", flush=True)
+        coin = self.exploration.coin_favori("nap", self.t_global)
+        if coin is not None and self.ctx.extras.get("tof") is not None and self._atteignable(coin, (0.5, 4.0)):
+            self.etats["va_solitude"].cible = coin
+            return "va_solitude"
+        return "solitude"
+
+    def _verifie_anniversaire(self):
+        naissance = self.perso.d.get("naissance") if getattr(self.perso, "sauver", None) is not None else None
+        if naissance is None:
+            return
+        mur = self.ctx.extras.get("mur", time.time)()
+        ans = personnage.est_anniversaire(naissance, mur)
+        self.anniversaire = ans
+        if (not ans or self.perso.d.get("anniversaire_fete") == time.localtime(mur).tm_year
+                or self.horloge().tm_hour < 9 or self.mode_calme or self.discret
+                or self.courant.nom not in ("chill", "look")):
+            return
+        self.perso.d["anniversaire_fete"] = time.localtime(mur).tm_year
+        print(f"[{self.t_global:6.1f}s] c'est son anniversaire : {ans} an(s) !", flush=True)
+        if self.ctx.extras.get("tof") is not None and self.humeur.energie > 0.5:
+            self.suivant_force = "zoomies"      # une folle course pour feter ca
+        self._bascule("anniversaire")
+
+    def _regarde_le_chat(self, state):
+        """Le chat comme modele : il dort -> sieste non loin ; il joue -> ca l'anime."""
+        chat = self.ctx.extras.get("chat")
+        o = (state or {}).get("odom")
+        if chat is None or o is None or self.t_global - self._t_chat_note < 1.0:
+            return
+        self._t_chat_note = self.t_global
+        e = getattr(chat, "estimation", None)
+        if not getattr(getattr(chat, "suivi", None), "visible", False) or e is None:
+            if self.observateur_chat.points and self.t_global - self.observateur_chat.points[-1][0] > 30.0:
+                self.observateur_chat.oublier()
+            return
+        cap = o.get("yaw") or 0.0
+        x0, y0 = o["position"][0], o["position"][1]
+        self.observateur_chat.noter(self.t_global, x0 + e[1] * math.cos(cap) - e[2] * math.sin(cap),
+                                    y0 + e[1] * math.sin(cap) + e[2] * math.cos(cap))
+        etat = self.observateur_chat.etat(self.t_global)
+        if etat is None or self.courant.nom not in ("chill", "look") or self.mode_calme or self.discret:
+            return
+        genre, (cx, cy) = etat
+        if (genre == "dort" and self.humeur.energie < 0.75
+                and self.t_global - self.derniere_fois.get("sieste_chat", -1e9) >= 7200.0):
+            self.derniere_fois["sieste_chat"] = self.t_global
+            d = math.hypot(cx - x0, cy - y0)
+            if d > 0.9 and self.ctx.extras.get("tof") is not None:
+                k = (d - 0.6) / d                       # il s'arrete a 60 cm du chat : pas trop pres
+                self.etats["va_chat"].cible = (x0 + (cx - x0) * k, y0 + (cy - y0) * k)
+                if self._atteignable(self.etats["va_chat"].cible, (0.3, 4.0)):
+                    self._bascule("va_chat")
+                    return
+            self._bascule("nap")                        # le chat dort : lui aussi
+        elif (genre == "joue" and self.humeur.energie > 0.5
+              and self.t_global - self.derniere_fois.get("chat_joue", -1e9) >= 1200.0):
+            self.derniere_fois["chat_joue"] = self.t_global
+            self.humeur.eveil = min(1.0, self.humeur.eveil + 0.3)
+            self._bascule("chat_joue")
+
     def age(self):
         """Jours vecus depuis sa premiere mise en route (vivant.age_jours ; inf sans memoire : adulte)."""
         return vivant.age_jours(self.perso, self.ctx.extras.get("mur", time.time)())
@@ -2034,6 +2158,7 @@ class Brain:
     def _vieillit(self):
         a = self.age()
         self.perso.assurance, self.perso.jeunesse = vivant.assurance_blagues(a), vivant.timidite_jeunesse(a)
+        self._maj_humeur_jour()
 
     def _note_humeur(self):
         """Graphique d'humeur de l'application : energie et eveil, un point par quart d'heure, une semaine (memoire)."""
@@ -2197,6 +2322,7 @@ class Brain:
         self._note_humeur()
         self._verifie_autotest()
         self._verifie_jour_special()
+        self._verifie_anniversaire()
         self.humeur.avance(dt, self.courant.nom, self.vivacite())
         if self.discret and self.t_global - self._t_discret > self.DISCRET_MAX_S:
             self._discretion(False)
@@ -2206,6 +2332,7 @@ class Brain:
         self._surveille_peripherie()
         self._verifie_lumiere()
         self._verifie_soleil()
+        self._regarde_le_chat(state)
         flop = self.succes.juge(self.t_global, bool(self.presents))
         if flop is not None:
             print(f"[{self.t_global:6.1f}s] {flop} : tombe a plat", flush=True)

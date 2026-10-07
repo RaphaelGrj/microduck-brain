@@ -22,6 +22,7 @@ const ETATS = {
   boude: "Il boude", reconcilie: "Réconciliés !", attend_porte: "Il attend quelqu'un", va_porte: "Il va à la porte",
   suis_moi: "Il te suit", mene: "Il te montre le chemin", repond: "Il te répond", jaloux: "Jaloux !",
   va_souvenir: "Il va flâner", souvenir: "Un bon souvenir", mefiant_lieu: "Méfiant", excite: "Lance-la !",
+  solitude: "Un peu seul", va_solitude: "Il s'isole un peu", anniversaire: "Joyeux anniversaire !", chat_joue: "Le chat joue !", va_chat: "Sieste près du chat",
   hoquet: "Il a le hoquet", gueri: "Hoquet passé !", gaffe: "Oups !", nid: "Il fait son nid", inspecte: "Il inspecte", rythme: "Il rejoue ton rythme", nomme: "Il dit ton nom", petit: "Il se fait tout petit", bain_soleil: "Bain de soleil", doudou: "Avec son doudou", va_doudou: "Il va voir son doudou", rit: "Il rit avec toi", cabotine: "Il fait le malin", reclame: "C'est l'heure du câlin", choregraphie: "Il fait son tour", baillement: "Il bâille", baillement_contagieux: "Il bâille", fausse_chute: "Fausse chute !",
 };
 window.ETATS_LIBELLES = ETATS;
@@ -159,7 +160,10 @@ function afficher(e) {
   barres("#traits", e.caractere.traits || {}, TRAITS);
   const age = e.caractere.age_jours;
   $("#age").hidden = age == null;
-  if (age != null) texte("#age", `${age} jour${age > 1 ? "s" : ""} de vie` + (age < 21 ? " · encore un peu timide" : age < 60 ? " · de plus en plus sûr de lui" : ""));
+  const HUMEURS = { joueur: "joueur aujourd'hui", paresseux: "paresseux aujourd'hui", collant: "collant aujourd'hui" };
+  if (age != null) texte("#age", `${age} jour${age > 1 ? "s" : ""} de vie` + (age < 21 ? " · encore un peu timide" : age < 60 ? " · de plus en plus sûr de lui" : "")
+    + (HUMEURS[e.caractere.humeur_jour] ? " · " + HUMEURS[e.caractere.humeur_jour] : "")
+    + (e.caractere.anniversaire ? ` · 🎂 ${e.caractere.anniversaire} an${e.caractere.anniversaire > 1 ? "s" : ""} aujourd'hui !` : ""));
   const sons = e.caractere.sons || {};
   const total = Object.values(sons).reduce((a, b) => a + b, 0) || 1;
   barres("#sons", Object.fromEntries(Object.entries(sons).map(([k, v]) => [k, v / total])), {});
