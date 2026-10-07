@@ -819,8 +819,16 @@ function ecouter() {
 
 async function entrer(c) {
   code = c;
+  let e;
   try {
-    const e = await api("/api/etat");
+    e = await api("/api/etat");
+  } catch (x) {
+    $("#appli").hidden = true; $("#appairage").hidden = false;
+    texte("#erreur-code", x.message === "code" ? "Code refusé."
+      : x instanceof TypeError ? "Microduck ne répond pas (même Wi-Fi ?)." : `Microduck a répondu : ${x.message}`);
+    return;
+  }
+  try {
     memoire("microduck-code", c);
     $("#appairage").hidden = true; $("#appli").hidden = false;
     if (e.etat) afficher(e);
@@ -832,8 +840,9 @@ async function entrer(c) {
     // APK : il retient l'adresse et le code pour verifier les alertes en arriere-plan (notifications, widget)
     if (window.MicroduckAndroid && !window.MicroduckDemo) window.MicroduckAndroid.retenir(location.origin, c);
   } catch (x) {
-    $("#appli").hidden = true; $("#appairage").hidden = false;
-    texte("#erreur-code", x.message === "code" ? "Code refusé." : "Microduck ne répond pas (même Wi-Fi ?).");
+    // le code est bon et le canard repond : une erreur d'AFFICHAGE ne doit pas bloquer l'appli (on la signale)
+    console.error(x);
+    toast(`Erreur d'affichage : ${x.message}`);
   }
 }
 
