@@ -55,6 +55,9 @@ public static class Outils
     public static bool B() => OVRInput.GetDown(OVRInput.Button.Two, OVRInput.Controller.RTouch);
     public static bool X() => OVRInput.GetDown(OVRInput.Button.One, OVRInput.Controller.LTouch);
     public static bool Y() => OVRInput.GetDown(OVRInput.Button.Two, OVRInput.Controller.LTouch);
+    public static bool GachetteTenue() => OVRInput.Get(OVRInput.Button.PrimaryIndexTrigger, OVRInput.Controller.RTouch);
+    public static bool GachetteRelachee() => OVRInput.GetUp(OVRInput.Button.PrimaryIndexTrigger, OVRInput.Controller.RTouch);
+    public static bool GripTenu() => OVRInput.Get(OVRInput.Button.PrimaryHandTrigger, OVRInput.Controller.RTouch);
     public static Vector2 Stick() => OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.RTouch);
 
     // -- formes ----------------------------------------------------------------------------------------------------
@@ -85,6 +88,16 @@ public static class Outils
     {
         var s = Shader.Find(shader) ?? Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Color");
         return new Material(s);
+    }
+
+    /// Un materiau eclaire (le canard en relief), quel que soit le pipeline ; a defaut, non eclaire.
+    public static Material MateriauEclaire(Color couleur)
+    {
+        var s = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard") ?? Shader.Find("Unlit/Color");
+        var m = new Material(s);
+        m.color = couleur;
+        if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.35f);
+        return m;
     }
 
     public static TextMesh Etiquette3D(string texte, Transform parent, float taille = 0.004f)

@@ -109,4 +109,47 @@ public static class MiniJson
     }
 
     public static string N(float v) => v.ToString("0.####", CultureInfo.InvariantCulture);
+
+    /// L'inverse de Lire : dictionnaires, listes, textes, nombres, booleens, null -> JSON.
+    public static string Ecrire(object o)
+    {
+        var sb = new StringBuilder();
+        Ecrire(o, sb);
+        return sb.ToString();
+    }
+
+    static void Ecrire(object o, StringBuilder sb)
+    {
+        switch (o)
+        {
+            case null: sb.Append("null"); break;
+            case string s: sb.Append(Texte(s)); break;
+            case bool b: sb.Append(b ? "true" : "false"); break;
+            case double d: sb.Append(d.ToString("R", CultureInfo.InvariantCulture)); break;
+            case float f: sb.Append(N(f)); break;
+            case int i: sb.Append(i.ToString(CultureInfo.InvariantCulture)); break;
+            case Dictionary<string, object> dict:
+                sb.Append('{');
+                bool premier = true;
+                foreach (var kv in dict)
+                {
+                    if (!premier) sb.Append(',');
+                    premier = false;
+                    sb.Append(Texte(kv.Key)).Append(':');
+                    Ecrire(kv.Value, sb);
+                }
+                sb.Append('}');
+                break;
+            case List<object> liste:
+                sb.Append('[');
+                for (int k = 0; k < liste.Count; k++)
+                {
+                    if (k > 0) sb.Append(',');
+                    Ecrire(liste[k], sb);
+                }
+                sb.Append(']');
+                break;
+            default: sb.Append(Texte(o.ToString())); break;
+        }
+    }
 }

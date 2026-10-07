@@ -4,6 +4,8 @@ son modele officiel (microduck_rl : MJCF exporte d'Onshape et ses STL, Apache-2.
 
 Chaque piece garde les sommets de son STL d'ORIGINE (allege), plus la transformation qui la pose sur le robot : un STL
 dessine dans le meme repere que la piece d'origine (on part de son STL) se pose donc exactement a sa place dans l'appli.
+Chaque instance dit aussi a quel corps (MuJoCo) elle appartient et sa pose dans ce corps (« corps », « l ») : le canard
+jumeau du Quest l'anime avec les poses des corps du simulateur.
 
     uv run --with mujoco --with trimesh --with fast-simplification python outils/modele_3d.py ~/microduck_rl
 """
@@ -94,8 +96,14 @@ def main(racine):
         mat = m.geom_matid[i]
         rgba = m.mat_rgba[mat] if mat >= 0 else m.geom_rgba[i]
         couleurs.setdefault(groupe_de[nom], hexa(rgba))
+        # la meme, dans le repere de son corps (canard jumeau : le simulateur donne la pose de chaque corps)
+        corps = m.geom_bodyid[i]
+        rc = d.xmat[corps].reshape(3, 3)
+        al, bl = rc.T @ a, rc.T @ (b - d.xpos[corps])
         instances.append({"piece": nom, "groupe": groupe_de[nom],
-                          "m": [round(float(x), 6) for x in np.hstack([a, b[:, None]]).ravel()]})
+                          "m": [round(float(x), 6) for x in np.hstack([a, b[:, None]]).ravel()],
+                          "corps": mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, corps),
+                          "l": [round(float(x), 6) for x in np.hstack([al, bl[:, None]]).ravel()]})
 
     SORTIE.mkdir(parents=True, exist_ok=True)
     normales += b"\0" * (-len(normales) % 4)                # les indices 16 bits suivent, alignes

@@ -27,6 +27,9 @@ API :
   GET  /api/xr              casque : position sur le plan, nuage d'hypotheses, capteur, trajet (position.py)
   POST /api/verite          casque : {"x", "y", "cap", "recaler"} position mesuree -> erreur (et recalage)
   POST /api/aller           {"x", "y"} : « va la » (point du plan)
+  GET  /api/jumeau?depuis=T canard jumeau (Quest) : poses des pieces du canard SIMULE (duck-sim), balles, derniers sons ;
+                            POST /api/jumeau-balle {"pos", "vel"} la lance ; POST /api/jumeau-caresse le caresse. 404
+                            sans simulateur (rien de cela n'existe sur le vrai robot) - jumeau.py
   GET  /api/vue             une image de sa camera (casque, « etre le canard ») - seulement si les photos sont permises
   GET  /api/design          schemas de couleurs et filaments du design space ; POST /api/design pour les garder
   GET  /api/alertes?depuis=T les alertes (chute, batterie, garde, incendie, impressions...) apres l'instant T (s)
@@ -313,6 +316,7 @@ class Appli:
         self.lieux = None                       # lieux.Lieux, branche par canard.py (sinon : pas de section Lieux)
         self.photos = None                      # photos.Photos (journal photo, mode photo), branche par canard.py
         self.position = None                    # position.PositionPlan (plan du lieu), branche par canard.py
+        self.sons_recents = collections.deque(maxlen=20)   # (instant, son) : ses derniers sons (canard jumeau)
         self.grab = None                        # image camera (vue en direct du casque, opt-in photos), canard.py
         self.usure = {}                         # courbes d'usure (servos, batteries), photographiees toutes les 30 s
         self.stats = {}                         # bilan du mois, graphique d'humeur (toutes les 30 s)
@@ -724,6 +728,16 @@ class Appli:
                     if self._autorise():
                         self._json(200, appli.position.resume() if appli.position is not None else {"plan": False})
                     return
+                if url.path == "/api/jumeau":
+                    if self._autorise():
+                        import jumeau
+                        try:
+                            depuis = float(parse_qs(url.query).get("depuis", ["0"])[0])
+                        except ValueError:
+                            depuis = 0.0
+                        e = jumeau.etat(list(appli.sons_recents), depuis)
+                        self._json(200, e) if e is not None else self._json(404, {"erreur": "pas de simulateur (duck-sim)"})
+                    return
                 if url.path == "/api/vue":
                     # « etre le canard » (casque) : une image de sa camera, SEULEMENT si les photos sont permises
                     # (Reglages, opt-in, code parent) - comme le journal photo
@@ -853,7 +867,8 @@ class Appli:
                                   "/api/tester-imprimante", "/api/redemarrer", "/api/choregraphies", "/api/comportement",
                                   "/api/regard", "/api/mise-a-jour", "/api/photo", "/api/message", "/api/parcours", "/api/carnet",
                                   "/api/imprimer", "/api/invites", "/api/minuteur", "/api/rappel", "/api/plan",
-                                  "/api/plan-supprimer", "/api/plan-annoter", "/api/verite", "/api/aller"):
+                                  "/api/plan-supprimer", "/api/plan-annoter", "/api/verite", "/api/aller",
+                                  "/api/jumeau-balle", "/api/jumeau-caresse"):
                     return self._json(404, {"erreur": "inconnu"})
                 if chemin == "/api/installation":
                     return self._installation()
@@ -870,6 +885,15 @@ class Appli:
                         raise ValueError
                 except (ValueError, AttributeError):
                     return self._json(400, {"erreur": "JSON attendu"})
+                if chemin == "/api/jumeau-balle":
+                    import jumeau
+                    return self._json(*jumeau.lancer(corps))
+                if chemin == "/api/jumeau-caresse":
+                    import jumeau
+                    if jumeau.lire_verite() is None:
+                        return self._json(404, {"erreur": "pas de simulateur (duck-sim)"})
+                    appli.evenements.put("caresse:jumeau")      # la main dans le casque, sur sa tete
+                    return self._json(200, {"ok": True})
                 if chemin == "/api/configuration":
                     import configuration
                     section = corps.get("section")

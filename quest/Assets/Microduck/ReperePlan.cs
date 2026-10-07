@@ -72,4 +72,7 @@ public static class ReperePlan
     public static Vector3 DirectionMonde(float cap) => Mathf.Cos(cap) * F + Mathf.Sin(cap) * G;
 
     public static float Sol => sol;
+    public static Vector3 Origine => C;                    // le chargeur, au sol
+    public static Vector3 Devant => F;
+    public static Vector3 Gauche => G;
 }

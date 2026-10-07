@@ -17,6 +17,7 @@ export GST_PLUGIN_FEATURE_RANK="nvh264enc:0,nvautogpuh264enc:0"
 # Verite terrain (fork) : positions reelles du canard et des balles, pour MESURER (pas decider).
 export DUCK_SIM_GROUNDTRUTH="$HOME/.cache/duck-sim/groundtruth.json"
 export DUCK_SIM_CONTROL="$HOME/.cache/duck-sim/control.json"   # teleporter la balle entre deux essais
+export DUCK_SIM_GT_HZ="${DUCK_SIM_GT_HZ:-30}"                     # canard jumeau (Quest) : 30 poses par seconde
 export DUCK_SIM_CAMERA_FLAT=1
 export DUCK_SIM_CAMERA_FPS="${DUCK_SIM_CAMERA_FPS:-10}"
 source "$HOME/.cargo/env"
