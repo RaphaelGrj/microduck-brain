@@ -273,3 +273,112 @@ def test_il_va_au_soleil():
     b2.etats["chill"].duree = lambda brain: 0.5
     vivre(b2, 5)
     assert "bain_soleil" not in [e[1] for e in b2.journal], "la nuit, pas de soleil"
+
+
+# == vivant III ===========================================================================================================
+def test_gouts_musicaux_et_sa_chanson():
+    g = personnage.Gouts({}, graine=1234)
+    assert all(-1.0 <= g.gout(b) <= 1.0 for b in range(60, 200, 7))
+    assert g.gout(101) == g.gout(102), "le gout de base change par tranches, pas au BPM pres"
+    for _ in range(5):
+        g.noter_bon(120)
+    assert g.chanson(120) and not g.chanson(160) and g.gout(120) >= min(1.0, g.base(120) + 0.7)
+
+
+def test_musique_qu_il_n_aime_pas_et_sa_chanson(tmp_path):
+    t = [1_000_000.0]
+    b, c, _ = cerveau(memoire=Memoire(tmp_path / "m.json"), mur=lambda: t[0])
+    froid = next(bpm for bpm in range(60, 200, 20) if b.gouts.gout(bpm) <= -0.5)
+    vivre(b, 1, evenements=[(0.1, f"musique:{froid}")])
+    assert b.courant.nom != "danse", "cette musique le laisse froid"
+    for _ in range(5):
+        b.gouts.noter_bon(froid)                           # ... mais associee a tant de bons moments : sa chanson
+    n = len(c.appels)
+    vivre(b, 1, evenements=[(0.1, f"musique:{froid}")])
+    assert b.courant.nom == "danse" and "wheee" in sons(c, n) and b.etats["danse"].entrain > 1.0
+
+
+def test_humeur_du_jour(tmp_path):
+    noms = {personnage.humeur_du_jour(42, j) for j in range(200)}
+    assert noms == set(personnage.HUMEURS_JOUR)
+    assert personnage.humeur_du_jour(42, 7) == personnage.humeur_du_jour(42, 7), "stable dans la journee"
+    t = [0.0]
+    jour = next(j for j in range(1000, 1200) if personnage.humeur_du_jour(round(1000 * 86400.0), j) == "paresseux")
+    t[0] = jour * 86400.0 + 3600.0
+    mem = Memoire(tmp_path / "m.json")
+    mem.donnees["personnalite"] = {"naissance": round(1000 * 86400.0)}
+    b, _, _ = cerveau(memoire=mem, mur=lambda: t[0])
+    assert b.humeur_jour == "paresseux" and b.facteur_sieste() >= 1.4 and b.perso.jour[0] < 1.0
+
+
+def test_trop_de_monde_il_s_isole():
+    b, c, _ = cerveau()
+    b.etats["chill"].duree = lambda brain: 0.5
+    evts = [(0.05 * k, "caresse") for k in range(40)]
+    vivre(b, 2, evenements=evts)
+    b._bascule("chill")
+    b.fin_etat = 0.0
+    vivre(b, 1)
+    assert b.courant.nom in ("solitude", "va_solitude"), b.courant.nom
+    n = len(c.appels)
+    vivre(b, 1, evenements=[(0.1, "appel")])
+    assert b.courant.nom == "solitude" and "coo" in sons(c, n), "il repond doucement, sans quitter son coin"
+
+
+def test_reves_de_la_journee():
+    import random
+    assert personnage.theme_de_reve({}, random.Random(1)) is None
+    assert personnage.theme_de_reve({"jeux": 5}, random.Random(1)) == "balle"
+    b, c, _ = cerveau()
+    b.du_jour = {"caresses": 9}
+    b._rng_vie.random = lambda: 0.0
+    b._bascule("nap")
+    nap = b.etats["nap"]
+    assert nap.theme == "tendresse"
+    nap.reves = [[3.0, 1.0, 1, False]]
+    nap.total = 12.0
+    b.fin_etat = 1e9
+    n = len(c.appels)
+    vivre(b, 5)
+    assert "coo" in sons(c, n) and any(m == "robot.head" and p["head_roll"] > 0.1 for m, p in c.appels[n:])
+
+
+def test_anniversaire(tmp_path):
+    import time
+    naissance = time.mktime((2026, 10, 7, 10, 0, 0, 0, 0, -1))
+    assert personnage.est_anniversaire(naissance, naissance + 3600) == 0, "pas le jour meme de sa naissance"
+    un_an = time.mktime((2027, 10, 7, 11, 0, 0, 0, 0, -1))
+    assert personnage.est_anniversaire(naissance, un_an) == 1
+    assert personnage.est_anniversaire(naissance, un_an + 86400) == 0
+    mem = Memoire(tmp_path / "m.json")
+    mem.donnees["personnalite"] = {"naissance": round(naissance)}
+    b, c, _ = cerveau(memoire=mem, mur=lambda: un_an)
+    vivre(b, 2)
+    assert "anniversaire" in [e[1] for e in b.journal] and b.anniversaire == 1
+    n = len(b.journal)
+    vivre(b, 20)
+    assert "anniversaire" not in [e[1] for e in b.journal[n:]], "une fete par an"
+
+
+class Chat:
+    def __init__(self):
+        self.suivi = type("S", (), {"visible": True})()
+        self.estimation = (0.0, 1.5, 0.0)
+
+    def evenements_en_attente(self):
+        return []
+
+
+def test_le_chat_dort_il_fait_la_sieste_pres_de_lui():
+    o = personnage.ObservateurChat()
+    for k in range(100):
+        o.noter(float(k), 1.0 + 0.01 * (k % 2), 0.0)
+    assert o.etat(99.0)[0] == "dort"
+    o2 = personnage.ObservateurChat()
+    for k in range(20):
+        o2.noter(k * 1.0, 0.5 * k, 0.0)
+    assert o2.etat(19.0)[0] == "joue"
+    b, _, _ = cerveau(tof=Tof(), chat=Chat())
+    b.humeur.energie = 0.5
+    vivre(b, 100)
+    assert "sieste_chat" in b.derniere_fois and {"va_chat", "nap"} & {e[1] for e in b.journal}

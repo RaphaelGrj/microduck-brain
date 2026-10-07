@@ -428,3 +428,141 @@ class BainSoleil(Etat):
         if brain.ctx.sitting and not brain.reste_assis():
             brain.ctx.toggle_sit()
         brain.ctx.calme()
+
+
+# == Vivant III (2026-10-07) : gouts musicaux, humeur du jour, solitude, reves de la journee, anniversaire, chat =========
+
+# -- ses gouts musicaux --------------------------------------------------------------------------------------------------
+class Gouts:
+    """Gout de base par tranche de tempo (20 BPM), tire une fois pour toutes d'apres sa graine (sa naissance) : -1 (ca
+    le laisse froid) .. +1 (il adore). Les bons moments vecus en dansant (caresse, rire, quelqu'un qui danse avec lui)
+    sont notes au tempo pres (4 BPM) : une musique souvent associee a du bonheur devient « sa chanson »."""
+    CHANSON_MIN = 5
+
+    def __init__(self, donnees=None, graine=0):
+        self.d = donnees.setdefault("gouts", {}) if donnees is not None else {}
+        self.d.setdefault("bons", {})
+        self.graine = graine
+
+    @staticmethod
+    def _case(bpm):
+        return str(int(round(bpm / 4.0)))
+
+    def base(self, bpm):
+        import random
+        return random.Random(f"{self.graine}:{int(bpm) // 20}").uniform(-1.0, 1.0)
+
+    def gout(self, bpm):
+        return max(-1.0, min(1.0, self.base(bpm) + 0.15 * self.d["bons"].get(self._case(bpm), 0)))
+
+    def noter_bon(self, bpm):
+        c = self._case(bpm)
+        self.d["bons"][c] = self.d["bons"].get(c, 0) + 1
+
+    def chanson(self, bpm):
+        """Sa chanson : le tempo le plus associe aux bons moments (au moins CHANSON_MIN fois)."""
+        bons = self.d["bons"]
+        c = self._case(bpm)
+        return bons.get(c, 0) >= self.CHANSON_MIN and bons[c] == max(bons.values())
+
+
+# -- l'humeur du jour ------------------------------------------------------------------------------------------------------
+# nom -> (promenade, taquineries, patience seul, siestes) : multiplicateurs de la journee
+HUMEURS_JOUR = {"normal": (1.0, 1.0, 1.0, 1.0), "joueur": (1.3, 1.3, 1.0, 0.85),
+                "paresseux": (0.7, 0.9, 1.1, 1.4), "collant": (1.0, 1.0, 0.6, 1.0)}
+POIDS_JOUR = {"normal": 0.5, "joueur": 0.2, "paresseux": 0.15, "collant": 0.15}
+
+
+def humeur_du_jour(graine, jour):
+    """Tiree chaque jour (stable dans la journee, meme apres un redemarrage) : -> nom de HUMEURS_JOUR."""
+    import random
+    noms = list(POIDS_JOUR)
+    return random.Random(f"{graine}:jour:{jour}").choices(noms, weights=[POIDS_JOUR[n] for n in noms])[0]
+
+
+# -- besoin de solitude ------------------------------------------------------------------------------------------------------
+class Solitude(Etat):
+    """Trop de sollicitations (fete, enfants) : il va se poser seul dans son coin, tete un peu basse, sans un son ; il
+    revient de lui-meme au bout de quelques minutes. Une caresse reste bienvenue (un « coo »), sans le faire repartir."""
+    nom = "solitude"
+    DUREE_S = (180.0, 360.0)
+
+    def entre(self, brain):
+        self.duree_s = getattr(brain, "_rng_vie", brain.rng).uniform(*self.DUREE_S)
+
+    def duree(self, brain):
+        return self.duree_s
+
+    def pas(self, brain, t):
+        brain.ctx.move()
+        brain.ctx.head(vie_au_repos(brain, t, (0.0, 0.2, 0.0, 0.0)))
+
+
+# -- reves de la journee ---------------------------------------------------------------------------------------------------
+REVES = {                        # theme -> (categorie du journal du jour, son, (cou, tete, lacet, roulis) au sommet)
+    "balle": ("jeux", "peck", (0.0, 0.85, 0.25, 0.0)),        # il « suit » une balle, la tete qui part de cote
+    "tendresse": ("caresses", "coo", (0.0, 0.7, 0.0, 0.15)),   # la tete qui se penche, comme sous une main
+    "accueil": ("accueils", "chirp", (0.0, 0.6, 0.0, 0.0)),    # la tete qui se releve un peu : quelqu'un rentre
+    "danse": ("danses", None, (0.0, 0.78, 0.0, 0.1)),          # un petit balancement
+}
+
+
+def theme_de_reve(du_jour, rng):
+    """Un theme tire au prorata de ce qu'il a vecu aujourd'hui (journal du jour), ou None (reve ordinaire)."""
+    poids = {th: (du_jour or {}).get(cat, 0) for th, (cat, _, _) in REVES.items()}
+    total = sum(poids.values())
+    if total <= 0:
+        return None
+    r, cumul = rng.random() * total, 0.0
+    for th, p in poids.items():
+        cumul += p
+        if r < cumul:
+            return th
+    return None
+
+
+# -- son anniversaire ---------------------------------------------------------------------------------------------------------
+def est_anniversaire(naissance, maintenant, horloge=None):
+    """Meme jour et meme mois que sa premiere mise en route, au moins un an plus tard. -> nombre d'annees, ou 0."""
+    import time as _t
+    if naissance is None:
+        return 0
+    h = (horloge or _t.localtime)
+    n, m = h(naissance), h(maintenant)
+    if (n.tm_mon, n.tm_mday) != (m.tm_mon, m.tm_mday) or m.tm_year <= n.tm_year:
+        return 0
+    return m.tm_year - n.tm_year
+
+
+# -- le chat comme modele ----------------------------------------------------------------------------------------------------
+class ObservateurChat:
+    """Ou est le chat dans la maison (repere de l'odometrie) au fil des images : il dort (presque immobile depuis
+    DORT_S) ou il joue (il bouge beaucoup sans venir vers le canard)."""
+    DORT_S = 90.0
+    DORT_M = 0.12
+    JOUE_M_S = 0.25
+
+    def __init__(self):
+        self.points = []                                  # (t_global, x, y)
+
+    def noter(self, t, x, y):
+        self.points = [p for p in self.points if t - p[0] <= self.DORT_S + 30.0] + [(t, x, y)]
+
+    def oublier(self):
+        self.points = []
+
+    def etat(self, t):
+        """-> ("dort", (x, y)) | ("joue", (x, y)) | None."""
+        if len(self.points) < 3 or t - self.points[-1][0] > 5.0:
+            return None
+        x, y = self.points[-1][1], self.points[-1][2]
+        recents = [p for p in self.points if t - p[0] <= 10.0]
+        if len(recents) >= 3:
+            chemin = sum(math.hypot(b[1] - a[1], b[2] - a[2]) for a, b in zip(recents, recents[1:]))
+            if chemin / max(1e-6, recents[-1][0] - recents[0][0]) >= self.JOUE_M_S:
+                return "joue", (x, y)
+        anciens = [p for p in self.points if t - p[0] >= self.DORT_S]
+        if anciens and all(math.hypot(p[1] - x, p[2] - y) <= self.DORT_M
+                           for p in self.points if p[0] >= anciens[-1][0]):
+            return "dort", (x, y)
+        return None

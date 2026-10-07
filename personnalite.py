@@ -110,17 +110,19 @@ class Personnalite:
         return 2.0 * self.reglage.get("bavard", 0.5)        # 0 : plus aucun petit son gratuit
 
     # -- effets (multiplicateurs ~ 1 autour de 0,5) --------------------------------------------------------------------
+    jour = (1.0, 1.0, 1.0, 1.0)  # humeur du jour (personnage.HUMEURS_JOUR) : promenade, taquineries, patience, siestes
+
     def envie_promenade(self):
-        return (0.5 + self.trait("curiosite")) * (1.5 - self.trait("prudence")) * self.curseur("joueur")
+        return (0.5 + self.trait("curiosite")) * (1.5 - self.trait("prudence")) * self.curseur("joueur") * self.jour[0]
 
     # -- age (vivant.py) : jeune, il est timide et peu sur de ses blagues ; il gagne en assurance avec les semaines --
     assurance = 1.0             # 0,5 .. 1 : multiplie l'envie de taquiner
     jeunesse = 0.0              # 1 .. 0 : timidite de jeunesse (demandes d'attention plus rares)
 
     def envie_taquiner(self):
-        return (0.5 + self.trait("espieglerie")) * self.curseur("taquin") * self.assurance
+        return (0.5 + self.trait("espieglerie")) * self.curseur("taquin") * self.assurance * self.jour[1]
 
     def patience_seul(self):
         """Multiplie le temps avant de s'ennuyer et d'aller chercher de la compagnie : un canard sociable y va plus tot,
         un tout jeune canard timide attend plus longtemps avant d'oser."""
-        return (1.5 - self.trait("sociabilite")) * (1.0 + 0.5 * self.jeunesse)
+        return (1.5 - self.trait("sociabilite")) * (1.0 + 0.5 * self.jeunesse) * self.jour[2]

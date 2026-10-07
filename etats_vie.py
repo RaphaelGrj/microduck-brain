@@ -217,10 +217,11 @@ class Danse(Etat):
 
     def __init__(self):
         self.bpm = 100
+        self.entrain, self.son = 1.0, "chirp"      # ses gouts (personnage.Gouts) : plus ample sur ce qu'il aime
 
     def entre(self, brain):
         self.periode = 60.0 / (self.bpm / 2 if self.bpm > 130 else self.bpm)    # a 180 BPM, un hochement sur deux
-        brain.ctx.sound("chirp")
+        brain.ctx.sound(self.son)
         self.veille = brain.ctx.extras.get("mouvement")
         if self.veille is not None and not hasattr(self.veille, "en_rythme"):
             self.veille = None
@@ -261,7 +262,9 @@ class Danse(Etat):
                 print(f"[{brain.t_global:6.1f}s] quelqu'un danse en rythme : il danse avec lui", flush=True)
                 brain.ctx.sound("wheee")
                 brain.perso.vit("jeu")
-        a = self.AMPLITUDE_ENSEMBLE if self.ensemble else 1.0
+                if getattr(brain, "gouts", None) is not None:
+                    brain.gouts.noter_bon(self.bpm)       # danser avec quelqu'un : un bon moment sur cette musique
+        a = (self.AMPLITUDE_ENSEMBLE if self.ensemble else 1.0) * self.entrain
         k = gestures._smooth(t, self.t0, self.t0 + 1.0) * (1.0 - gestures._smooth(t, brain.fin_etat - 1.0, brain.fin_etat))
         phase = 2 * math.pi * (t - self.t0) / self.periode
         brain.ctx.head((0.0, 0.2 * a * k * max(0.0, math.sin(phase)), 0.0, 0.12 * a * k * math.sin(phase / 2)))

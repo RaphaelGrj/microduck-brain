@@ -158,12 +158,12 @@ def test_jeune_timide_et_peu_sur_de_ses_blagues_puis_assure(tmp_path):
     t = [1_000_000.0]
     b, _, _ = cerveau(memoire=Memoire(tmp_path / "m.json"), mur=lambda: t[0])
     assert b.age() < 0.01 and b.perso.jeunesse == 1.0 and b.perso.assurance == 0.5
-    jeune = b.perso.envie_taquiner()
+    jeune = b.perso.envie_taquiner() / b.perso.jour[1]          # (hors humeur du jour, qui change chaque jour)
     b._sur_visiteur(True)
     assert b.timidite_depart > 1.0, "tout jeune, plus timide avec un inconnu"
     t[0] += 70 * 86400
     b._vieillit()
-    assert b.perso.jeunesse == 0.0 and b.perso.assurance == 1.0 and b.perso.envie_taquiner() == 2 * jeune
+    assert b.perso.jeunesse == 0.0 and b.perso.assurance == 1.0 and abs(b.perso.envie_taquiner() / b.perso.jour[1] - 2 * jeune) < 1e-9
     sans, _, _ = cerveau()
     assert sans.perso.assurance == 1.0 and sans.perso.jeunesse == 0.0, "sans memoire : aucun effet (essais)"
 

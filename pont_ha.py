@@ -709,6 +709,7 @@ class PontHA:
             "objets_au_sol": list(getattr(brain, "objets_au_sol", None) or []),
             "du_jour": dict(getattr(brain, "du_jour", None) or {}),
             "lumiere_oubliee": getattr(brain, "lumiere_oubliee", False), "lumiere": getattr(brain, "lumiere", None),
+            "anniversaire": getattr(brain, "anniversaire", 0), "humeur_jour": getattr(brain, "humeur_jour", None),
             "derniere_blague": (brain.malice.historique[-1][1] if getattr(getattr(brain, "malice", None), "historique", None)
                                 else None),
         }
@@ -806,6 +807,9 @@ class PontHA:
         ent["binary_sensor.microduck_lumiere_oubliee"] = ("on" if i.get("lumiere_oubliee") else "off", {
             "friendly_name": "Microduck - lumiere allumee sans personne", "icon": "mdi:lightbulb-alert",
             "luminosite": round(i["lumiere"], 2) if i.get("lumiere") is not None else None})
+        ent["binary_sensor.microduck_anniversaire"] = ("on" if i.get("anniversaire") else "off", {
+            "friendly_name": "Microduck - c'est son anniversaire", "icon": "mdi:cake-variant",
+            "ans": i.get("anniversaire") or None, "humeur_du_jour": i.get("humeur_jour")})
         attrs_chat = {"friendly_name": "Microduck - chat vu", "icon": "mdi:cat"}
         if self._derniere_vue_chat is not None:
             attrs_chat["derniere_vue_il_y_a_s"] = round(time.time() - self._derniere_vue_chat, 1)
