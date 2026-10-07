@@ -24,6 +24,8 @@ SEUIL_RAD = 0.06           # ~3,4 degres d'ecart sur un joint de tete
 TENU_S = 0.3               # ecart tenu au moins 0,3 s (un choc ou un a-coup de la marche n'est pas une caresse)
 SEUIL_MA = 60.0            # surcroit de courant sur un servo de tete (mA) : un appui qui force le servo
 ADAPTATION_S = 10.0        # derive lente de la position de repos (temperature, gravite) suivie en dehors des contacts
+SAUT_RAD = 0.05            # une consigne qui SAUTE (geste, regard) : on remesure ; une consigne qui glisse lentement
+                           # (respiration, petites saccades : vivant.py) est suivie - on mesure l'ecart a la consigne
 
 
 class DetecteurCaresse:
@@ -41,20 +43,34 @@ class DetecteurCaresse:
         self.contact_depuis = None
         self.en_contact = False
 
+    def _ecarts(self, joints):
+        """Position mesuree moins consigne (la tete suit sa consigne a un petit ecart pres : gravite, souplesse)."""
+        c = self.consigne
+        return [j - (c[i] if c is not None and i < len(c) else 0.0) for i, j in enumerate(joints)]
+
     def ecart(self, joints):
-        return max(abs(j - r) for j, r in zip(joints, self.repos)) if self.repos is not None else 0.0
+        if self.repos is None:
+            return 0.0
+        return max(abs(e - r) for e, r in zip(self._ecarts(joints), self.repos))
 
     def mise_a_jour(self, t, consigne, joints_tete, immobile=True, courants=None):
         """`consigne` : derniere consigne robot.head (tuple), `joints_tete` : 4 positions mesurees, `immobile` : le
         corps ne marche pas, `courants` : 4 courants mesures (mA) ou None. Renvoie ["caresse"] au debut d'un contact."""
-        if not immobile or consigne != self.consigne or joints_tete is None:
+        if not immobile or joints_tete is None:
             self.reinitialiser(consigne if immobile else None, t)
             return []
+        if consigne != self.consigne:
+            saut = (consigne is None or self.consigne is None
+                    or max(abs(a - b) for a, b in zip(consigne, self.consigne)) > SAUT_RAD * (1 if self.repos is None else 0.5))
+            if saut:
+                self.reinitialiser(consigne, t)
+                return []
+            self.consigne = consigne               # elle glisse doucement : on la suit sans remesurer
         age = t - self.t_consigne
         if age < ETABLISSEMENT_S:
             return []
         if self.repos is None:
-            self.echantillons.append((tuple(joints_tete), tuple(courants) if courants else None))
+            self.echantillons.append((tuple(self._ecarts(joints_tete)), tuple(courants) if courants else None))
             if age >= ETABLISSEMENT_S + MESURE_S:
                 n = len(self.echantillons)
                 self.repos = [sum(e[0][i] for e in self.echantillons) / n for i in range(4)]
@@ -68,7 +84,7 @@ class DetecteurCaresse:
         if e < SEUIL_RAD / 2:
             self.contact_depuis, self.en_contact = None, False
             k = min(1.0, 0.02 / ADAPTATION_S)          # ~ une trame de 20 ms sur ADAPTATION_S
-            self.repos = [r + k * (j - r) for r, j in zip(self.repos, joints_tete)]
+            self.repos = [r + k * (j - r) for r, j in zip(self.repos, self._ecarts(joints_tete))]
             if courants and self.repos_ma is not None:
                 self.repos_ma = [r + k * (c - r) for r, c in zip(self.repos_ma, courants)]
             return []

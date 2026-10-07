@@ -11,6 +11,7 @@
   const VIE = [["chill", 14], ["look", 8], ["wander", 12], ["curious", 6], ["jeu_solitaire", 10], ["chill", 10],
     ["etirement", 5], ["regarde_chat", 8], ["nap", 18], ["bonjour", 5]];
   const JEUX = { jouer_balle: "balle", jouer_cache: "cache_cache", jouer_soleil: "soleil", danse: "danse",
+    suis_moi: "suis_moi", je_te_suis: "mene",
     salut: "salut", toupie: "toupie", avance: "pas_guide", gauche: "pas_guide", droite: "pas_guide" };
   const REGARDS = { regard_gauche: [0, 0, 0.6, 0], regard_droite: [0, 0, -0.6, 0], regard_haut: [0, -0.3, 0, 0],
     regard_bas: [0, 0.4, 0, 0], regard_centre: [0, 0, 0, 0] };
@@ -126,7 +127,7 @@
       caractere: {
         traits: { curiosite: 0.72, sociabilite: 0.64, espieglerie: 0.58, prudence: 0.41 },
         sons: { greet: 3, chirp: 5, coo: 4, inquire: 2, peck: 1, wheee: 2, alarm: 0.2 },
-        blagues: 3,
+        blagues: 3, age_jours: 12,
         etres: [{ nom: "Raphaël", familiarite: 0.92, rencontres: 214 }, { nom: "le chat", familiarite: 0.61, rencontres: 87 }],
       },
     };

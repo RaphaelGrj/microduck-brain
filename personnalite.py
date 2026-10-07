@@ -113,9 +113,14 @@ class Personnalite:
     def envie_promenade(self):
         return (0.5 + self.trait("curiosite")) * (1.5 - self.trait("prudence")) * self.curseur("joueur")
 
+    # -- age (vivant.py) : jeune, il est timide et peu sur de ses blagues ; il gagne en assurance avec les semaines --
+    assurance = 1.0             # 0,5 .. 1 : multiplie l'envie de taquiner
+    jeunesse = 0.0              # 1 .. 0 : timidite de jeunesse (demandes d'attention plus rares)
+
     def envie_taquiner(self):
-        return (0.5 + self.trait("espieglerie")) * self.curseur("taquin")
+        return (0.5 + self.trait("espieglerie")) * self.curseur("taquin") * self.assurance
 
     def patience_seul(self):
-        """Multiplie le temps avant de s'ennuyer et d'aller chercher de la compagnie : un canard sociable y va plus tot."""
-        return 1.5 - self.trait("sociabilite")
+        """Multiplie le temps avant de s'ennuyer et d'aller chercher de la compagnie : un canard sociable y va plus tot,
+        un tout jeune canard timide attend plus longtemps avant d'oser."""
+        return (1.5 - self.trait("sociabilite")) * (1.0 + 0.5 * self.jeunesse)

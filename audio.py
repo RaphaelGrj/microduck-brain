@@ -10,6 +10,7 @@ le pipeline micro qui manquait (journal du 2026-10-05 : "aucun pipeline micro/FF
   - "musique_fin"      : le battement s'est arrete ;
   - "discussion_longue" : des voix (son actif, hors musique) sur plus de 25 % des blocs de 2 min -> faux baillement ;
   - "silence_conversation" : un silence d'au moins 1,2 s juste apres plusieurs secondes de voix -> "dernier mot" ;
+  - "enonce:<duree>|<sens>" : fin d'une phrase de 0,3 a 3,5 s (tour de parole : le cerveau peut y « repondre ») ;
   - "intonation:monte|descend" : un enonce de 0,4 a 3 s dont la hauteur (autocorrelation) monte ou descend d'au moins
     3 demi-tons -> le canard mime le ton (taquinerie) ;
   - "alarme_fumee:son" : bips aigus (2,5-4,5 kHz) reguliers, au moins 9 en 15 s (motif T3 des detecteurs de fumee :
@@ -307,6 +308,8 @@ class AnalyseurSon:
                     out.append("baillement_entendu")
                 elif sens and self._peut("intonation", 8.0):
                     out.append(f"intonation:{sens}")
+                if not tronque and duree >= 0.3 and len(h) >= 4:        # une voix (hauteur suivie), pas un choc
+                    out.append(f"enonce:{duree:.1f}|{sens or ''}")      # tour de parole (vivant : il repond)
                 if tronque:
                     self.enonces.append((self.t, duree, None))   # compte dans la parole, sans hauteur
                 elif len(h) >= 4:

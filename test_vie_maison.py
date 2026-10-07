@@ -168,6 +168,7 @@ def test_coup_d_oeil_vers_un_mouvement_au_bord_seulement():
         v = VeilleMvt()
         b, c, _ = cerveau(mouvement=v)
         b.etats["chill"].duree = lambda brain: 1e9
+        b.etats["chill"].aux_aguets = True      # un repos « aux aguets » (vivant : les autres, il respire)
         b.fin_etat = 1e9
         vivre(b, 3)
         assert v.arme, "veille armee au repos"

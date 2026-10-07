@@ -27,7 +27,8 @@ def test_decouragement_progressif():
     simule(b, 2500)                                   # 40 min sans que personne ne reponde
     noms = [e[1] for e in b.journal]
     assert noms.count("cherche_attention") == 2, noms.count("cherche_attention")
-    assert "jeu_solitaire" in noms[noms.index("cherche_attention"):], "ignore deux fois : il s'occupe seul"
+    apres = noms[noms.index("cherche_attention"):]
+    assert "jeu_solitaire" in apres or "boude" in apres, "ignore deux fois : il s'occupe seul (ou il boude, vivant.py)"
     assert b.ignores >= 2
     b.evenement("caresse")
     simule(b, 1)

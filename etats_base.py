@@ -151,6 +151,21 @@ class Etat:
 
 class Chill(Etat):
     nom = "chill"
+    P_AUX_AGUETS = 0.35          # un repos sur trois : il se fige, aux aguets (la veille du coup d'oeil peut tourner)
+    aux_aguets = False
+
+    def entre(self, brain):
+        self.aux_aguets = getattr(brain, "_rng_vie", brain.rng).random() < self.P_AUX_AGUETS
+
+    def pas(self, brain, t):
+        """Au repos il respire et son regard bouge un peu (vivant.py) - sauf aux aguets : immobile, il guette."""
+        brain.ctx.move()
+        brain.ctx.pose(None)
+        if self.aux_aguets:
+            brain.ctx.head((0.0, 0.0, 0.0, 0.0))
+        else:
+            from vivant import vie_au_repos
+            brain.ctx.head(vie_au_repos(brain, t))
 
     def duree(self, brain):
         # initiative rare : plus l'eveil est haut, moins on reste longtemps au calme

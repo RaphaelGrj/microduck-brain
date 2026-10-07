@@ -58,11 +58,40 @@ class SuiviChat:
         return ["chat"]
 
 
+CARESSE_IMAGES = 3              # chat et personne colles sur 3 images d'affilee (~1,5 s) : on le caresse
+CARESSE_DELAI_S = 20 * 60.0
+
+
+def colles(chat, personne, marge=0.3):
+    """La boite du chat touche celle de la personne (elargie de `marge` de sa largeur) : une main sur le chat."""
+    mx = marge * personne.w
+    return not (chat.x + chat.w < personne.x - mx or chat.x > personne.x + personne.w + mx
+                or chat.y + chat.h < personne.y or chat.y > personne.y + personne.h)
+
+
+class SuiviCaresse:
+    """Quelqu'un caresse le chat (chat et personne colles plusieurs images) -> « chat_caresse » (jalousie, vivant.py)."""
+    def __init__(self, horloge=time.monotonic):
+        self.horloge, self.serie, self.dernier = horloge, 0, None
+
+    def mise_a_jour(self, chats, personnes):
+        if chats and personnes and any(colles(c, p) for c in chats for p in personnes):
+            self.serie += 1
+        else:
+            self.serie = 0
+        now = self.horloge()
+        if self.serie >= CARESSE_IMAGES and (self.dernier is None or now - self.dernier >= CARESSE_DELAI_S):
+            self.dernier = now
+            return ["chat_caresse"]
+        return []
+
+
 class VeilleChat(threading.Thread):
     def __init__(self, detecteur, grab_frame, periode_s=0.5, seuil=0.5, memoire=None, **suivi):
         super().__init__(daemon=True)
         self.detecteur, self.grab, self.periode_s, self.seuil = detecteur, grab_frame, periode_s, seuil
         self.suivi = SuiviChat(**suivi)
+        self.caresse = SuiviCaresse()
         if memoire is not None:
             self.suivi.sur_apparition = lambda t: memoire.rencontre("chat")
         self.evenements = []
@@ -80,8 +109,10 @@ class VeilleChat(threading.Thread):
             t0 = time.monotonic()
             try:
                 etat = self.etat_robot               # la pose AU MOMENT de la prise de vue (la tete bouge lentement)
-                objets = self.detecteur.detect(self.grab(), classes=("cat",), seuil=self.seuil)
-                evts = self.suivi.mise_a_jour(objets)
+                tout = self.detecteur.detect(self.grab(), classes=("cat", "person"), seuil=self.seuil)
+                objets = [o for o in tout if getattr(o, "classe", "cat") == "cat"]
+                personnes = [o for o in tout if getattr(o, "classe", None) == "person"]
+                evts = self.suivi.mise_a_jour(objets) + self.caresse.mise_a_jour(objets, personnes)
                 if objets and etat is not None and self.suivi.visible:
                     o = max(objets, key=lambda q: q.score)
                     p = geometry.point_au_sol(o.pied[0], o.pied[1], etat["frames"]["camera"], etat["odom"]["position"][2])
