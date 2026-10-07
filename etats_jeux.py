@@ -312,10 +312,11 @@ class JeuBalle(Etat):
                 self._arreter_vision()
                 self.t_tir = time.monotonic()    # horloge de VeilleBalle.estimation
                 self._phase(t, "regarde")
-            elif dt >= self.MANCHE_MAX_S:
+            elif dt >= self.MANCHE_MAX_S or getattr(self.ap, "etat", None) == "PERDU":
                 ctx.move()
                 self._arreter_vision()
-                self._fin(brain, t, "pas_trouvee")
+                ctx.sound("inquire")              # « mais... elle etait la ? »
+                self._phase(t, "perplexe")
         elif self.phase == "regarde":            # le tir est parti : on laisse la balle rouler, tete au neutre
             ctx.head((0.0, 0.0, 0.0, 0.0))
             ctx.move()
@@ -337,7 +338,25 @@ class JeuBalle(Etat):
             ctx.pose(gestures.content_corps(dt) if dt < d else None)
             ctx.move()
             if dt >= d + 0.3:
-                self._fin(brain, t, "reussi")
+                # tour de victoire (une fois sur deux, toujours sur un nouveau record) : un tour complet sur place,
+                # tete haute, un « wheee » ; pivot seul, jamais de marche
+                record = self._record(brain)
+                if record or brain.rng.random() < 0.5:
+                    if record:
+                        ctx.sound("wheee")
+                    self._phase(t, "victoire")
+                else:
+                    self._fin(brain, t, "reussi")
+        elif self.phase == "victoire":
+            tour_s = 2 * math.pi / V_ROTATION
+            ctx.head((0.0, -0.1, 0.0, 0.0))
+            if dt < tour_s:
+                ctx.move(vyaw=V_ROTATION)
+            else:
+                ctx.move()
+                ctx.head(gestures.fier(min(dt - tour_s, 1.8)))
+                if dt >= tour_s + 1.8:
+                    self._fin(brain, t, "reussi")
         elif self.phase == "depit":              # "non" de la tete, puis souvent on retente
             d, fn = gestures.GESTES["non"]
             ctx.head(fn(dt) if dt < d else (0, 0, 0, 0))
@@ -347,9 +366,27 @@ class JeuBalle(Etat):
                     ctx.sound("inquire")          # regain de motivation
                     self._nouvelle_manche(brain, t)
                 else:
-                    self._fin(brain, t, "rate")
+                    ctx.sound("coo")              # gros soupir
+                    self._phase(t, "abattu")
+        elif self.phase == "abattu":             # tete basse un moment : decu (puis il passe a autre chose)
+            ctx.move()
+            k = gestures._smooth(dt, 0.0, 0.8) * (1.0 - gestures._smooth(dt, 3.2, 4.0))
+            ctx.head((0.0, 0.4 * k, 0.0, 0.08 * k))
+            if dt >= 4.0:
+                self._fin(brain, t, "rate")
+        elif self.phase == "perplexe":           # la balle a disparu (une meprise ?) : il regarde a gauche, a droite
+            ctx.move()
+            ctx.head(gestures.curieux(min(dt, 2.5)) if dt < 2.5 else (0.0, 0.1, 0.4 * math.sin(2.5 * (dt - 2.5)), 0.0))
+            if dt >= 4.5:
+                self._fin(brain, t, "pas_trouvee")
         else:
             ctx.move()
+
+    def _record(self, brain):
+        """Cette reussite bat-elle sa meilleure serie ? (statistiques de la memoire, avant de compter ce tir)"""
+        mem = brain.ctx.extras.get("memoire")
+        st = (getattr(mem, "donnees", None) or {}).get("balle") if mem is not None else None
+        return isinstance(st, dict) and st.get("record", 0) >= 2 and st.get("serie", 0) + 1 > st["record"]
 
     def _phase(self, t, nom):
         self.phase, self.t_phase = nom, t

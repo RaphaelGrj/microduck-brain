@@ -245,6 +245,7 @@
     "Il attend quelqu'un": "He's waiting for someone", "Il va à la porte": "He's going to the door", "Il te suit": "He's following you",
     "Il te montre le chemin": "He's showing the way", "Il te répond": "He's answering you", "Jaloux !": "Jealous!",
     "Il va flâner": "He's wandering off", "Un bon souvenir": "A good memory", "Méfiant": "Wary", "Lance-la !": "Throw it!",
+    "Il a le hoquet": "He has hiccups", "Hoquet passé !": "Hiccups gone!", "Oups !": "Oops!", "Il fait son nid": "Making his nest", "Il inspecte": "Inspecting", "Il rejoue ton rythme": "Playing your rhythm back", "Il dit ton nom": "Saying your name", "Il se fait tout petit": "Making himself small", "Bain de soleil": "Sunbathing", "Avec son doudou": "With his favourite toy", "Il va voir son doudou": "Off to his favourite toy", "Il rit avec toi": "Laughing along", "Il fait le malin": "Showing off", "C'est l'heure du câlin": "Cuddle time",
     // lot 9 : minuteurs, rappels, reveil, humeur, bilan du mois
     "Minuteurs et rappels": "Timers and reminders", "🔕 Arrêter son signal": "🔕 Stop his signal", "Durée en minutes": "Duration in minutes",
     "Pour quoi ? (pâtes, lessive…)": "What for? (pasta, laundry…)", "Nom du minuteur": "Timer name", "Lancer": "Start",

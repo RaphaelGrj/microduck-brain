@@ -28,6 +28,12 @@ le pipeline micro qui manquait (journal du 2026-10-05 : "aucun pipeline micro/FF
     pas l'alarme incendie, dont les bips continuent (motif T3) ;
   - "vacarme" / "vacarme_fin" : niveau sonore moyen tres eleve pendant une minute (fete, dispute, travaux) -> il se
     retire dans son coin ; fin quand c'est retombe depuis 30 s. Seuil absolu (dBFS) a etalonner sur le vrai micro ;
+  - "motif:<ms,ms,...>" : un groupe de 2 a 8 tapes (mains, table) aux ecarts de 0,1 a 0,75 s, juge avant appel /
+    toc_porte : le rythme tape (vivant II : il le rejoue en coups de bec si l'on joue avec lui) ;
+  - "rire"             : un enonce voise fait de 4 eclats ou plus, reguliers (0,12-0,35 s) et tres detaches (creux
+    >= 12 dB) - le « ha-ha-ha » ; a la place de l'enonce. Heuristique a etalonner sur le vrai micro ;
+  - "ambiance:tendue"  : 4 enonces tres forts (>= 35 dB au-dessus du fond) en 20 s : des voix qui montent -> il se
+    fait petit. Seuil a etalonner ;
   - "eternuement"      : bruit large bande (platitude spectrale), attaque nette, 0,12 a 0,6 s, tres au-dessus du fond.
     Heuristique a etalonner : une chute d'objet peut y ressembler (consequence benigne : il "compte" au lieu de sursauter).
 Methode : niveau par bloc (dB), bruit de fond suivi par le bas (monte lentement, descend tout de suite), transitoires =
@@ -125,6 +131,31 @@ def baillement(son, h):
     return 12.0 * (debut - fin) >= 5.0
 
 
+def eclats(son, bloc=BLOC):
+    """Eclats d'un enonce (rire) : pics d'energie par bloc de 20 ms, chacun >= 12 dB au-dessus du creux qui le
+    precede. -> liste des instants (s) des pics."""
+    n = len(son) // bloc
+    if n < 6:
+        return []
+    e = 10.0 * np.log10(np.mean(np.asarray(son[: n * bloc]).reshape(n, bloc) ** 2, axis=1) + 1e-12)
+    pics, creux = [], e[0]
+    for i in range(1, n - 1):
+        creux = min(creux, e[i])
+        if e[i] >= e[i - 1] and e[i] > e[i + 1] and e[i] - creux >= 12.0:
+            pics.append(i * bloc / TAUX)
+            creux = e[i]
+    return pics
+
+
+def rire(son):
+    """Un rire : au moins 4 eclats, ecarts de 0,12 a 0,35 s, reguliers (ecart-type <= 25 % de la moyenne)."""
+    p = eclats(son)
+    if len(p) < 4:
+        return False
+    d = np.diff(p)
+    return bool(np.all((d >= 0.12) & (d <= 0.35)) and float(np.std(d)) <= 0.25 * float(np.mean(d)))
+
+
 TEL_FENETRE_S = 60.0            # telephone : on juge sur la derniere minute
 TEL_ENONCES_MIN = 6
 TEL_DEMI_TONS = 3.0             # une seule voix : hauteurs medianes des enonces a +-3 demi-tons
@@ -166,6 +197,8 @@ class AnalyseurSon:
         self.enonces = []                        # (fin, duree, hauteur mediane) des enonces voises (telephone)
         self.telephone = False
         self.silence_avant_enonce = 0.0          # silence (s) juste avant l'enonce en cours (baillement)
+        self.enonce_pic = 0.0                    # niveau max au-dessus du fond pendant l'enonce en cours
+        self.fortes = []                         # fins des enonces tres forts (ambiance tendue), 20 s
 
     def _peut(self, nom, delai):
         if self.t - self.dernier.get(nom, -1e9) < delai:
@@ -290,6 +323,7 @@ class AnalyseurSon:
                     n += 1
                 self.silence_avant_enonce = n * BLOC / TAUX
             self.enonce = (self.enonce + [x])[-175:]
+            self.enonce_pic = max(self.enonce_pic if len(self.enonce) > 1 else 0.0, niveau - self.fond)
             self.blocs_enonce += 1               # duree REELLE (le son garde est tronque a 3,5 s)
             self.calme_enonce = 0
         elif self.enonce:
@@ -309,7 +343,16 @@ class AnalyseurSon:
                 elif sens and self._peut("intonation", 8.0):
                     out.append(f"intonation:{sens}")
                 if not tronque and duree >= 0.3 and len(h) >= 4:        # une voix (hauteur suivie), pas un choc
-                    out.append(f"enonce:{duree:.1f}|{sens or ''}")      # tour de parole (vivant : il repond)
+                    if rire(son):
+                        if self._peut("rire", 5.0):
+                            out.append("rire")                          # « ha-ha-ha » : on rit
+                    else:
+                        out.append(f"enonce:{duree:.1f}|{sens or ''}")  # tour de parole (vivant : il repond)
+                    if self.enonce_pic >= 35.0:
+                        self.fortes = [f for f in self.fortes if self.t - f <= 20.0] + [self.t]
+                        if len(self.fortes) >= 4 and self._peut("ambiance_tendue", 300.0):
+                            self.fortes = []
+                            out.append("ambiance:tendue")               # des voix qui montent
                 if tronque:
                     self.enonces.append((self.t, duree, None))   # compte dans la parole, sans hauteur
                 elif len(h) >= 4:
@@ -361,6 +404,13 @@ class AnalyseurSon:
         groupe, self.claps = self.claps, []
         c = [t for t, _ in groupe]
         ecarts = np.diff(c)
+        motif = []
+        if 2 <= len(c) <= 8 and all(0.1 <= e <= 0.75 for e in ecarts) and not (
+                len(c) >= 5 and float(np.mean(ecarts)) <= 0.35 and c[-1] - c[0] <= 2.5):
+            motif = ["motif:" + ",".join(str(int(round(e * 1000))) for e in ecarts)]   # le rythme tape
+        return motif + self._juge_groupe(groupe, c, ecarts)
+
+    def _juge_groupe(self, groupe, c, ecarts):
         if 2 <= len(c) <= 5 and np.mean([z for _, z in groupe]) < 1500.0 and all(0.1 <= e <= 0.45 for e in ecarts):
             return ["toc_porte"] if self._peut("toc_porte", 20.0) else []     # chocs graves : on frappe a la porte
         if len(c) >= 5 and c[-1] - c[0] <= 2.5 and float(np.mean(ecarts)) <= 0.35:   # serres : pas un battement

@@ -28,8 +28,9 @@ def analyse(sig, a=None):
     return out
 
 
-def noms(evts):
-    return [e for _, e in evts]
+def noms(evts, motifs=False):
+    """(les « motif:... » - rythme tape, vivant II - sont ecartes sauf demande : testes a part)"""
+    return [e for _, e in evts if motifs or not e.startswith("motif:")]
 
 
 def test_silence_rien():

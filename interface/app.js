@@ -21,7 +21,8 @@ const ETATS = {
   fier: "Il est fier", ou_es_tu: "Je suis là !", parcours: "Il fait son parcours", pose_photo: "Il prend la pose", signal: "Il te signale quelque chose",
   boude: "Il boude", reconcilie: "Réconciliés !", attend_porte: "Il attend quelqu'un", va_porte: "Il va à la porte",
   suis_moi: "Il te suit", mene: "Il te montre le chemin", repond: "Il te répond", jaloux: "Jaloux !",
-  va_souvenir: "Il va flâner", souvenir: "Un bon souvenir", mefiant_lieu: "Méfiant", excite: "Lance-la !", choregraphie: "Il fait son tour", baillement: "Il bâille", baillement_contagieux: "Il bâille", fausse_chute: "Fausse chute !",
+  va_souvenir: "Il va flâner", souvenir: "Un bon souvenir", mefiant_lieu: "Méfiant", excite: "Lance-la !",
+  hoquet: "Il a le hoquet", gueri: "Hoquet passé !", gaffe: "Oups !", nid: "Il fait son nid", inspecte: "Il inspecte", rythme: "Il rejoue ton rythme", nomme: "Il dit ton nom", petit: "Il se fait tout petit", bain_soleil: "Bain de soleil", doudou: "Avec son doudou", va_doudou: "Il va voir son doudou", rit: "Il rit avec toi", cabotine: "Il fait le malin", reclame: "C'est l'heure du câlin", choregraphie: "Il fait son tour", baillement: "Il bâille", baillement_contagieux: "Il bâille", fausse_chute: "Fausse chute !",
 };
 window.ETATS_LIBELLES = ETATS;
 const JOUR = { promenades: ["promenade", "promenades"], siestes: ["sieste", "siestes"], jeux: ["jeu", "jeux"],

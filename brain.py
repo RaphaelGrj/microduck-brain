@@ -34,6 +34,8 @@ from etats_jeux import CacheCache, JeuBalle, Soleil
 from etats_appli import Parcours, PosePhoto, Signal
 import vivant
 from vivant import AttendPorte, Boude, Habituation, JeTeSuis, Reponse, SuisMoi
+import personnage
+from personnage import (BainSoleil, Doudou, Gaffe, Hoquet, Inspecte, Nid, Nomme, Petit, Rythme, Succes)
 from diagnostic import Diagnostic
 from etats_maison import AlarmeFumee, AssisDemande, AutoTestReveil, Toupie
 from etats_taquineries import (Aspirateur, Baillement, CompteEternuements, DernierMot, Esquive, FausseChute,
@@ -84,6 +86,12 @@ class Brain:
     P_BALLE = 0.15              # balle vue a 0,3-2 m et de l'energie : il va jouer avec
     P_CACHE_CACHE = 0.005       # initiative rare : il lance lui-meme une partie de cache-cache
     P_GAG = 0.02                # gag spontane (fausse chute, fausse notification) par passage par chill, si permis
+    P_HOQUET = 0.004            # par passage par chill (x5 dans les 10 min apres un repas) ; une fois par 3 h au plus
+    P_DOUDOU = 0.03             # par passage par chill, sa balle vue : il va retrouver son doudou
+    P_NID = 0.7                 # avant une sieste de fatigue : deux tours sur lui-meme (une fois par heure au plus)
+    SOLEIL_PERIODE_S = 600.0    # en journee, au repos : y a-t-il une tache de soleil au sol ? (camera)
+    SPECTACLE = ("danse", "zoomies", "signature", "rythme", "hoquet", "gaffe", "fausse_chute", "fausse_notif",
+                 "lissage", "ebouriffe", "etirement", "eternuement", "cabotine")   # cabotinage : ses « numeros »
     P_SOUVENIR = 0.02           # par passage par chill : flaner la ou il s'est passe quelque chose de bien
     CONVERSATION_S = 45.0       # apres un appel, une caresse... : il « repond » a ce qu'on lui dit pendant 45 s
     BONS = {"caresse": 30.0, "bravo": 20.0, "accueil": 20.0, "cajole": 20.0, "compagnie": 10.0, "compliment": 20.0,
@@ -233,6 +241,14 @@ class Brain:
             "mefiant_lieu": Sequence("mefiant_lieu", [("curieux", None), ("gene", None)]),
             "excite": Sequence("excite", [("oui", "chirp"), ("oui", "chirp"), ("content", "wheee")]),
             "va_social": VaAuCoin("va_social", "cherche_attention", "voir quelqu'un avant d'aller se recharger"),
+            # personnage.py : hoquet, gaffes, nid, rythme, nom sonore, ambiance, doudou, objet nouveau, bain de soleil
+            "hoquet": Hoquet(), "gueri": Sequence("gueri", [("surpris", None), ("content", "coo")]),
+            "gaffe": Gaffe(), "nid": Nid(), "inspecte": Inspecte(), "rythme": Rythme(), "nomme": Nomme(),
+            "petit": Petit(), "bain_soleil": BainSoleil(), "doudou": Doudou(),
+            "va_doudou": VaAuCoin("va_doudou", "doudou", "retrouver son doudou"),
+            "rit": Sequence("rit", [("content", "chirp")]),
+            "cabotine": Sequence("cabotine", [("fier", "chirp")]),
+            "reclame": Sequence("reclame", [("curieux", "coo")]),
         }
         self.etats["taquin"].taquinerie = True
         self.malice = Malice(self.ctx.extras.get("memoire"))
@@ -284,6 +300,12 @@ class Brain:
         self._t_vu_balle = -1e9
         self.vacances = False                   # mode vacances de l'application : calme + garde
         self.habituation = Habituation()        # vivant.py : il s'habitue aux stimuli qui reviennent
+        donnees_mem = getattr(self.ctx.extras.get("memoire"), "donnees", None)
+        self.succes = Succes(donnees_mem if isinstance(donnees_mem, dict) else None)   # cabotinage (personnage.py)
+        self._t_motif = None                    # un rythme tape vient d'etre rejoue : pas aussi un appel / une porte
+        self._t_soleil = -1e9
+        self._soleil_vu = None                  # (x relatif, fraction) : tache de soleil vue par la camera
+        self._rituels_faits = set()             # (jour, qui) : rituel deja reclame aujourd'hui
         self._rng_vie = random.Random(None if seed is None else seed + 11)   # respiration, saccades : hasard a part
         self.conversation_jusqua = -1e9         # tour de parole : on vient de s'adresser a lui (appel, caresse...)
         self.entree = None                      # (x, y) odom : la ou il accueille d'habitude (porte d'entree)
@@ -688,11 +710,41 @@ class Brain:
                 self.perso.vit("calin")
                 self._bascule("reconcilie")             # une caresse, et il ne boude plus
                 continue
+            if base == "motif":
+                # on tape un rythme (audio.py) : s'il joue avec quelqu'un, il le rejoue en coups de bec
+                if (self.t_global < self.conversation_jusqua and not self.mode_calme and not self.discret
+                        and self.courant.nom in self.REPOS_REPONSE + ("rythme",)):
+                    try:
+                        self.etats["rythme"].ecarts = [int(x) / 1000.0 for x in detail.split(",") if x]
+                    except ValueError:
+                        continue
+                    self._t_motif = self.t_global
+                    self.conversation_jusqua = self.t_global + self.CONVERSATION_S
+                    self._bascule("rythme")
+                continue
+            if base in ("appel", "toc_porte") and self._t_motif == self.t_global:
+                continue                                # c'etait le rythme qu'il vient de rejouer
+            if base == "rire":
+                self._sur_rire()
+                continue
+            if base == "ambiance":
+                if (detail == "tendue" and not self.mode_calme and self.courant.nom in ("chill", "look", "wander",
+                                                                                          "compagnie", "attentif")):
+                    self.malice.stop_jusqua = max(self.malice.stop_jusqua, self.t_global + 600.0)   # pas de blague
+                    self._bascule("petit")              # des voix qui montent : il se fait tout petit
+                continue
+            if base in ("caresse", "main") and self.courant.nom == "hoquet":
+                self._bascule("gueri")                  # une caresse, et le hoquet passe
+                continue
+            if base == "caresse" and len(self.presents) == 1:
+                self._note_rituel(next(iter(self.presents)))
             if base == "appel" and self.courant.nom == "boude":
                 self.etats["boude"].regarde(self)       # un regard en coin, et il se detourne
                 continue
             if base in ("caresse", "main", "appel", "applaudissements"):
                 self.conversation_jusqua = self.t_global + self.CONVERSATION_S
+            if base == "applaudissements" and self.succes.reaction(self.t_global) is not None:
+                self.perso.vit("taquinerie")            # son numero a plu : un peu plus espiegle
             if base in ("caresse", "main") and self.courant.nom == "signal":
                 self.etats["signal"].arreter(self, "caresse")   # « c'est bon, j'ai compris »
                 continue
@@ -750,7 +802,11 @@ class Brain:
                 self._bascule("regarde_chat" if "chat" in self.ctx.extras else "curious")
             elif base == "appel":
                 self.humeur.eveil = min(1.0, self.humeur.eveil + 0.3)
-                self._bascule(self._taquinerie(("faux_endormi", "sourde_oreille"), humain=True) or "appel")
+                choix = self._taquinerie(("faux_endormi", "sourde_oreille"), humain=True)
+                if choix is None and self._nommable() and self._rng_vie.random() < 0.5:
+                    self.etats["nomme"].qui = next(iter(self.presents))
+                    self.suivant_force = "nomme"        # « oui ? » ... puis ton nom, a sa facon
+                self._bascule(choix or "appel")
             elif base in ("aspirateur_on", "aspirateur_off"):
                 avant, self.aspirateur_actif = self.aspirateur_actif, base == "aspirateur_on"
                 if self.aspirateur_actif and not avant:
@@ -797,6 +853,11 @@ class Brain:
                     self._bascule(choix)
             elif base == "objet_nouveau":
                 self.ctx.move()
+                if self.habituation.noter("objet_nouveau", self.t_global) < 0.3:
+                    continue                            # tant de nouveautes aujourd'hui : il n'y fait plus attention
+                if (self.ctx.extras.get("tof") is not None and (self.objet_nouveau or 9.0) <= 1.2
+                        and self._rng_vie.random() < 0.5 * self.perso.envie_promenade()):
+                    self.suivant_force = "inspecte"     # il va voir de plus pres, et le picore
                 self._bascule("remarque")
             elif base == "son_bref":
                 if self.courant.nom in ("chill", "look") and self.habituation.noter("son_bref", self.t_global) >= 0.3:
@@ -1043,7 +1104,12 @@ class Brain:
         if self.rng.random() >= min(1.0, p):
             return None
         permises = [n for n in noms if self.malice.permise(self, n, humain=humain)]
-        return self.rng.choice(permises) if permises else None
+        if not permises:
+            return None
+        poids = [self.succes.poids(n) for n in permises]
+        if any(abs(w - 1.0) > 1e-9 for w in poids):
+            return self.rng.choices(permises, weights=poids)[0]      # cabotinage : ce qui fait rire revient
+        return self.rng.choice(permises)
 
     def _choisit_suivant(self):
         force = getattr(self, "suivant_force", None)
@@ -1076,6 +1142,9 @@ class Brain:
                     if coin is not None:
                         self.etats["va_au_coin"].cible = coin
                         return "va_au_coin"
+            if self._nid_possible(batterie_basse):
+                self.derniere_fois["nid"] = self.t_global
+                return "nid"                    # deux tours sur lui-meme, puis la sieste
             return "nap"
         if self.discret:
             return self.rng.choice(("chill", "chill", "look"))   # quelqu'un telephone : il reste tranquille, sans bruit
@@ -1141,6 +1210,18 @@ class Brain:
         porte = self._attente_porte()
         if porte is not None:
             return porte
+        rituel = self._rituel_du_moment()
+        if rituel is not None:
+            return rituel
+        if self._hoquet_possible():
+            self.derniere_fois["hoquet"] = self.t_global
+            return "hoquet"
+        doudou = self._va_doudou()
+        if doudou is not None:
+            return doudou
+        soleil = self._bain_de_soleil()
+        if soleil is not None:
+            return soleil
         repas = self._repas_maintenant()
         if repas is not None:
             return repas
@@ -1184,6 +1265,9 @@ class Brain:
                     and not (g == "fausse_chute" and (h.energie < 0.5
                              or (chat is not None and getattr(chat.suivi, "visible", False))))]
             if gags:
+                poids = [self.succes.poids(g) for g in gags]
+                if any(abs(w - 1.0) > 1e-9 for w in poids):
+                    return self.rng.choices(gags, weights=poids)[0]
                 return self.rng.choice(gags)
         veille_balle = self.ctx.extras.get("balle")
         b = veille_balle.position() if veille_balle is not None else None
@@ -1197,7 +1281,7 @@ class Brain:
         # faible probabilite, et jamais deux fois le meme geste en moins de DELAI_RARE secondes.
         for nom, p in self.RARES.items():
             if self.t_global - self.derniere_fois.get(nom, -1e9) >= self.DELAI_RARE:
-                poids[nom] = p
+                poids[nom] = p * self.succes.poids(nom)
         noms = list(poids)
         return self.rng.choices(noms, weights=[poids[n] for n in noms])[0]
 
@@ -1207,6 +1291,10 @@ class Brain:
             self.differes = []
         if nom in self.RARES:
             self.derniere_fois[nom] = self.t_global
+        if self.courant.nom == "hoquet" and nom in ("startle", "son_bref", "surpris", "petarades"):
+            self.suivant_force = "gueri"        # une bonne surprise fait passer le hoquet
+        if (nom in self.SPECTACLE or getattr(self.etats.get(nom), "taquinerie", False)) and self.presents:
+            self.succes.joue(nom, self.t_global)   # un « numero » devant quelqu'un : on guette les rires
         self.courant.sort(self)
         self._desarme_peripherie()              # avant l'entree : un jeu peut armer la veille mouvement pour lui
         if nom == "accueil":
@@ -1817,6 +1905,128 @@ class Brain:
     HUMEUR_PAS_S = 15 * 60
     HUMEUR_POINTS = 7 * 24 * 4                  # une semaine, un point par quart d'heure
 
+    # -- personnage.py ----------------------------------------------------------------------------------------------
+    def _nommable(self):
+        """Une seule personne, familiere : il peut « dire son nom » (sa suite de sons a lui)."""
+        mem = self.ctx.extras.get("memoire")
+        if len(self.presents) != 1 or mem is None or not hasattr(mem, "familiarite") or self.mode_calme or self.discret:
+            return False
+        return mem.familiarite(next(iter(self.presents))) >= 0.6
+
+    def _sur_rire(self):
+        """On rit (audio.py) : si c'est de son numero, il cabotine (et le refera) ; sinon le rire le gagne."""
+        self.humeur.eveil = min(1.0, self.humeur.eveil + 0.2)
+        auteur = self.succes.reaction(self.t_global)
+        if self.mode_calme or self.discret or self.courant.nom not in ("chill", "look", "compagnie", "attentif",
+                                                                       "wander", "repond") + self.SPECTACLE:
+            return
+        if self.courant.nom in self.SPECTACLE:
+            if auteur is not None:
+                self.suivant_force = "cabotine"     # il finit son numero, puis prend un air fier
+            return
+        if auteur is not None:
+            self.derniere_fois["cabotine"] = self.t_global
+            self._bascule("cabotine")           # « c'est moi qui ai fait ca ! »
+        elif self.t_global - self.derniere_fois.get("rit", -1e9) >= 300.0:
+            self.derniere_fois["rit"] = self.t_global
+            self._bascule("rit")                # le rire est contagieux
+
+    def _jour(self):
+        return int(self.ctx.extras.get("mur", time.time)() // 86400)
+
+    def _note_rituel(self, qui):
+        mem = self.ctx.extras.get("memoire")
+        if mem is not None and isinstance(getattr(mem, "donnees", None), dict):
+            personnage.noter_rituel(mem.donnees, qui, self.horloge().tm_hour, self._jour())
+
+    def _rituel_du_moment(self):
+        """Une habitude avec quelqu'un a cette heure-ci (une caresse le soir...) : il vient la reclamer."""
+        mem = self.ctx.extras.get("memoire")
+        if (mem is None or not isinstance(getattr(mem, "donnees", None), dict) or not self.presents
+                or self.timidite() > 0.0 or self.humeur.energie < 0.3):
+            return None
+        jour, heure = self._jour(), self.horloge().tm_hour
+        for qui in sorted(self.presents):
+            if (jour, qui) in self._rituels_faits or not personnage.rituel_maintenant(mem.donnees, qui, heure, jour):
+                continue
+            self._rituels_faits.add((jour, qui))
+            print(f"[{self.t_global:6.1f}s] c'est l'heure du calin avec {qui}", flush=True)
+            self.etats["cherche_attention"].cible = "humain"
+            self.suivant_force = "cherche_attention"
+            if self._nommable():
+                self.etats["nomme"].qui, self.etats["nomme"].ensuite = qui, "cherche_attention"
+                return "nomme"                  # il t'appelle par « ton nom », puis vient te voir
+            return "reclame"
+        return None
+
+    def _hoquet_possible(self):
+        if self.mode_calme or self.discret or self.t_global - self.derniere_fois.get("hoquet", -1e9) < 3 * 3600.0:
+            return False
+        p = self.P_HOQUET * (5.0 if self.t_global - self.derniere_fois.get("repas", -1e9) < 600.0 else 1.0)
+        return self._rng_vie.random() < p
+
+    def _doudou(self):
+        """Sa balle devient son doudou une fois qu'il y a joue quelques parties (memoire)."""
+        mem = self.ctx.extras.get("memoire")
+        st = (getattr(mem, "donnees", None) or {}).get("balle") if mem is not None else None
+        return isinstance(st, dict) and st.get("parties", 0) >= personnage.DOUDOU_PARTIES
+
+    def _va_doudou(self):
+        vb = self.ctx.extras.get("balle")
+        if (vb is None or not hasattr(vb, "position") or self.ctx.extras.get("tof") is None or not self._doudou()
+                or self.t_global - self.derniere_fois.get("doudou", -1e9) < 1800.0
+                or self._rng_vie.random() >= self.P_DOUDOU):
+            return None
+        b = vb.position()
+        o = (self.ctx.state or {}).get("odom")
+        if b is None or o is None or not 0.4 <= math.hypot(*b) <= 2.5:
+            return None
+        d = math.hypot(*b)
+        k = max(0.0, d - 0.25) / d               # il s'arrete a 25 cm de sa balle
+        cap = o.get("yaw") or 0.0
+        x0, y0 = o["position"][0], o["position"][1]
+        bx, by = b[0] * k, b[1] * k
+        self.derniere_fois["doudou"] = self.t_global
+        self.etats["va_doudou"].cible = (x0 + bx * math.cos(cap) - by * math.sin(cap),
+                                         y0 + bx * math.sin(cap) + by * math.cos(cap))
+        return "va_doudou"
+
+    def _nid_possible(self, batterie_basse):
+        if (batterie_basse or self.ctx.sitting or self.ctx.extras.get("tof") is None or self.courant.nom == "nid"
+                or self.t_global - self.derniere_fois.get("nid", -1e9) < 3600.0):
+            return False
+        return self._rng_vie.random() < self.P_NID
+
+    def _verifie_soleil(self):
+        """Bain de soleil : en journee, au repos, toutes les 10 min, une image : une tache de soleil au sol ? Mesure
+        dans un fil (camera locale) ; le resultat sert au prochain passage par chill."""
+        mesure = self.ctx.extras.get("soleil")
+        if mesure is None or self.t_global - self._t_soleil < self.SOLEIL_PERIODE_S:
+            return
+        h = self.horloge().tm_hour
+        if not 9 <= h < 19 or self.courant.nom != "chill" or self.mode_calme or self.tombe:
+            return
+        self._t_soleil = self.t_global
+
+        def lire():
+            try:
+                self._soleil_vu = mesure()
+            except Exception:
+                self._soleil_vu = None
+        if self.ctx.extras.get("soleil_synchrone"):
+            lire()
+        else:
+            threading.Thread(target=lire, daemon=True).start()
+
+    def _bain_de_soleil(self):
+        vu, self._soleil_vu = self._soleil_vu, None
+        if (vu is None or self.ctx.extras.get("tof") is None or self.surchauffe
+                or self.t_global - self.derniere_fois.get("bain_soleil", -1e9) < 7200.0):
+            return None
+        self.derniere_fois["bain_soleil"] = self.t_global
+        self.etats["bain_soleil"].x_rel = vu[0]
+        return "bain_soleil"
+
     def age(self):
         """Jours vecus depuis sa premiere mise en route (vivant.age_jours ; inf sans memoire : adulte)."""
         return vivant.age_jours(self.perso, self.ctx.extras.get("mur", time.time)())
@@ -1995,6 +2205,10 @@ class Brain:
         self._babille(dt)
         self._surveille_peripherie()
         self._verifie_lumiere()
+        self._verifie_soleil()
+        flop = self.succes.juge(self.t_global, bool(self.presents))
+        if flop is not None:
+            print(f"[{self.t_global:6.1f}s] {flop} : tombe a plat", flush=True)
         self.t_etat += dt
         self.courant.pas(self, self.t_etat)
         if self.t_etat >= self.fin_etat:
