@@ -22,7 +22,8 @@ const ETATS = {
   boude: "Il boude", reconcilie: "Réconciliés !", attend_porte: "Il attend quelqu'un", va_porte: "Il va à la porte",
   suis_moi: "Il te suit", mene: "Il te montre le chemin", repond: "Il te répond", jaloux: "Jaloux !",
   va_souvenir: "Il va flâner", souvenir: "Un bon souvenir", mefiant_lieu: "Méfiant", excite: "Lance-la !",
-  solitude: "Un peu seul", va_solitude: "Il s'isole un peu", anniversaire: "Joyeux anniversaire !", chat_joue: "Le chat joue !", va_chat: "Sieste près du chat",
+  solitude: "Un peu seul", va_station: "Il rentre à sa station", accoste: "Il se met sur sa station", ronde: "Il fait sa ronde",
+  va_piece: "Il vient te voir", va_point: "Il y va", va_solitude: "Il s'isole un peu", anniversaire: "Joyeux anniversaire !", chat_joue: "Le chat joue !", va_chat: "Sieste près du chat",
   hoquet: "Il a le hoquet", gueri: "Hoquet passé !", gaffe: "Oups !", nid: "Il fait son nid", inspecte: "Il inspecte", rythme: "Il rejoue ton rythme", nomme: "Il dit ton nom", petit: "Il se fait tout petit", bain_soleil: "Bain de soleil", doudou: "Avec son doudou", va_doudou: "Il va voir son doudou", rit: "Il rit avec toi", cabotine: "Il fait le malin", reclame: "C'est l'heure du câlin", choregraphie: "Il fait son tour", baillement: "Il bâille", baillement_contagieux: "Il bâille", fausse_chute: "Fausse chute !",
 };
 window.ETATS_LIBELLES = ETATS;
@@ -710,22 +711,72 @@ function dessinerPlanMaison(p, toile, messageVide) {
   for (const o of p.objets || []) if (o.nom && o.type !== "door_frame") g.fillText(o.nom, ...ecran(...o.centre));
   g.font = "16px system-ui, sans-serif";
   const rep = p.reperes || {};
+  for (const z of p.zones || []) {                     // zones interdites : jamais il n'y entre
+    g.beginPath(); z.contour.forEach((q, n) => g[n ? "lineTo" : "moveTo"](...ecran(q[0], q[1]))); g.closePath();
+    g.fillStyle = "rgba(214, 69, 65, 0.25)"; g.fill(); g.strokeStyle = v("--danger"); g.lineWidth = 2; g.stroke();
+  }
+  g.fillStyle = v("--texte"); g.font = "12px system-ui, sans-serif";
+  for (const [nom, q] of Object.entries(p.points || {})) { const [u, w] = ecran(q[0], q[1]); g.fillText("📍 " + nom, u, w); }
+  g.font = "16px system-ui, sans-serif";
   if (rep.chargeur) g.fillText("🔌", ...ecran(rep.chargeur[0], rep.chargeur[1]));
   if (rep.entree) g.fillText("🚪", ...ecran(rep.entree[0], rep.entree[1]));
   for (const m of Object.values(rep.marqueurs || {})) g.fillText("🏷️", ...ecran(m[0], m[1]));
+  const ici = toile._position;                         // lui, s'il est dans ce lieu et sait ou il est
+  if (ici) {
+    const [u, w] = ecran(ici.x, ici.y), a = -ici.cap - Math.PI / 2;
+    g.save(); g.translate(u, w); g.rotate(a); g.globalAlpha = ici.sur ? 1 : 0.4;
+    g.beginPath(); g.moveTo(11, 0); g.lineTo(-7, 7); g.lineTo(-3, 0); g.lineTo(-7, -7); g.closePath();
+    g.fillStyle = v("--orange-fonce"); g.strokeStyle = "#fff"; g.lineWidth = 2; g.stroke(); g.fill(); g.restore();
+  }
+  toile._vers_plan = (uu, ww) => [(cw - ww) / e, (cu - uu) / e];
 }
+
+let planOuvert = null;                                 // {lieu, plan} affiche dans la fenetre « Son plan »
+function redessinerPlanOuvert() {
+  if (!planOuvert || !$("#vue-lieu").open) { planOuvert = null; return; }
+  const pos = dernier && dernier.position;
+  $("#plan-lieu")._position = pos && pos.lieu === planOuvert.lieu.id ? pos : null;
+  texte("#plan-position", !pos || pos.lieu !== planOuvert.lieu.id ? "Il n'est pas dans ce lieu."
+    : pos.sur ? `Il est ${pos.piece ? "dans « " + pos.piece + " »" : "sur le plan"} (à ${Math.round(pos.ecart * 100)} cm près).`
+    : "Il cherche où il est (un marqueur vu par sa caméra l'aidera).");
+  dessinerPlanMaison(planOuvert.plan, $("#plan-lieu"), $("#plan-lieu-vide"));
+}
+setInterval(redessinerPlanOuvert, 1000);
 
 async function voirLieu(l) {
   const d = $("#vue-lieu");
   texte("#vue-lieu-titre", l.nom);
   d.showModal();
+  $("#plan-actions").hidden = true; planOuvert = null;
   if (l.plan) {
-    try { dessinerPlanMaison(await api("/api/plan?id=" + encodeURIComponent(l.id)), $("#plan-lieu"), $("#plan-lieu-vide")); return; }
-    catch (x) { /* plan illisible : sa carte, a defaut */ }
+    try {
+      planOuvert = { lieu: l, plan: await api("/api/plan?id=" + encodeURIComponent(l.id)) };
+      $("#plan-actions").hidden = false;
+      redessinerPlanOuvert();
+      return;
+    } catch (x) { /* plan illisible : sa carte, a defaut */ }
   }
   try { dessinerCarte(await api("/api/lieu-carte?id=" + encodeURIComponent(l.id)), $("#plan-lieu"), $("#plan-lieu-vide")); }
   catch (x) { dessinerCarte(null, $("#plan-lieu"), $("#plan-lieu-vide")); }
 }
+
+$("#plan-lieu").addEventListener("click", async (ev) => {
+  const t = $("#plan-lieu");
+  if (!planOuvert || !t._vers_plan) return;
+  const r = t.getBoundingClientRect(), [x, y] = t._vers_plan(ev.clientX - r.left, ev.clientY - r.top);
+  if (!confirm("L'envoyer ici ?")) return;
+  try { await api("/api/aller", { x, y }); toast("Il y va (s'il sait où il est)"); } catch (e) { toast("Microduck ne répond pas"); }
+});
+$("#plan-station").addEventListener("click", () => commande("station"));
+$("#plan-ronde").addEventListener("click", () => commande("ronde"));
+$("#plan-effacer").addEventListener("click", async () => {
+  if (!planOuvert || !confirm("Effacer les zones interdites et les points nommés de ce plan ?")) return;
+  try {
+    await api("/api/plan-annoter", { id: planOuvert.lieu.id, zones: [], points: {} });
+    planOuvert.plan = await api("/api/plan?id=" + encodeURIComponent(planOuvert.lieu.id));
+    redessinerPlanOuvert(); toast("Effacé");
+  } catch (e) { toast("Microduck ne répond pas"); }
+});
 
 async function rafraichirLieux() {
   let d;

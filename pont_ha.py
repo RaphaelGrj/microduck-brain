@@ -145,6 +145,13 @@ def normaliser(brut):
         else:
             s["reactions"] = app.get("reactions") or REACTIONS_PAR_TYPE.get(app.get("type", ""), {})
         cfg["surveillance"].append(s)
+    for piece in brut.get("piece", []):         # presence par piece ([[piece]] nom, entite) : il vient te voir la ou tu es
+        if est_vide(piece.get("entite")) or est_vide(piece.get("nom")):
+            cfg["ignorees"].append(piece.get("nom", "piece"))
+            continue
+        nom = str(piece["nom"]).replace("|", " ").replace(":", " ").strip()[:40]
+        cfg["surveillance"].append({"entite": piece["entite"], "nom": nom,
+                                    "reactions": {"on": f"presence_piece:{nom}|on", "off": f"presence_piece:{nom}|off"}})
     cfg["actions"] = []
     from commandes import VOCABULAIRE
     nom_canard = str((brut.get("cerveau") or {}).get("nom", "canard")).lower()
@@ -387,7 +394,9 @@ class PublieurMQTT:
                ("ou_es_tu", "ou es-tu ?", "mdi:map-marker-question", "ou_es_tu"),
                ("signal_stop", "arrete le signal (minuteur, reveil)", "mdi:bell-off", "signal_stop"),
                ("suis_moi", "suis-moi", "mdi:shoe-print", "suis_moi"),
-               ("je_te_suis", "montre-moi le chemin", "mdi:walk", "je_te_suis"))
+               ("je_te_suis", "montre-moi le chemin", "mdi:walk", "je_te_suis"),
+               ("station", "rentre a ta station", "mdi:home-import-outline", "commande:station"),
+               ("ronde", "fais ta ronde", "mdi:shield-home-outline", "commande:ronde"))
 
     def __init__(self, mq, log=print, sur_evenement=None):
         import paho.mqtt.client as mqtt
@@ -599,6 +608,15 @@ class PontHA:
     # canard -> maison : actions (scenes, services) ------------------------------------------------------------------
     def _sur_canard(self, evenement):
         """Ecouteur du cerveau (Brain.ecouteurs) : appele dans le fil du tick, il ne fait que mettre en file."""
+        if evenement.startswith("ronde:"):
+            # ronde du soir : un evenement HA « microduck_ronde » {pieces: {nom: {vu, lumiere}}} - a tes
+            # automatisations de prevenir d'une lumiere restee allumee, d'une piece ou il n'a pas pu entrer...
+            try:
+                pieces = json.loads(evenement[6:])
+            except ValueError:
+                pieces = {}
+            self._actions.put(("@evenement", "microduck_ronde", {"pieces": pieces}, "ronde"))
+            return
         if evenement.startswith("garde:"):
             # mode garde : un evenement HA "microduck_garde" {type: voix|choc|bruit|porte} - a tes automatisations
             # d'en faire une notification ; aucun son ne quitte le canard
@@ -699,6 +717,8 @@ class PontHA:
             "etat": brain.courant.nom, "energie": brain.humeur.energie, "eveil": brain.humeur.eveil,
             "tombe": bool((state.get("safety") or {}).get("fallen")), "politique": state.get("policy"),
             "batterie": state.get("battery"), "odom": state.get("odom"), "chat_visible": chat_visible,
+            "piece": (lambda p: p.piece() if p is not None else None)(
+                (getattr(getattr(brain, "ctx", None), "extras", None) or {}).get("position")),
             "presents": sorted(getattr(brain, "presents", None) or []),
             "messages": list(getattr(brain, "messages", None) or []),
             "veille": getattr(brain, "t_global", 0.0) < getattr(brain, "veille_jusqua", -1.0),
@@ -804,6 +824,8 @@ class PontHA:
             "friendly_name": "Microduck - objets nouveaux au sol (24 h)", "icon": "mdi:shoe-sneaker",
             "dernier_il_y_a_min": round((time.time() - objets[-1][0]) / 60) if objets else None,
             "dernier_position_odom": f"{objets[-1][1]:.2f},{objets[-1][2]:.2f}" if objets else None})
+        ent["sensor.microduck_piece"] = (i.get("piece") or "inconnue", {
+            "friendly_name": "Microduck - piece ou il est", "icon": "mdi:floor-plan"})
         ent["binary_sensor.microduck_lumiere_oubliee"] = ("on" if i.get("lumiere_oubliee") else "off", {
             "friendly_name": "Microduck - lumiere allumee sans personne", "icon": "mdi:lightbulb-alert",
             "luminosite": round(i["lumiere"], 2) if i.get("lumiere") is not None else None})

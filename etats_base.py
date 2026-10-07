@@ -67,6 +67,10 @@ class Ctx:
                                           "head_yaw": vals[2], "head_roll": vals[3]})
 
     def move(self, vx=0.0, vy=0.0, vyaw=0.0):
+        # zones interdites du plan (position.py) : AUCUN etat ne peut y faire entrer le canard - on garde la rotation
+        pos = (getattr(self, "extras", None) or {}).get("position")
+        if vx > 0 and pos is not None and getattr(pos, "bloque_zone", False):
+            vx = 0.0
         self.client.notify("robot.move", {"vx": vx, "vy": vy, "vyaw": vyaw})
 
     def pose(self, p=None):

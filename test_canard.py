@@ -44,12 +44,12 @@ def _assemble(args, sock_tof_existe, cfg=None):
 
 def test_assemblage_selon_disponibilite():
     a = _assemble([], sock_tof_existe=True)
-    assert set(a["extras"]) == {"memoire", "choregraphies", "autotest", "circadien", "garde", "tof", "mouvement", "balle", "camera_test", "luminosite", "soleil", "lieu"}, a["extras"]
+    assert set(a["extras"]) == {"memoire", "choregraphies", "autotest", "circadien", "garde", "tof", "mouvement", "balle", "camera_test", "luminosite", "soleil", "lieu", "position"}, a["extras"]
     assert len(a["extras"]["tof"].beams) == 64 and a["pont"] is None and a["options"] == {}
     a = _assemble(["--sans-camera"], sock_tof_existe=False)
-    assert set(a["extras"]) == {"memoire", "choregraphies", "autotest", "circadien", "garde", "lieu"}, "sans tofd ni camera : seulement la memoire"
+    assert set(a["extras"]) == {"memoire", "choregraphies", "autotest", "circadien", "garde", "lieu", "position"}, "sans tofd ni camera : seulement la memoire"
     a = _assemble(["--sans-camera", "--micro"], sock_tof_existe=False)
-    assert len(a["sources"]) == 3 and len(a["fils"]) == 1, "le micro est une source d'evenements (avec lieux et appli)"
+    assert len(a["sources"]) == 3 and len(a["fils"]) == 2, "le micro est une source d'evenements (avec lieux et appli) ; fils : micro + position"
     assert a["lieux"].source in a["sources"]
     # sans code d'appli : l'appli s'ouvre quand meme, en installation (le telephone choisira le code)
     assert a["appli"] is not None and a["appli"].en_installation()

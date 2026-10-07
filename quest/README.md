@@ -1,3 +1,22 @@
+# Microduck XR : le Meta Quest 3 au service du canard
+
+Une seule appli dans le casque, **six modes**. La manette **gauche** change de mode : **X** pour le suivant, **Y** pour
+le précédent.
+
+| Mode | À quoi il sert |
+| --- | --- |
+| **Scan** | Relever la maison et en faire son plan (ci-dessous). |
+| **Atelier** | Voir, posé sur ta vraie pièce, ce qu'il croit : où il pense être (flèche orange), ses hypothèses (boules jaunes), ce que voit son capteur (points rouges), son trajet (ligne bleue), ses zones interdites et ses points nommés. **Gâchette** : l'envoyer au point visé au sol. |
+| **Vérité** | Mesurer l'erreur de sa localisation : gâchette au **centre de son dos**, puis au **bout de son bec**. L'erreur s'affiche en cm et en degrés. **A** le recale à cet endroit (« tu es ici »). |
+| **Dessin** | **Zones interdites** : gâchette à chaque coin au sol, **A** pour fermer la zone. **Points nommés** (panier, gamelle…) : nom choisi au joystick, posé avec le **grip**. **B** annule. Tout est enregistré tout de suite dans son plan. |
+| **Danse** | **Gâchette** : enregistrer une danse avec **ta tête** (16 s au plus). Elle s'ajoute à son studio de chorégraphies. **A** la lui fait jouer. Joystick : plus ou moins ample. |
+| **Être le canard** | Sa tête suit la tienne, le joystick le fait marcher (pas guidés, avec les garde-fous de la télécommande). Tu vois ce qu'il voit, **seulement si les photos sont permises** dans ses réglages. |
+
+Les modes autres que Scan parlent au canard par son appli (réseau local, code parent). Ils ne reçoivent que des
+positions, sauf le mode « Être le canard », qui reçoit une image **en opt-in**.
+
+---
+
 # Scanner la maison avec le Meta Quest 3 → le plan du canard
 
 Le Quest 3 sait déjà relever une pièce : murs, sol, portes, fenêtres, meubles (« Configuration de l'espace »). Mais
@@ -42,11 +61,14 @@ Seuls les meubles et la position des murs sortent du casque, vers ton PC ou ton 
      *Permission Requests On Startup*, cocher **Scene**.
 6. Copier le dossier `quest/Assets/Microduck/` de ce dépôt dans le dossier `Assets/` du projet.
    `ExportPlan.cs` apparaît dans Unity.
-7. *GameObject → Create Empty*, le nommer `Microduck`, puis glisser `ExportPlan.cs` dessus. Dans l'inspecteur :
-   - **Nom Du Lieu** : `Maison` (ou le nom du lieu) ;
-   - **Adresse Canard** et **Code Appli** : laisser **vides** pour l'instant (pas encore de canard). Plus tard :
-     `http://<adresse du canard>:8090` et le code de l'appli, et le scan arrivera directement dans le canard ;
-   - **Main Droite** : laisser vide, il la trouve seul.
+7. *GameObject → Create Empty*, le nommer `Microduck`. Glisser dessus, **dans cet ordre** (c'est l'ordre des
+   modes) : `Canard`, `MenuMicroduck`, `ExportPlan`, `ModeAtelier`, `ModeVerite`, `ModeDessin`, `ModeDanse`,
+   `ModeCanard`. Dans l'inspecteur :
+   - **Canard → Adresse** et **Code** : laisser **vides** pour l'instant (pas encore de canard ; seul le Scan sert).
+     Plus tard : `http://<adresse du canard>:8090` et le code de l'appli. Le scan arrivera alors directement dans
+     le canard, et les autres modes s'allumeront ;
+   - **Export Plan → Nom Du Lieu** : `Maison` (ou le nom du lieu) ;
+   - **Menu Microduck → Main Droite** : laisser vide, il la trouve seul.
 8. *Edit → Project Settings → Player → Android* : *Company Name* = ton nom ; vérifier que le *Package Name* vaut par
    exemple `com.raphaelgrj.microduckscan`. Pour l'envoi au canard plus tard, mettre aussi *Allow downloads over
    HTTP* = **Always allowed** (le canard parle en http sur le réseau local).
@@ -54,8 +76,8 @@ Seuls les meubles et la position des murs sortent du casque, vers ton PC ou ton 
    → **Build And Run**. L'appli se lance dans le casque ; plus tard, on la retrouve dans *Bibliothèque → Sources
    inconnues*.
 
-Le kit Meta change souvent de version. Si Unity affiche une erreur rouge sur `ExportPlan.cs`, envoie-moi le texte
-exact et je corrige le script. Il lit le relevé de façon tolérante, mais je n'ai pas pu le compiler ici.
+Le kit Meta change souvent de version. Si Unity affiche une erreur rouge sur un des scripts, envoie-moi le texte
+exact et je corrige. Ils lisent le relevé de façon tolérante, mais je n'ai pas pu les compiler ici.
 
 ## 2. Le scan (dans le casque)
 

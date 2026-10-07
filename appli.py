@@ -22,7 +22,12 @@ API :
   POST /api/lieu            {"action": ..., "id": ..., "nom": ...} (basculer, renommer, archiver, restaurer, ...)
   GET  /api/plan?id=...     le plan definitif d'un lieu (scan du Quest, plan.py) ; POST /api/plan {"id", "nom",
                             "contenu": export Quest ou plan sauvegarde} l'importe (converti sur le canard) ;
-                            POST /api/plan-supprimer {"id"} le retire
+                            POST /api/plan-supprimer {"id"} le retire ; POST /api/plan-annoter {"id", "zones",
+                            "points"} : zones interdites et points nommes (casque, appli)
+  GET  /api/xr              casque : position sur le plan, nuage d'hypotheses, capteur, trajet (position.py)
+  POST /api/verite          casque : {"x", "y", "cap", "recaler"} position mesuree -> erreur (et recalage)
+  POST /api/aller           {"x", "y"} : « va la » (point du plan)
+  GET  /api/vue             une image de sa camera (casque, « etre le canard ») - seulement si les photos sont permises
   GET  /api/design          schemas de couleurs et filaments du design space ; POST /api/design pour les garder
   GET  /api/alertes?depuis=T les alertes (chute, batterie, garde, incendie, impressions...) apres l'instant T (s)
   GET  /api/reglages        heures calmes, bonjour, repas... ; POST /api/reglages pour les changer (reglages.py)
@@ -58,6 +63,7 @@ import os
 import re
 import ipaddress
 import json
+import math
 import queue
 import threading
 import time
@@ -79,7 +85,7 @@ COMMANDES = {
     "stop": "commande:stop", "stop_taquinerie": "stop_taquinerie", "diagnostic": "diagnostic",
     "calme_on": "calme_on", "calme_off": "calme_off", "garde_on": "garde_on", "garde_off": "garde_off",
     "oublier_carte": "oublier_carte", "ou_es_tu": "ou_es_tu", "signal_stop": "signal_stop",
-    "suis_moi": "suis_moi", "je_te_suis": "je_te_suis",
+    "suis_moi": "suis_moi", "je_te_suis": "je_te_suis", "station": "commande:station", "ronde": "commande:ronde",
     "batterie_1": "batterie_mise:1", "batterie_2": "batterie_mise:2", "batterie_3": "batterie_mise:3",
     "avance": "guide:avance", "gauche": "guide:gauche", "droite": "guide:droite",
     "regard_gauche": "regard:gauche", "regard_droite": "regard:droite", "regard_haut": "regard:haut",
@@ -99,6 +105,17 @@ def adresse_locale(ip):
     if a.version == 6 and a.ipv4_mapped:
         a = a.ipv4_mapped
     return a.is_private or a.is_loopback or a.is_link_local
+
+
+def _position_courte(pos):
+    """Ou il est sur le plan du lieu (position.py) : x, y, cap, sur, piece ; None sans plan."""
+    if pos is None or getattr(pos, "plan", None) is None:
+        return None
+    e = pos.estimation()
+    if e is None:
+        return None
+    return {"x": round(e[0], 2), "y": round(e[1], 2), "cap": round(e[2], 2), "ecart": round(e[3], 2),
+            "sur": e[3] <= 0.2, "piece": pos.piece(), "lieu": (pos._cle or [None])[0]}
 
 
 def instantane(brain, state, version=None):
@@ -130,6 +147,7 @@ def instantane(brain, state, version=None):
                   "timidite": round(brain.timidite(), 2) if hasattr(brain, "timidite") else 0.0,
                   "taquineries_coupees": brain.t_global < getattr(getattr(brain, "malice", None), "stop_jusqua", -1)},
         "presents": sorted(getattr(brain, "presents", ())),
+        "position": _position_courte(brain.ctx.extras.get("position")),
         "du_jour": dict(getattr(brain, "du_jour", {}) or {}),
         "semaine": brain.semaine() if hasattr(brain, "semaine") else [],
         "journal": [{"t": round(e[0]), "etat": e[1]} for e in list(brain.journal)[-40:]],
@@ -292,6 +310,8 @@ class Appli:
         self._reglages_a_appliquer = None
         self.lieux = None                       # lieux.Lieux, branche par canard.py (sinon : pas de section Lieux)
         self.photos = None                      # photos.Photos (journal photo, mode photo), branche par canard.py
+        self.position = None                    # position.PositionPlan (plan du lieu), branche par canard.py
+        self.grab = None                        # image camera (vue en direct du casque, opt-in photos), canard.py
         self.usure = {}                         # courbes d'usure (servos, batteries), photographiees toutes les 30 s
         self.stats = {}                         # bilan du mois, graphique d'humeur (toutes les 30 s)
         self._t_stats = -1e9
@@ -697,6 +717,32 @@ class Appli:
                     if self._autorise():
                         self._json(200, appli.planning.etat())
                     return
+                if url.path == "/api/xr":
+                    # casque (appli Quest, mode atelier) : position, nuage d'hypotheses, capteur, trajet - des nombres
+                    if self._autorise():
+                        self._json(200, appli.position.resume() if appli.position is not None else {"plan": False})
+                    return
+                if url.path == "/api/vue":
+                    # « etre le canard » (casque) : une image de sa camera, SEULEMENT si les photos sont permises
+                    # (Reglages, opt-in, code parent) - comme le journal photo
+                    if not self._autorise():
+                        return
+                    if appli.photos is None or not appli.photos.actif or appli.grab is None:
+                        return self._json(403, {"erreur": "photos désactivées (Réglages : photos)"})
+                    try:
+                        import cv2
+                        ok, jpg = cv2.imencode(".jpg", appli.grab(), [cv2.IMWRITE_JPEG_QUALITY, 70])
+                        assert ok
+                    except Exception:
+                        return self._json(503, {"erreur": "camera indisponible"})
+                    corps = jpg.tobytes()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "image/jpeg")
+                    self.send_header("Content-Length", str(len(corps)))
+                    self.send_header("Cache-Control", "no-store")
+                    self.end_headers()
+                    self.wfile.write(corps)
+                    return
                 if url.path == "/api/stats":
                     if self._autorise():
                         self._json(200, appli.stats)
@@ -805,7 +851,7 @@ class Appli:
                                   "/api/tester-imprimante", "/api/redemarrer", "/api/choregraphies", "/api/comportement",
                                   "/api/regard", "/api/mise-a-jour", "/api/photo", "/api/message", "/api/parcours", "/api/carnet",
                                   "/api/imprimer", "/api/invites", "/api/minuteur", "/api/rappel", "/api/plan",
-                                  "/api/plan-supprimer"):
+                                  "/api/plan-supprimer", "/api/plan-annoter", "/api/verite", "/api/aller"):
                     return self._json(404, {"erreur": "inconnu"})
                 if chemin == "/api/installation":
                     return self._installation()
@@ -816,7 +862,7 @@ class Appli:
                 try:
                     n = min(int(self.headers.get("Content-Length", "0")),
                             {"/api/design": 65536, "/api/restauration": 8 * 1024 * 1024,
-                             "/api/plan": 16 * 1024 * 1024}.get(chemin, 4096))
+                             "/api/plan": 16 * 1024 * 1024, "/api/plan-annoter": 65536}.get(chemin, 4096))
                     corps = json.loads(self.rfile.read(n) or b"{}")
                     if not isinstance(corps, dict):
                         raise ValueError
@@ -1025,6 +1071,41 @@ class Appli:
                     except OSError:
                         return self._json(500, {"erreur": "enregistrement impossible"})
                     return self._json(200, {"ok": True})
+                if chemin == "/api/plan-annoter":
+                    # zones interdites et points nommes (dessines dans le casque ou l'appli)
+                    if appli.lieux is None:
+                        return self._json(404, {"erreur": "lieux non geres"})
+                    zones, points = corps.get("zones"), corps.get("points")
+                    if (zones is not None and not isinstance(zones, list)) or (points is not None and not isinstance(points, dict)):
+                        return self._json(400, {"erreur": "zones (liste) et/ou points (objet) attendus"})
+                    try:
+                        resume = appli.lieux.annoter(corps.get("id") if isinstance(corps.get("id"), str) else None,
+                                                     zones, points)
+                    except (ValueError, TypeError) as e:
+                        return self._json(400, {"erreur": str(e)[:200]})
+                    return self._json(200, {"ok": True, "plan": resume})
+                if chemin in ("/api/verite", "/api/aller"):
+                    try:
+                        x, y = float(corps.get("x")), float(corps.get("y"))
+                        cap = float(corps["cap"]) if corps.get("cap") is not None else None
+                        assert all(math.isfinite(v) for v in (x, y) + ((cap,) if cap is not None else ()))
+                    except (TypeError, ValueError, AssertionError):
+                        return self._json(400, {"erreur": "x et y (m, repere du plan) attendus"})
+                    if chemin == "/api/aller":
+                        appli.evenements.put(f"aller:{x:.3f}|{y:.3f}")
+                        return self._json(200, {"ok": True})
+                    # verite terrain du casque : erreur de sa position ; « recaler » le remet a cet endroit
+                    if appli.position is None or appli.position.estimation() is None:
+                        return self._json(404, {"erreur": "pas de plan pour ce lieu"})
+                    ex, ey, ecap, disp = appli.position.estimation()
+                    reponse = {"erreur_m": round(math.hypot(ex - x, ey - y), 3), "estimation": [round(ex, 3), round(ey, 3),
+                               round(ecap, 3)], "dispersion": round(disp, 3)}
+                    if cap is not None:
+                        reponse["erreur_cap_deg"] = round(math.degrees(abs(math.remainder(ecap - cap, 2 * math.pi))), 1)
+                    if corps.get("recaler") and cap is not None:
+                        reponse["recale"] = appli.position.recaler(x, y, cap)
+                    appli.log(f"verite terrain (casque) : erreur {reponse['erreur_m']:.2f} m")
+                    return self._json(200, reponse)
                 if chemin in ("/api/plan", "/api/plan-supprimer"):
                     if appli.lieux is None:
                         return self._json(404, {"erreur": "lieux non geres"})

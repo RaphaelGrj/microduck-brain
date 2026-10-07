@@ -58,6 +58,9 @@ def test_conversion_d_un_scan_quest():
     assert abs(x - 1.7) < 0.02 and abs(y + 3.69) < 0.02 and abs(cap - math.pi / 2) < 0.05
     assert {o["nom"] for o in p.objets} >= {"canapé", "table", "porte"}
     assert p.pieces[0]["nom"] == "Salon" and p.reperes["entree"] == [1.2, 0.1]
+    # pour le casque : chargeur et « devant » dans le repere de l'ancre du sol (retrouvee d'une seance a l'autre)
+    q = p.reperes["quest"]
+    assert q["chargeur"] == pytest.approx([-1.7, -1.2, 0.0]) and q["devant"] == pytest.approx([-1.7, -0.2, 0.0])
 
 
 def test_scan_sans_reperes_et_mauvais_fichiers():
