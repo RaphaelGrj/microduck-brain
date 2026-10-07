@@ -13,6 +13,10 @@ le précédent.
 | **Jumeau** | Le canard **simulé** (`duck-sim`, sur le PC) dessiné dans ta pièce, à sa taille, animé en direct et piloté par son vrai cerveau et sa vraie appli : tout s'essaie avant la livraison. **Gâchette** tenue puis relâchée : lancer la balle. **Grip** la main sur sa tête : le caresser. **A** : ses couleurs (ci-dessous). Détails : « Le canard jumeau », plus bas. |
 | **Être le canard** | Sa tête suit la tienne, le joystick le fait marcher (pas guidés, avec les garde-fous de la télécommande). Tu vois ce qu'il voit, **seulement si les photos sont permises** dans ses réglages. |
 
+**Appairage** (une fois, puis à chaque changement de canard) : au premier lancement, ou en **cliquant le joystick
+gauche** à tout moment, le casque demande au clavier l'adresse du canard puis le code de son appli. Les deux sont
+affichés dans l'appli du téléphone : *Réglages → Casque (Meta Quest) → Appairer le casque*. Le casque les garde.
+
 Les modes autres que Scan parlent au canard par son appli (réseau local, code parent). Ils ne reçoivent que des
 positions, sauf le mode « Être le canard », qui reçoit une image **en opt-in**.
 
@@ -59,15 +63,15 @@ Seuls les meubles et la position des murs sortent du casque, vers ton PC ou ton 
    **MR Utility Kit**.
    - Sur l'objet **MRUK** créé : *Scene Settings → Data Source* = **Device**, et cocher *Load Scene On Startup*.
    - Sur **OVRCameraRig → OVR Manager** : *Quest Features → General → Scene Support* = **Required**, et dans
-     *Permission Requests On Startup*, cocher **Scene**.
+     *Permission Requests On Startup*, cocher **Scene**. Toujours dans *Quest Features → General*, cocher
+     **Requires System Keyboard** (le clavier du casque, pour l'appairage).
 6. Copier le dossier `quest/Assets/Microduck/` de ce dépôt dans le dossier `Assets/` du projet.
    `ExportPlan.cs` apparaît dans Unity.
 7. *GameObject → Create Empty*, le nommer `Microduck`. Glisser dessus, **dans cet ordre** (c'est l'ordre des
    modes) : `Canard`, `MenuMicroduck`, `ExportPlan`, `ModeAtelier`, `ModeVerite`, `ModeDessin`, `ModeDanse`,
    `ModeCanard`, `ModeJumeau`. Dans l'inspecteur :
-   - **Canard → Adresse** et **Code** : laisser **vides** pour l'instant (pas encore de canard ; seul le Scan sert).
-     Plus tard : `http://<adresse du canard>:8090` et le code de l'appli. Le scan arrivera alors directement dans
-     le canard, et les autres modes s'allumeront ;
+   - **Canard → Adresse** et **Code** : laisser **vides**. On les tape **dans le casque** (appairage, ci-dessous) :
+     changer de canard (le PC aujourd'hui, le vrai canard plus tard) ne demande pas de recompiler ;
    - **Export Plan → Nom Du Lieu** : `Maison` (ou le nom du lieu) ;
    - **Menu Microduck → Main Droite** : laisser vide, il la trouve seul.
 8. *Edit → Project Settings → Player → Android* : *Company Name* = ton nom ; vérifier que le *Package Name* vaut par
@@ -162,12 +166,15 @@ qui le font vivre : les daemons de Pollen, son cerveau (`canard.py`) et son appl
 
 ## Ce qu'il faut
 
-1. **Sur le PC (WSL)** : mettre les scripts à jour, puis lancer `duck-sim` et le cerveau avec son appli.
+1. **Sur le PC (WSL)** : mettre les scripts à jour, puis tout lancer d'une commande.
    ```
    cd ~/microduck-brain && git pull && cp scripts-wsl/*.sh ~/
-   bash ~/run-scene.sh maison        # TA maison (plan du lieu actuel) ; ou : bash ~/run-scene.sh testball (appartement)
-   cd ~/microduck-brain && uv run python canard.py ha.toml --sans-ha
+   bash ~/jumeau.sh maison           # TA maison (plan du lieu actuel) ; ou : bash ~/jumeau.sh testball (appartement)
    ```
+   `jumeau.sh` lance `duck-sim` puis le cerveau avec son appli, **sans Home Assistant** (un canard simulé ne doit pas
+   allumer tes vraies lampes ; `--avec-ha` pour l'avoir). Depuis le téléphone, *Réglages → Casque* : lancer la balle,
+   remettre le canard sur son chargeur, **changer de scène** (le simulateur et le cerveau redémarrent tout seuls).
+   Ctrl+C arrête tout.
    La scène `maison` est générée depuis le plan importé (scan Quest) : murs et meubles deviennent des boîtes. Son
    capteur de distance simulé voit donc tes vrais meubles, et le canard les contourne sous tes yeux.
 2. **Le Quest doit joindre l'appli du canard sur le PC**. WSL2 est derrière un réseau privé : il faut le rendre
@@ -184,8 +191,8 @@ qui le font vivre : les daemons de Pollen, son cerveau (`canard.py`) et son appl
      Set-NetFirewallHyperVVMSetting -Name '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -DefaultInboundAction Allow
      ```
      (la seconde ligne autorise les connexions entrantes vers WSL : c'est l'identifiant de WSL chez Microsoft).
-   - Dans Unity, **Canard → Adresse** = `http://<adresse IP du PC>:8090` (`ipconfig` dans PowerShell), **Code** = le
-     code de l'appli du canard (`[appli]` de `ha.toml`).
+   - Appairer le casque (joystick gauche) avec l'adresse et le code affichés dans *Réglages → Casque* de l'appli
+     (l'adresse est celle du PC une fois WSL en mode « mirrored »).
 3. **Le mode Jumeau** : X / Y sur la manette gauche jusqu'à « Jumeau ».
    - Scène `maison` + plan avec repère Quest : le canard est posé tout seul au bon endroit (le chargeur du scan).
    - Autre scène : il demande où il est né. Gâchette au sol à cet endroit, puis gâchette devant lui (sa direction).
@@ -205,7 +212,9 @@ sons du canard dans `Assets/Resources/SonsCanard/` (`chirp.wav`, `coo.wav`...) :
 ## Ses couleurs, en direct
 
 Le canard du casque porte le **schéma actif de son appli** (design space). Change de schéma sur le téléphone : le
-canard change de couleurs dans ta pièce, en deux secondes.
+canard change de couleurs dans ta pièce, en une seconde. Avec **👓 Voir dans le casque** (design space, carte
+« Schémas de couleurs »), chaque retouche du téléphone apparaît aussitôt sur le canard du casque, avant même
+d'enregistrer.
 
 Et dans l'autre sens, **A** passe en mode Couleurs :
 

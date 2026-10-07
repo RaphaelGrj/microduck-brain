@@ -30,6 +30,10 @@ API :
   GET  /api/jumeau?depuis=T canard jumeau (Quest) : poses des pieces du canard SIMULE (duck-sim), balles, derniers sons ;
                             POST /api/jumeau-balle {"pos", "vel"} la lance ; POST /api/jumeau-caresse le caresse. 404
                             sans simulateur (rien de cela n'existe sur le vrai robot) - jumeau.py
+  GET  /api/casque          le casque Quest : connecte ?, son mode, simulateur et scene, adresses a taper pour
+                            l'appairer ; POST {"action": "balle" | "chargeur" | "scene", "scene"} (canard jumeau)
+  POST /api/design-apercu   {"couleurs": {...}} : couleurs du design space vues tout de suite dans le casque, sans les
+                            enregistrer ({} : fin de l'apercu)
   GET  /api/vue             une image de sa camera (casque, « etre le canard ») - seulement si les photos sont permises
   GET  /api/design          schemas de couleurs et filaments du design space ; POST /api/design pour les garder
   GET  /api/alertes?depuis=T les alertes (chute, batterie, garde, incendie, impressions...) apres l'instant T (s)
@@ -316,6 +320,8 @@ class Appli:
         self.lieux = None                       # lieux.Lieux, branche par canard.py (sinon : pas de section Lieux)
         self.photos = None                      # photos.Photos (journal photo, mode photo), branche par canard.py
         self.position = None                    # position.PositionPlan (plan du lieu), branche par canard.py
+        self.casque = {}                        # dernier contact du casque Quest : {"t", "mode", "ip"}
+        self.apercu_design = None               # {"couleurs", "t"} : design space vu dans le casque, non enregistre
         self.sons_recents = collections.deque(maxlen=20)   # (instant, son) : ses derniers sons (canard jumeau)
         self.grab = None                        # image camera (vue en direct du casque, opt-in photos), canard.py
         self.usure = {}                         # courbes d'usure (servos, batteries), photographiees toutes les 30 s
@@ -661,6 +667,9 @@ class Appli:
                 if self.role is None:
                     self._json(401, {"erreur": "code d'appairage"})
                     return False
+                casque = self.headers.get("X-Microduck-Casque")
+                if casque:                              # l'appli du Quest se presente (Reglages -> Casque)
+                    appli.casque = {"t": time.time(), "mode": str(casque)[:30], "ip": self.client_address[0]}
                 chemin = urlparse(self.path).path
                 if self.role in ("enfant", "invite") and chemin not in (ENFANT_LECTURE if self.command == "GET" else ENFANT_ECRITURE):
                     self._json(403, {"erreur": "reserve aux parents"})
@@ -727,6 +736,19 @@ class Appli:
                     # casque (appli Quest, mode atelier) : position, nuage d'hypotheses, capteur, trajet - des nombres
                     if self._autorise():
                         self._json(200, appli.position.resume() if appli.position is not None else {"plan": False})
+                    return
+                if url.path == "/api/casque":
+                    if self._autorise():
+                        import jumeau
+                        gt = jumeau.lire_verite()
+                        c = appli.casque
+                        self._json(200, {
+                            "connecte": bool(c) and time.time() - c["t"] < 8, "dernier": c.get("t"),
+                            "mode": c.get("mode"), "ip": c.get("ip"),
+                            "simulateur": gt is not None, "scene": (gt or {}).get("scene"),
+                            "scenes": list(jumeau.SCENES), "changer_scene": os.environ.get("MICRODUCK_JUMEAU") == "1",
+                            "adresses": [f"http://{ip}:{appli.port}" for ip in jumeau.adresses_locales()],
+                            "apercu": appli.apercu_design is not None})
                     return
                 if url.path == "/api/jumeau":
                     if self._autorise():
@@ -822,9 +844,14 @@ class Appli:
                 if url.path == "/api/design":
                     if self._autorise():
                         try:
-                            self._json(200, valider_design(json.loads(appli.fichier_design.read_text())) or DESIGN_VIDE)
+                            d = valider_design(json.loads(appli.fichier_design.read_text())) or dict(DESIGN_VIDE)
                         except (OSError, ValueError):
-                            self._json(200, DESIGN_VIDE)
+                            d = dict(DESIGN_VIDE)
+                        a = appli.apercu_design
+                        import jumeau
+                        if a is not None and time.time() - a["t"] < jumeau.APERCU_S:
+                            d["apercu"] = a["couleurs"]          # vu dans le casque, pas enregistre
+                        self._json(200, d)
                     return
                 if url.path == "/api/plan":
                     if not self._autorise():
@@ -868,7 +895,7 @@ class Appli:
                                   "/api/regard", "/api/mise-a-jour", "/api/photo", "/api/message", "/api/parcours", "/api/carnet",
                                   "/api/imprimer", "/api/invites", "/api/minuteur", "/api/rappel", "/api/plan",
                                   "/api/plan-supprimer", "/api/plan-annoter", "/api/verite", "/api/aller",
-                                  "/api/jumeau-balle", "/api/jumeau-caresse"):
+                                  "/api/jumeau-balle", "/api/jumeau-caresse", "/api/casque", "/api/design-apercu"):
                     return self._json(404, {"erreur": "inconnu"})
                 if chemin == "/api/installation":
                     return self._installation()
@@ -885,6 +912,27 @@ class Appli:
                         raise ValueError
                 except (ValueError, AttributeError):
                     return self._json(400, {"erreur": "JSON attendu"})
+                if chemin == "/api/casque":
+                    import jumeau
+                    action = corps.get("action")
+                    if action == "balle":
+                        return self._json(*jumeau.balle_devant())
+                    if action == "chargeur":
+                        code, rep = jumeau.au_chargeur()
+                        if code == 200 and appli.position is not None:
+                            appli.position.recaler(0.0, 0.0, 0.0)  # il SAIT qu'il est au chargeur (repere du plan)
+                        return self._json(code, rep)
+                    if action == "scene":
+                        code, rep = jumeau.demander_scene(corps.get("scene"))
+                        if code == 200:
+                            appli.redemarrage_demande = True    # le cerveau sort ; jumeau.sh relance tout sur la scene
+                        return self._json(code, rep)
+                    return self._json(400, {"erreur": "action inconnue"})
+                if chemin == "/api/design-apercu":
+                    import jumeau
+                    c = jumeau.valider_apercu(corps)
+                    appli.apercu_design = {"couleurs": c, "t": time.time()} if c else None
+                    return self._json(200, {"ok": True})
                 if chemin == "/api/jumeau-balle":
                     import jumeau
                     return self._json(*jumeau.lancer(corps))

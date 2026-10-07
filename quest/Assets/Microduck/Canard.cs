@@ -17,11 +17,41 @@ public class Canard : MonoBehaviour
     public static Canard Ici;
     public bool Configure => !string.IsNullOrWhiteSpace(adresse);
 
-    void Awake() { Ici = this; }
+    // Adresse et code saisis DANS le casque (appairage, MenuMicroduck) : gardes d'une seance a l'autre, ils priment
+    // sur ceux de l'inspecteur. Changer de canard (PC -> vrai canard) ne demande donc pas de recompiler.
+    const string CLE_ADRESSE = "microduck_adresse", CLE_CODE = "microduck_code";
+
+    void Awake()
+    {
+        Ici = this;
+        if (PlayerPrefs.HasKey(CLE_ADRESSE)) adresse = PlayerPrefs.GetString(CLE_ADRESSE);
+        if (PlayerPrefs.HasKey(CLE_CODE)) code = PlayerPrefs.GetString(CLE_CODE);
+    }
+
+    public void Retenir(string nouvelleAdresse, string nouveauCode)
+    {
+        adresse = Normaliser(nouvelleAdresse);
+        code = (nouveauCode ?? "").Trim();
+        PlayerPrefs.SetString(CLE_ADRESSE, adresse);
+        PlayerPrefs.SetString(CLE_CODE, code);
+        PlayerPrefs.Save();
+    }
+
+    /// « 192.168.1.50 » -> « http://192.168.1.50:8090 »
+    public static string Normaliser(string a)
+    {
+        a = (a ?? "").Trim().TrimEnd('/');
+        if (a.Length == 0) return a;
+        if (!a.StartsWith("http://") && !a.StartsWith("https://")) a = "http://" + a;
+        if (a.IndexOf(':', a.IndexOf("//") + 2) < 0) a += ":8090";
+        return a;
+    }
 
     UnityWebRequest Preparer(UnityWebRequest r)
     {
         r.SetRequestHeader("X-Microduck-Code", code);
+        // l'appli du canard sait ainsi qu'un casque est la, et dans quel mode (Reglages -> Casque)
+        r.SetRequestHeader("X-Microduck-Casque", MenuMicroduck.Ici != null ? MenuMicroduck.Ici.ModeActif : "casque");
         r.timeout = 5;
         return r;
     }

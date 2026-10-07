@@ -436,6 +436,33 @@
           </div>
           <form method="dialog"><button class="large">Fermer</button></form>
         </dialog>
+        <div class="carte" id="carte-casque" data-parent>
+          <h2>Casque (Meta Quest)</h2>
+          <p class="discret petit">L'appli Microduck XR du casque : son plan en réalité augmentée, et le canard jumeau
+            (le canard simulé sur ton PC, dessiné dans ta pièce).</p>
+          <p id="casque-etat" class="discret">—</p>
+          <details id="casque-appairage">
+            <summary>Appairer le casque</summary>
+            <p class="discret petit">Dans le casque, clique le joystick gauche, puis tape cette adresse et ce code au
+              clavier. Ils restent gardés dans le casque : pas besoin de recompiler l'appli pour changer de canard.</p>
+            <ul id="casque-adresses" class="liste-choix"></ul>
+            <div class="boutons">
+              <button id="casque-code">Afficher le code</button>
+            </div>
+          </details>
+          <div id="casque-jumeau" hidden>
+            <h3>Canard jumeau</h3>
+            <p id="casque-scene" class="discret petit"></p>
+            <div class="boutons">
+              <button id="casque-balle">🎾 Lancer la balle</button>
+              <button id="casque-chargeur">🔌 Au chargeur</button>
+            </div>
+            <div class="boutons">
+              <select id="casque-scenes" aria-label="Scène du simulateur"></select>
+              <button id="casque-changer">Changer de scène</button>
+            </div>
+          </div>
+        </div>
         <div class="carte" data-parent>
           <h2>Invités</h2>
           <p class="discret petit">Un code pour quelques heures (un ami, les grands-parents) : jouer, regarder, laisser un
@@ -588,6 +615,9 @@
           <label class="bouton-like">Importer<input id="schemas-importer" type="file" accept=".json,application/json" hidden></label>
         </div>
         <button id="schemas-coller" class="large">Coller un schéma (texte ou QR)</button>
+        <button id="design-casque" class="large" aria-pressed="false">👓 Voir dans le casque</button>
+        <p class="discret petit">Chaque retouche apparaît aussitôt sur le canard du casque (mode Jumeau), avant même
+          d'enregistrer.</p>
       </div>
       <div class="carte">
         <h2>Schémas du catalogue</h2>

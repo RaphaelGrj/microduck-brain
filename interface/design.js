@@ -140,13 +140,36 @@ function peindre(groupe, couleur) {
   materiaux[groupe].color.set(couleur);
   $("#design-schema").textContent = (donnees.actif ? donnees.actif : "Nouveau schéma") + " · modifié";
   nuancier();
+  versCasque();
 }
 
 function appliquer(table) {
   couleurs = {};
   for (const id in materiaux) materiaux[id].color.set((table || {})[id] || origine[id]);
   Object.assign(couleurs, table || {});
+  versCasque();
 }
+
+// « Voir dans le casque » : chaque retouche part aussitot vers le canard du casque (mode Jumeau), sans enregistrer
+let casque = false, minuteurCasque = null;
+function versCasque() {
+  if (!casque) return;
+  clearTimeout(minuteurCasque);
+  minuteurCasque = setTimeout(() => {
+    const table = {};
+    for (const id in origine) table[id] = couleurs[id] || origine[id];       // complet : jamais vide
+    window.api("/api/design-apercu", { couleurs: table }).catch(() => window.toast("Microduck ne répond pas"));
+  }, 250);
+}
+function casqueActif(on) {
+  if (casque === on) return;
+  casque = on;
+  $("#design-casque").setAttribute("aria-pressed", String(on));
+  if (on) { versCasque(); window.toast("Visible dans le casque (mode Jumeau)"); }
+  else { clearTimeout(minuteurCasque); window.api("/api/design-apercu", { couleurs: {} }).catch(() => {}); }
+}
+$("#design-casque").addEventListener("click", () => casqueActif(!casque));
+$("#design").addEventListener("click", (e) => { if (e.target.closest("[data-fermer]")) casqueActif(false); });
 
 function nuancier() {
   const actuelle = choix ? (couleurs[choix] || origine[choix]).toLowerCase() : null;

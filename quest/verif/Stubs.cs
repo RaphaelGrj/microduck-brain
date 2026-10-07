@@ -116,6 +116,19 @@ namespace UnityEngine
         public static T GetBuiltinResource<T>(string p) where T : Object => null;
     }
     public static class SystemInfo { public static string deviceModel => ""; public static string deviceName => ""; }
+    public static class PlayerPrefs
+    {
+        public static bool HasKey(string k) => false; public static string GetString(string k) => "";
+        public static void SetString(string k, string v) { } public static void Save() { }
+    }
+    public enum TouchScreenKeyboardType { Default, ASCIICapable, NumbersAndPunctuation, URL, NumberPad, PhonePad, NamePhonePad, EmailAddress }
+    public class TouchScreenKeyboard
+    {
+        public enum Status { Visible, Done, Canceled, LostFocus }
+        public static TouchScreenKeyboard Open(string text, TouchScreenKeyboardType type, bool autocorrection, bool multiline, bool secure) => null;
+        public string text { get; set; }
+        public Status status => Status.Visible;
+    }
     public static class Application { public static string persistentDataPath => ""; }
     public static class Debug { public static void Log(object m) { } }
     public static class Time { public static float time => 0; public static float deltaTime => 0; }
