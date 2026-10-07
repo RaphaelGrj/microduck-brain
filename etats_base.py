@@ -110,6 +110,9 @@ class Ctx:
             return
         self.bec_t0, self.bec_fin = time.monotonic(), time.monotonic() + self.BEC_S.get(tag, 0.4)
         self.t_dernier_son = time.monotonic()            # le mode garde ne doit pas l'entendre lui-meme
+        recents = (getattr(self, "extras", None) or {}).get("sons_recents")
+        if recents is not None:
+            recents.append((round(time.time(), 3), tag))  # canard jumeau : le casque joue ses sons a sa place
         voix = (getattr(self, "extras", None) or {}).get("voix")
         if voix is not None:
             voix.parle(tag)                     # le micro ne s'ecoute pas lui-meme (audio.VoixPropre)

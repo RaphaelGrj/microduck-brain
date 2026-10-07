@@ -53,6 +53,19 @@ public class Canard : MonoBehaviour
         }
     }
 
+    /// GET -> octets (fichier binaire : le modele 3D du canard).
+    public IEnumerator LireOctets(string chemin, Action<byte[], string> fini)
+    {
+        if (!Configure) { fini(null, "adresse du canard non renseignee"); yield break; }
+        using (var r = Preparer(UnityWebRequest.Get(adresse.TrimEnd('/') + chemin)))
+        {
+            r.timeout = 30;                                  // ~4 Mo sur le Wi-Fi
+            yield return r.SendWebRequest();
+            if (r.result == UnityWebRequest.Result.Success) fini(r.downloadHandler.data, null);
+            else fini(null, r.error);
+        }
+    }
+
     /// GET image (JPEG) -> texture.
     public IEnumerator Image(string chemin, Action<Texture2D, string> fini)
     {

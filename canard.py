@@ -161,6 +161,7 @@ def assembler(client, args, log=print, cfg=None, cerveau=None, appli_cfg=None, b
             appli._reglages_a_appliquer = dict(cerveau)     # routines programmees : actives des le demarrage
             appli.brut = brut if brut is not None else {}
             appli.choregraphies = extras["choregraphies"]       # le meme dict : une choregraphie gardee se joue aussitot
+            extras["sons_recents"] = appli.sons_recents        # ses sons, relayes au canard jumeau (casque)
             appli.robotd = robotd_neuf
             if "--sans-camera" not in args:
                 import photos                           # journal photo (opt-in) et mode photo : gardes sur le canard

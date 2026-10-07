@@ -1,6 +1,6 @@
 # Microduck XR : le Meta Quest 3 au service du canard
 
-Une seule appli dans le casque, **six modes**. La manette **gauche** change de mode : **X** pour le suivant, **Y** pour
+Une seule appli dans le casque, **sept modes**. La manette **gauche** change de mode : **X** pour le suivant, **Y** pour
 le précédent.
 
 | Mode | À quoi il sert |
@@ -10,6 +10,7 @@ le précédent.
 | **Vérité** | Mesurer l'erreur de sa localisation : gâchette au **centre de son dos**, puis au **bout de son bec**. L'erreur s'affiche en cm et en degrés. **A** le recale à cet endroit (« tu es ici »). |
 | **Dessin** | **Zones interdites** : gâchette à chaque coin au sol, **A** pour fermer la zone. **Points nommés** (panier, gamelle…) : nom choisi au joystick, posé avec le **grip**. **B** annule. Tout est enregistré tout de suite dans son plan. |
 | **Danse** | **Gâchette** : enregistrer une danse avec **ta tête** (16 s au plus). Elle s'ajoute à son studio de chorégraphies. **A** la lui fait jouer. Joystick : plus ou moins ample. |
+| **Jumeau** | Le canard **simulé** (`duck-sim`, sur le PC) dessiné dans ta pièce, à sa taille, animé en direct et piloté par son vrai cerveau et sa vraie appli : tout s'essaie avant la livraison. **Gâchette** tenue puis relâchée : lancer la balle. **Grip** la main sur sa tête : le caresser. **A** : ses couleurs (ci-dessous). Détails : « Le canard jumeau », plus bas. |
 | **Être le canard** | Sa tête suit la tienne, le joystick le fait marcher (pas guidés, avec les garde-fous de la télécommande). Tu vois ce qu'il voit, **seulement si les photos sont permises** dans ses réglages. |
 
 Les modes autres que Scan parlent au canard par son appli (réseau local, code parent). Ils ne reçoivent que des
@@ -63,7 +64,7 @@ Seuls les meubles et la position des murs sortent du casque, vers ton PC ou ton 
    `ExportPlan.cs` apparaît dans Unity.
 7. *GameObject → Create Empty*, le nommer `Microduck`. Glisser dessus, **dans cet ordre** (c'est l'ordre des
    modes) : `Canard`, `MenuMicroduck`, `ExportPlan`, `ModeAtelier`, `ModeVerite`, `ModeDessin`, `ModeDanse`,
-   `ModeCanard`. Dans l'inspecteur :
+   `ModeCanard`, `ModeJumeau`. Dans l'inspecteur :
    - **Canard → Adresse** et **Code** : laisser **vides** pour l'instant (pas encore de canard ; seul le Scan sert).
      Plus tard : `http://<adresse du canard>:8090` et le code de l'appli. Le scan arrivera alors directement dans
      le canard, et les autres modes s'allumeront ;
@@ -150,3 +151,78 @@ porté ailleurs, plusieurs endroits se ressemblent. Un **marqueur** vu par sa ca
 - Coller chaque marqueur bien à plat, **en bas d'un mur**, le centre à ~10-12 cm du sol (la caméra du canard est
   basse) : au moins un par pièce, là où il passe souvent.
 - Les noter dans l'appli Quest dans l'ordre de leurs numéros (étape 4 du scan).
+
+---
+
+# Le canard jumeau (sans le canard)
+
+Le canard simulé par `duck-sim` sur le PC apparaît dans ta pièce, à l'échelle réelle. Ce sont **ses vrais logiciels**
+qui le font vivre : les daemons de Pollen, son cerveau (`canard.py`) et son appli. Tu le pilotes depuis le téléphone
+(télécommande, « va là », station, ronde, chasse au trésor...) et tu le vois faire, chez toi.
+
+## Ce qu'il faut
+
+1. **Sur le PC (WSL)** : mettre les scripts à jour, puis lancer `duck-sim` et le cerveau avec son appli.
+   ```
+   cd ~/microduck-brain && git pull && cp scripts-wsl/*.sh ~/
+   bash ~/run-scene.sh maison        # TA maison (plan du lieu actuel) ; ou : bash ~/run-scene.sh testball (appartement)
+   cd ~/microduck-brain && uv run python canard.py ha.toml --sans-ha
+   ```
+   La scène `maison` est générée depuis le plan importé (scan Quest) : murs et meubles deviennent des boîtes. Son
+   capteur de distance simulé voit donc tes vrais meubles, et le canard les contourne sous tes yeux.
+2. **Le Quest doit joindre l'appli du canard sur le PC**. WSL2 est derrière un réseau privé : il faut le rendre
+   visible sur le Wi-Fi, une fois pour toutes.
+   - Dans `C:\Users\<toi>\.wslconfig` (à créer s'il n'existe pas) :
+     ```
+     [wsl2]
+     networkingMode=mirrored
+     ```
+     puis, dans PowerShell, `wsl --shutdown` et relancer Ubuntu. WSL prend alors l'adresse du PC.
+   - Ouvrir le port 8090, dans PowerShell **administrateur** :
+     ```
+     New-NetFirewallRule -DisplayName "Microduck appli" -Direction Inbound -LocalPort 8090 -Protocol TCP -Action Allow
+     Set-NetFirewallHyperVVMSetting -Name '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -DefaultInboundAction Allow
+     ```
+     (la seconde ligne autorise les connexions entrantes vers WSL : c'est l'identifiant de WSL chez Microsoft).
+   - Dans Unity, **Canard → Adresse** = `http://<adresse IP du PC>:8090` (`ipconfig` dans PowerShell), **Code** = le
+     code de l'appli du canard (`[appli]` de `ha.toml`).
+3. **Le mode Jumeau** : X / Y sur la manette gauche jusqu'à « Jumeau ».
+   - Scène `maison` + plan avec repère Quest : le canard est posé tout seul au bon endroit (le chargeur du scan).
+   - Autre scène : il demande où il est né. Gâchette au sol à cet endroit, puis gâchette devant lui (sa direction).
+     **B** recommence.
+
+## Jouer avec lui
+
+| Geste | Effet |
+| --- | --- |
+| Gâchette tenue, puis relâchée en lançant | La balle part de ta main avec ta vitesse. Il la voit avec sa caméra simulée et joue avec. |
+| Grip tenu, la manette sur sa tête | Une caresse par seconde (ce que ses servos sentiraient sur le vrai). |
+| L'appli du téléphone | Tout marche comme avec le vrai canard ; les autres modes du casque (Atelier, Vérité, Dessin...) aussi. |
+
+Ses sons s'affichent en note flottante au-dessus de sa tête (« ♪ chirp »). Pour les entendre, mets les fichiers des
+sons du canard dans `Assets/Resources/SonsCanard/` (`chirp.wav`, `coo.wav`...) : le casque les joue depuis sa tête.
+
+## Ses couleurs, en direct
+
+Le canard du casque porte le **schéma actif de son appli** (design space). Change de schéma sur le téléphone : le
+canard change de couleurs dans ta pièce, en deux secondes.
+
+Et dans l'autre sens, **A** passe en mode Couleurs :
+
+| Geste | Effet |
+| --- | --- |
+| Viser une pièce avec la manette | Son nom s'affiche (dessus de la tête, coques, pieds...). |
+| Joystick gauche / droite | Choisir la couleur : tes bobines, tes couleurs gardées, puis la palette de l'appli. La pastille au bout de la manette la montre. |
+| Gâchette | Peindre la pièce visée. Les pièces achetées (servos, électronique) ne se peignent pas. |
+| Joystick haut / bas | Passer d'un schéma enregistré à l'autre (puis « couleurs d'origine »). |
+| Grip | Enregistrer : un schéma « Casque 1 », « Casque 2 »... apparaît dans l'appli, prêt pour la fiche d'impression. |
+| A | Retour au jeu. |
+
+Sans simulateur, le canard reste debout, immobile : pratique pour choisir ses couleurs posé sur la table.
+
+## Ce qui reste faux
+
+- Sa **caméra voit le monde simulé** (des boîtes), pas ta pièce : il ne te reconnaît pas, ni le chat. Seule la balle
+  virtuelle marche avec la vision.
+- On ne le touche pas vraiment : la caresse est un bouton.
+- Sa démarche est celle de la simulation (même politique que sur le robot, mais le transfert au réel n'est pas garanti).

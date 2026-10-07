@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Verification des scripts du casque hors Unity (dotnet build), contre Stubs.cs. Rien a deployer. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Nullable>disable</Nullable>
+    <LangVersion>9.0</LangVersion>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoWarn>CS0414;CS0649;CS0169;CS8321</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Stubs.cs" />
+    <Compile Include="../Assets/Microduck/*.cs" />
+  </ItemGroup>
+</Project>
