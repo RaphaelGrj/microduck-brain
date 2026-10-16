@@ -69,7 +69,9 @@ PROFILS_TIR = {
     "tolerant_droit": {"cible_x": {"left": CIBLE_X, "right": 0.11}, "tol_av": {"left": 0.025, "right": 0.035},
                        "tol_ar": {"left": 0.016, "right": 0.03}},
     # passe douce (BallKickPasse, fork) : meme placement d'entrainement que le tir tolerant (balle 8-15 cm), vitesse cible
-    # 0,5 m/s. Fenetre PROVISOIRE (copie du tolerant) : a remplacer par le balayage passe_eval.sh (KICK_VMIN/KICK_VMAX).
+    # 0,5 m/s. Fenetre MESUREE le 2026-10-16 (passe_eval.sh, droite it. 2999 et gauche it. 3499, KICK_VMIN=0.22) : la balle
+    # part a ~0,5 m en 1 s (pointe ~0,28 m/s), cap a moins de 35 deg, 0 chute ; succes de dx = -2 a +3 cm et dy = +-2,5 cm
+    # (5 cm de large = 2 x tol), echec des +4 cm. Les valeurs ci-dessous restent donc celles du tolerant.
     "passe": {"cible_x": {"left": 0.115, "right": 0.115}, "tol_av": {"left": 0.025, "right": 0.025},
               "tol_ar": {"left": 0.025, "right": 0.025}},
 }

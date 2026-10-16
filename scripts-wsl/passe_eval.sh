@@ -25,7 +25,7 @@ if [ "$it" != "officielle" ]; then
 fi
 cd "$HOME/microduck-brain" || exit 1
 echo "=== passe $pied : $it ($rep repetitions, 0,3 <= vmax <= 0,9 m/s) ==="
-KICK_VMIN=0.3 KICK_VMAX=0.9 KICK_DXS=$DXS KICK_DYS=$DYS bash "$HOME/run-brain.sh" kick_sweep.py "$pied" "$rep" 2>&1 | grep -v "^$"
+KICK_VMIN=${KICK_VMIN:-0.3} KICK_VMAX=${KICK_VMAX:-0.9} KICK_DXS=$DXS KICK_DYS=$DYS bash "$HOME/run-brain.sh" kick_sweep.py "$pied" "$rep" 2>&1 | grep -v "^$"
 if [ "$it" != "officielle" ] && [ -z "$garder" ]; then
   bash "$HOME/run-brain.sh" charge_politique.py "kick_$pied" officielle | head -1
 fi
