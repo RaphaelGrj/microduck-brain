@@ -7,6 +7,9 @@ y faire tourner ce cerveau. Il dit aussi, sans enjoliver, **ce qui est validé e
 > officiel) et une suite de tests sans simulateur. **Rien n'a tourné sur un vrai canard.** Si tu es le premier à essayer,
 > tu fais de la validation : n'hésite pas à ouvrir une issue avec ce que tu constates.
 
+Le code est sous licence **Apache-2.0** (voir `LICENSE`), comme la pile officielle de Pollen : tu peux l'utiliser, le
+modifier et le partager librement.
+
 ## Ce qu'il te faut
 
 - Un Microduck à jour (`robotd`, `tofd`, `mediad` officiels). Le cerveau ne parle qu'à eux, par leur API locale.

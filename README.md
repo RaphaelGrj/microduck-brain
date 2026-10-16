@@ -1,5 +1,7 @@
 # microduck-brain — le cerveau du canard
 
+[![Tests](https://github.com/RaphaelGrj/microduck-brain/actions/workflows/tests.yml/badge.svg)](https://github.com/RaphaelGrj/microduck-brain/actions/workflows/tests.yml) · Licence [Apache-2.0](LICENSE)
+
 Le cerveau comportemental d'un **[Microduck](https://github.com/pollen-robotics/microduck)** (Pollen Robotics) :
 ce qui en fait un membre du foyer plutôt qu'une démo. Il décide quoi faire à chaque instant, perçoit son entourage
 (caméra, capteur de distance, micro) et dialogue avec Home Assistant.

@@ -1,0 +1,17 @@
+# Les tests du cerveau a chaque push et chaque pull request : aucun simulateur ni robot requis.
+name: Tests
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Suite complete (sans test_chat_affiche, qui demande le modele YOLO)
+        run: uv run --with pytest pytest -q $(ls test_*.py | grep -v test_chat_affiche)
