@@ -145,3 +145,16 @@ def test_profil_passe_existe_et_jeu_le_transmet():
     assert set(t) == {"cible_x", "tol_av", "tol_ar"} and set(t["cible_x"]) == {"left", "right"}
     assert Partie(None, "chat", profil="passe").profil == "passe"
     assert Partie(None, "chat").profil is None
+
+
+def test_jeu_balle_transmet_le_profil_de_tir(monkeypatch):
+    import approach
+    from etats_jeux import JeuBalle
+    recus = []
+    monkeypatch.setattr(approach, "Approche", lambda client, couleur, **kw: recus.append(kw.get("profil")) or object())
+    for extras, attendu in (({"profil_tir": "passe"}, "passe"), ({}, None)):
+        brain = type("B", (), {"ctx": type("C", (), {"extras": extras, "client": None})()})()
+        jeu = JeuBalle()
+        jeu.manche = 0
+        jeu._nouvelle_manche(brain, 0.0)
+        assert recus[-1] == attendu

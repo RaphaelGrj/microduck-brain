@@ -87,6 +87,8 @@ def assembler(client, args, log=print, cfg=None, cerveau=None, appli_cfg=None, b
     extras["choregraphies"] = {c["nom"]: c["etapes"] for c in choregraphies.lire()}
     extras["autotest"] = cerveau.get("autotest", True)     # auto-test au premier reveil de la journee (diagnostic.py)
     extras["circadien"] = cerveau.get("circadien", True)   # vivacite selon l'heure du jour (Brain.vivacite)
+    if cerveau.get("profil_tir"):                          # "passe" : jeu de balle avec les politiques BallKickPasse
+        extras["profil_tir"] = str(cerveau["profil_tir"])
     extras["garde"] = bool(cerveau.get("garde", False))    # maison vide + voix/choc -> evenement HA (opt-in)
     repas = [h for h in (lire_heure(r) for r in cerveau.get("repas", [])) if h is not None]
     if repas:

@@ -302,7 +302,8 @@ class JeuBalle(Etat):
         fabrique = brain.ctx.extras.get("fabrique_approche")
         if fabrique is None:
             import approach
-            fabrique = lambda client: approach.Approche(client, "orange", log=lambda m: None)   # noqa: E731
+            profil = brain.ctx.extras.get("profil_tir")      # "passe" : politiques BallKickPasse chargees dans les slots
+            fabrique = lambda client: approach.Approche(client, "orange", log=lambda m: None, profil=profil)   # noqa: E731
         self.ap = fabrique(brain.ctx.client)
         self.manche += 1
         self.phase, self.t_phase = "approche", t
