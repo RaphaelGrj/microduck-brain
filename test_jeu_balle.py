@@ -135,3 +135,13 @@ def test_picore_le_sol():
     b._bascule("picore")
     simule(b, 9)
     assert ("robot.do", {"skill": "ground_pick"}) in c.appels and "peck" in sons(c)
+
+
+def test_profil_passe_existe_et_jeu_le_transmet():
+    import approach
+    from jeu import Partie
+    assert "passe" in approach.PROFILS_TIR
+    t = approach.PROFILS_TIR["passe"]
+    assert set(t) == {"cible_x", "tol_av", "tol_ar"} and set(t["cible_x"]) == {"left", "right"}
+    assert Partie(None, "chat", profil="passe").profil == "passe"
+    assert Partie(None, "chat").profil is None

@@ -11,8 +11,9 @@ Une manche :
   3. PASSE : approach.Approche avec `cible_vise` = position du joueur (la ligne de tir part de la balle vers lui).
   4. Petite celebration, puis on attend que la balle revienne (ou pas) avant la manche suivante.
 
-Le tir actuel est FORT (1 a 3 m/s) : la vraie passe douce attend la politique BallKickPasse (fork, entrainement
-prevu). Usage : bash ~/run-brain.sh jeu.py [chat|personne] [manches=3]
+Le tir officiel est FORT (1 a 3 m/s). Pour une vraie passe douce (~0,5 m/s), charger les politiques BallKickPasse dans les
+slots kick_left / kick_right (passe_eval.sh --garder) et lancer avec --passe (profil de tir "passe", approach.py).
+Usage : bash ~/run-brain.sh jeu.py [chat|personne] [manches=3] [--passe] [--verite]
 """
 import math
 import sys
@@ -39,7 +40,7 @@ ATTENTE_RETOUR_S = 6.0
 
 
 class Partie:
-    def __init__(self, client, joueur="chat", log=print, arret=None, detecteur=None, verite=False):
+    def __init__(self, client, joueur="chat", log=print, arret=None, detecteur=None, verite=False, profil=None):
         self.c = client
         self.joueur = joueur
         self.classes = CLASSES[joueur]
@@ -47,6 +48,7 @@ class Partie:
         self.arret = arret or (lambda: False)
         self.det = detecteur or animaux.DetecteurCoco()
         self.verite = verite
+        self.profil = profil             # profil de tir d'approach.PROFILS_TIR (None = MICRODUCK_TIR / officiel)
         self.position = None             # (x, y) du joueur, repere de l'odometrie
         self.journal = []
 
@@ -127,7 +129,7 @@ class Partie:
             return "parti"
         self.son("chirp")                                   # petite invitation, son modere
         ap = approach.Approche(self.c, "orange", verite=self.verite, log=self.log, cible_vise=self.position,
-                               arret=self.arret)
+                               arret=self.arret, profil=self.profil)
         garde = ap.decider
         trop_pres = []
 
@@ -171,7 +173,8 @@ def main():
     manches = int(args[1]) if len(args) > 1 else 3
     c = RobotdClient(SOCK_PATH)
     c.request("robot.subscribe", {})
-    p = Partie(c, joueur, log=lambda m: print(m, flush=True), verite="--verite" in sys.argv)
+    p = Partie(c, joueur, log=lambda m: print(m, flush=True), verite="--verite" in sys.argv,
+               profil="passe" if "--passe" in sys.argv else None)
     print("fin de la partie :", p.run(manches), flush=True)
 
 

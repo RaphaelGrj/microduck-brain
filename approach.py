@@ -68,6 +68,10 @@ PROFILS_TIR = {
     # 13/18 au-dela de 12 cm contre 1/18), pied gauche encore officiel
     "tolerant_droit": {"cible_x": {"left": CIBLE_X, "right": 0.11}, "tol_av": {"left": 0.025, "right": 0.035},
                        "tol_ar": {"left": 0.016, "right": 0.03}},
+    # passe douce (BallKickPasse, fork) : meme placement d'entrainement que le tir tolerant (balle 8-15 cm), vitesse cible
+    # 0,5 m/s. Fenetre PROVISOIRE (copie du tolerant) : a remplacer par le balayage passe_eval.sh (KICK_VMIN/KICK_VMAX).
+    "passe": {"cible_x": {"left": 0.115, "right": 0.115}, "tol_av": {"left": 0.025, "right": 0.025},
+              "tol_ar": {"left": 0.025, "right": 0.025}},
 }
 from balle import X_MIN_BALLE, Y_MIN_BALLE   # noqa: E402,F401  zone occupee par le canard (balle.py)
 D_ENTREE_AJUST = 0.35                    # on passe en AJUSTER sous cette distance

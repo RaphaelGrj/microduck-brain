@@ -3,7 +3,7 @@
 d'entrainement, pour les deux pieds. Mesure sur la VERITE TERRAIN : vitesse de pointe de la balle
 et direction de son depart par rapport au cap du canard.
 
-Succes = vitesse de pointe >= 0.4 m/s ET direction du depart a moins de 35 deg du cap.
+Succes = vitesse de pointe >= 0.4 m/s (KICK_VMIN / KICK_VMAX pour une passe) ET direction du depart a moins de 35 deg du cap.
 
 Usage : bash ~/run-brain.sh kick_sweep.py [right|left|both] [repetitions=1] [nominal]
 """
@@ -16,6 +16,9 @@ from poc_robotd_client import RobotdClient, SOCK_PATH
 
 import os
 HEAD_PITCH = float(os.environ.get("HEAD_PITCH", "0"))
+# Seuils de succes sur la vitesse de pointe (m/s) : tir = >= 0,4 ; passe douce (BallKickPasse, cible 0,5) = KICK_VMIN=0.3 KICK_VMAX=0.9
+VMIN = float(os.environ.get("KICK_VMIN", "0.4"))
+VMAX = float(os.environ.get("KICK_VMAX", "inf"))
 DXS = (-0.04, -0.02, 0.0, 0.02, 0.04)   # erreur en avant (m)
 DYS = (-0.03, 0.0, 0.03)                # erreur laterale (m)
 # Grilles personnalisees (ex. tir tolerant) : KICK_DXS="-0.03,0,0.03,0.06" KICK_DYS="-0.025,0,0.025"
@@ -72,7 +75,7 @@ def essai(cote, bruit):
     ang = math.degrees(math.atan2(dy, dx) - yaw0) if dist > 0.02 else float("nan")
     ang = (ang + 180) % 360 - 180 if not math.isnan(ang) else ang
     fell = c.read_state_frame()["safety"]["fallen"]
-    ok = (vmax >= 0.4) and (not math.isnan(ang)) and abs(ang) < 35 and not fell
+    ok = (VMIN <= vmax <= VMAX) and (not math.isnan(ang)) and abs(ang) < 35 and not fell
     return {"vmax": vmax, "dist1s": dist, "ang": ang, "fell": fell, "ok": ok}
 
 
