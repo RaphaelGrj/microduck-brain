@@ -313,6 +313,18 @@
       scene: null, scenes: ["maison", "testball", "apartment", "arena", "arena_chat"], changer_scene: false,
       adresses: ["http://192.168.1.50:8090"], apercu: false, demandes: [] };
     if (chemin === "/api/design-apercu") return { ok: true };
+    if (chemin === "/api/atelier") {                  // l'Atelier : meme compilation que blocs.py, en plus simple
+      if (!corps) return { sons: ["greet", "chirp", "coo", "inquire", "peck", "wheee", "alarm"], gestes: [],
+        bornes: { cou: [-0.3, 0.4], tangage: [-0.5, 0.6], lacet: [-0.9, 0.9], roulis: [-0.4, 0.4] }, max_repetitions: 10 };
+      const etapes = [];
+      const derouler = (liste, n) => liste.forEach((b) => {
+        if (b.type === "repeter") { if (n < 2) for (let k = 0; k < Math.min(10, b.n || 1); k++) derouler(b.blocs || [], n + 1); }
+        else if (["tete", "son", "geste", "assis", "pause"].includes(b.type) && etapes.length < 40) etapes.push(b);
+      });
+      derouler(corps.blocs || [], 0);
+      if (corps.action === "jouer") { if (!etapes.length) throw new Error("400"); changer("choregraphie", 6); }
+      return { ok: true, etapes, duree: etapes.length * 1.2, tronque: false, ignores: 0 };
+    }
     if (chemin === "/api/choregraphies") {
       if (corps && corps.jouer) { changer("choregraphie", 6); return { ok: true }; }
       if (corps && corps.liste) { choregraphiesDemo = corps.liste.filter((c) => c.nom && c.etapes.length); return { ok: true, liste: choregraphiesDemo }; }

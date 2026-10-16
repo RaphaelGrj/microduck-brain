@@ -420,3 +420,21 @@ button[aria-pressed=true] { background: var(--orange-fonce); color: var(--accent
 .bilan-carte { display: block; width: 100%; aspect-ratio: 4 / 5; margin: 10px 0; border-radius: 16px; }
 #bilan-mois { width: 100%; min-height: 44px; border-radius: 10px; border: 1px solid var(--bord); background: var(--carte);
   color: var(--texte); font: inherit; padding: 0 10px; }
+
+/* Atelier : canard en 3D, pilotage, blocs façon Scratch */
+.atelier-3d { height: 40vh; margin-bottom: 8px; }
+.atelier-son { position: absolute; left: 12px; bottom: 10px; font-size: .9rem; color: var(--discret); }
+.onglets-atelier { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.onglets-atelier button[aria-pressed="true"] { background: var(--orange); color: #fff; border-color: var(--orange); }
+.croix { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-width: 260px; margin: 0 auto; }
+.blocs { list-style: none; padding: 0; margin: 0 0 8px; display: grid; gap: 8px; }
+.bloc { border: 1px solid var(--bord); border-left: 6px solid var(--bord); border-radius: 12px; padding: 8px 10px; }
+.bloc-tete { border-left-color: #2f6fd6; } .bloc-son { border-left-color: #f4b023; } .bloc-geste { border-left-color: #7a4fc4; }
+.bloc-assis { border-left-color: #25a5a0; } .bloc-pause { border-left-color: #7d7f84; } .bloc-repeter { border-left-color: #f26a1b; }
+.bloc header { display: flex; align-items: center; gap: 6px; }
+.bloc header b { flex: 1; }
+.bloc header button { min-height: 32px; padding: 2px 8px; }
+.bloc label { display: grid; grid-template-columns: 100px 1fr 42px; align-items: center; gap: 6px; font-size: .85rem; }
+.bloc select, .ajout-bloc { font: inherit; width: 100%; min-height: 40px; border-radius: 10px; border: 1px solid var(--bord); }
+.bloc .blocs { margin: 8px 0 6px 8px; }
+.ajout-bloc { margin-top: 4px; }

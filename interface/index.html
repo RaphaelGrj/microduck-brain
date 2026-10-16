@@ -193,6 +193,11 @@
           <img id="photo-posee" class="photo-posee" alt="La dernière photo" hidden>
         </div>
         <div class="carte">
+          <h2>Atelier</h2>
+          <p class="discret petit">Le canard en 3D, à l'échelle : pilote-le, essaie ses gestes et programme-le avec des blocs.</p>
+          <button id="ouvrir-atelier" class="principal large" data-parent>Ouvrir l'Atelier</button>
+        </div>
+        <div class="carte">
           <h2>Ses tours à lui</h2>
           <p class="discret petit">Compose des chorégraphies : positions de tête, sons de canard, gestes, s'asseoir.</p>
           <ul id="liste-tours" class="liste-choix"></ul>
@@ -699,6 +704,75 @@
         <h2>Ce qu'il peut être en train de faire</h2>
         <p class="discret petit">Tout ce que l'accueil peut afficher dans « En ce moment ».</p>
         <ul id="glossaire" class="pastilles"></ul>
+      </div>
+    </main>
+  </section>
+
+  <!-- Atelier : le canard en 3D, pilotable, et programmation par blocs (blocs.py, atelier.js) -->
+  <section id="atelier" class="ecran plein" hidden>
+    <header class="entete">
+      <button class="icone-bouton retour" data-fermer aria-label="Retour">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="titre-plein"><h1>Atelier</h1><p class="discret" id="atelier-etat">Chargement…</p></div>
+    </header>
+    <div id="atelier-3d" class="vue3d atelier-3d">
+      <p id="atelier-attente" class="discret centre">Chargement du Microduck…</p>
+      <span id="atelier-son" class="atelier-son" aria-live="polite"></span>
+    </div>
+    <main>
+      <div class="onglets-atelier">
+        <button data-atelier-onglet="piloter" aria-pressed="true">Piloter</button>
+        <button data-atelier-onglet="programmer" aria-pressed="false">Programmer</button>
+      </div>
+      <div id="atelier-piloter">
+        <div class="carte">
+          <h2>Marcher</h2>
+          <div class="croix">
+            <span></span><button data-cmd="avance" aria-label="Avancer">▲</button><span></span>
+            <button data-cmd="gauche" aria-label="Tourner à gauche">⟲</button>
+            <button data-cmd="stop" class="danger" aria-label="Stop">■</button>
+            <button data-cmd="droite" aria-label="Tourner à droite">⟳</button>
+          </div>
+        </div>
+        <div class="carte">
+          <h2>Regarder</h2>
+          <div class="croix">
+            <span></span><button data-cmd="regard_haut" aria-label="Regarder en haut">↑</button><span></span>
+            <button data-cmd="regard_gauche" aria-label="Regarder à gauche">←</button>
+            <button data-cmd="regard_centre" aria-label="Regarder devant">●</button>
+            <button data-cmd="regard_droite" aria-label="Regarder à droite">→</button>
+            <span></span><button data-cmd="regard_bas" aria-label="Regarder en bas">↓</button><span></span>
+          </div>
+        </div>
+        <div class="carte">
+          <h2>Essayer une fonction</h2>
+          <div class="boutons">
+            <button data-cmd="salut">👋 Salut</button><button data-cmd="toupie">🌀 Toupie</button>
+            <button data-cmd="assis">🪑 Assis / debout</button><button data-cmd="danse">🎵 Danse</button>
+            <button data-cmd="jouer_balle">⚽ Jeu de balle</button><button data-cmd="jouer_cache">🙈 Cache-cache</button>
+            <button data-cmd="suis_moi">🐾 Suis-moi</button><button data-cmd="fin_jeu">Fin du jeu</button>
+          </div>
+        </div>
+        <div class="carte" id="atelier-sim" hidden>
+          <h2>Simulateur</h2>
+          <p class="discret petit">Disponible seulement avec <code>duck-sim</code> (rien de tout cela n'existe sur le vrai robot).</p>
+          <div class="boutons"><button id="atelier-balle">⚽ Lancer une balle</button><button id="atelier-caresse">🤚 Le caresser</button></div>
+        </div>
+      </div>
+      <div id="atelier-programmer" hidden>
+        <div class="carte">
+          <h2>Mon programme</h2>
+          <p class="discret petit">Empile des blocs : il les joue dans l'ordre. Le canard vérifie tout (positions bornées, sons
+            de canard) : un programme ne peut pas lui faire de mal.</p>
+          <div id="atelier-blocs"></div>
+          <p id="atelier-info" class="discret petit">Ajoute un bloc pour commencer</p>
+          <div class="boutons"><button id="atelier-jouer" class="principal" disabled>▶ Jouer</button><button id="atelier-vider" class="danger">Tout effacer</button></div>
+        </div>
+        <div class="carte">
+          <h2>Garder dans le Studio</h2>
+          <label class="champ">Nom<input id="atelier-nom" maxlength="40" placeholder="Mon programme"></label>
+          <button id="atelier-enregistrer" class="large" disabled>Enregistrer comme tour</button>
+        </div>
       </div>
     </main>
   </section>

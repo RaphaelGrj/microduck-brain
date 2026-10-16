@@ -45,6 +45,8 @@ API :
   GET  /api/sauvegarde      sa memoire (apprentissages, lieux, design, reglages ; jamais ha.toml ni jeton)
   POST /api/restauration    une sauvegarde, appliquee au prochain demarrage du canard
   GET  /api/choregraphies   le studio ; POST {"liste": [...]} pour les garder, {"jouer": nom} pour en jouer une
+  GET  /api/atelier         palette des blocs (sons, gestes, bornes) ; POST {"blocs": [...], "action": "compiler" | "jouer" |
+                            "enregistrer", "nom"} : des blocs (blocs.py) compiles en etapes de choregraphie, jamais du code
   GET  /api/comportements   politiques installees (robotd) ; POST /api/comportement chercher / installer / essayer
   POST /api/regard          {"lacet", "tangage"} : regard a une position (pave tactile), borne par le cerveau
   POST /api/mise-a-jour     {"action": "installer", "branche": ...} ou {"action": "revenir"} : au prochain demarrage
@@ -236,6 +238,7 @@ INSTALLATION_S = 30 * 60             # sans code : l'installation reste ouverte 
 ENFANT_LECTURE = {"/api/role", "/api/etat", "/api/flux", "/api/carte", "/api/alertes", "/api/design", "/api/lieux", "/api/lieu-carte",
                   "/api/imprimantes", "/api/choregraphies", "/api/comportements", "/api/messages", "/api/parcours", "/api/planning", "/api/stats"}
 ENFANT_ECRITURE = {"/api/commande", "/api/message", "/api/parcours", "/api/minuteur"}
+ESSAI_ATELIER = "Essai atelier"          # la chorégraphie temporaire de l'Atelier (en mémoire, jamais enregistrée)
 COMMANDES_ENFANT = {"signal_stop", "suis_moi", "je_te_suis", "tresor", "cherche_balle", "jouer_balle", "jouer_cache", "jouer_soleil", "fin_jeu", "salut", "toupie", "danse", "stop",
                     "stop_taquinerie", "ou_es_tu", "regard_gauche", "regard_droite", "regard_haut", "regard_bas",
                     "regard_centre"}
@@ -739,6 +742,11 @@ class Appli:
                         import configuration
                         self._json(200, configuration.pour_appli(appli.brut))
                     return
+                if url.path == "/api/atelier":
+                    if self._autorise():
+                        import blocs
+                        self._json(200, blocs.catalogue())
+                    return
                 if url.path == "/api/choregraphies":
                     if self._autorise():
                         import choregraphies
@@ -936,7 +944,7 @@ class Appli:
                                   "/api/imprimer", "/api/invites", "/api/minuteur", "/api/rappel", "/api/plan",
                                   "/api/plan-supprimer", "/api/plan-annoter", "/api/verite", "/api/aller",
                                   "/api/jumeau-balle", "/api/jumeau-caresse", "/api/casque", "/api/design-apercu",
-                                  "/api/casque-demande"):
+                                  "/api/casque-demande", "/api/atelier"):
                     return self._json(404, {"erreur": "inconnu"})
                 if chemin == "/api/installation":
                     return self._installation()
@@ -1028,6 +1036,29 @@ class Appli:
                         return self._json(200, {"ok": True, "etat": lu["etat"], "progression": lu.get("progression")})
                     except Exception as e:
                         return self._json(200, {"ok": False, "message": str(e)[:120]})
+                if chemin == "/api/atelier":
+                    import blocs
+                    import choregraphies
+                    r = blocs.compiler(corps.get("blocs"))
+                    action = corps.get("action", "compiler")
+                    if action not in ("compiler", "jouer", "enregistrer"):
+                        return self._json(400, {"erreur": "action inconnue"})
+                    if action != "compiler" and not r["etapes"]:
+                        return self._json(400, {"erreur": "rien de jouable dans ces blocs", **r})
+                    if action == "jouer":
+                        appli.choregraphies[ESSAI_ATELIER] = r["etapes"]     # en memoire seulement, jamais sur disque
+                        appli.evenements.put(f"choregraphie:{ESSAI_ATELIER}")
+                    elif action == "enregistrer":
+                        nom = str(corps.get("nom") or "Mon programme")[:40]
+                        liste = [{"nom": n, "etapes": e} for n, e in appli.choregraphies.items() if n != ESSAI_ATELIER]
+                        try:
+                            propre = choregraphies.ecrire(liste + [{"nom": nom, "etapes": r["etapes"]}])
+                        except OSError:
+                            return self._json(500, {"erreur": "enregistrement impossible"})
+                        appli.choregraphies.clear()
+                        appli.choregraphies.update({c["nom"]: c["etapes"] for c in propre})
+                        r["enregistre"] = any(c["etapes"] == r["etapes"] for c in propre)
+                    return self._json(200, {"ok": True, **r})
                 if chemin == "/api/choregraphies":
                     import choregraphies
                     if isinstance(corps.get("jouer"), str):

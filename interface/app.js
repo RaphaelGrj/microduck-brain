@@ -893,6 +893,12 @@ async function ouvrirDesign() {
   } catch (e) { toast("Le design ne s'ouvre pas"); }
 }
 $("#ouvrir-design").addEventListener("click", ouvrirDesign);
+$("#ouvrir-atelier").addEventListener("click", async () => {
+  try {
+    if (!window.MicroduckAtelier) await import("./atelier.js");
+    await window.MicroduckAtelier.ouvrir();
+  } catch (e) { toast("L'atelier ne s'ouvre pas"); }
+});
 document.addEventListener("click", (ev) => { if (ev.target.closest("[data-fermer]")) history.back(); });
 window.addEventListener("popstate", () => { document.querySelectorAll(".ecran.plein").forEach((e) => { e.hidden = true; }); });
 
