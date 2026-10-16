@@ -8,6 +8,8 @@ Il tourne **sur le robot**, à côté des démons officiels (`robotd`, `tofd`, `
 Il ne fait que commander le robot via l'API JSON-RPC de `robotd` (marche, tête, sons, compétences entraînées) : aucun
 réseau de neurones n'est entraîné ici. Le même code pilote le vrai robot ou le canard simulé de `duck-sim`.
 
+> **Tu as un Microduck ?** Voir [INSTALLER.md](INSTALLER.md) (ce qui est validé, ce qui ne l'est pas).
+
 > **État** : le robot n'est pas encore livré. Tout est développé contre `duck-sim` et couvert par une suite de tests
 > sans simulateur (277 tests). Une partie a été écrite sans simulateur et attend la validation groupée
 > (`scripts-wsl/valider-tout.sh`).
