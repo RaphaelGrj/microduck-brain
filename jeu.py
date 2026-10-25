@@ -37,6 +37,9 @@ SEUIL_RECHERCHE = 0.3       # de biais, l'affiche du chat sort entre 0,41 et 0,5
 SEUIL_SUR = 0.5              # en dessous, la detection doit etre confirmee sur une deuxieme image
 TETE_PITCH = 0.15            # un peu baissee : un chat assis et une personne debout restent dans le champ
 ATTENTE_RETOUR_S = 6.0
+# tete tournee et un peu baissee : l'horizon de la camera s'incline (~15 deg a 0,6 rad de lacet), ce qui fait tomber le score
+# YOLO (affiche a -37 deg : person 0,16 sans compensation, dog 0,45 avec). Roulis de meme signe que le lacet (diag_roll.py).
+ROULIS_COMP = 0.4
 
 
 class Partie:
@@ -58,7 +61,8 @@ class Partie:
         s = None
         while time.monotonic() - t0 < secs:
             s = self.c.read_state_frame()
-            self.c.notify("robot.head", {"neck_pitch": 0.0, "head_pitch": tete[1], "head_yaw": tete[0], "head_roll": 0.0})
+            self.c.notify("robot.head", {"neck_pitch": 0.0, "head_pitch": tete[1], "head_yaw": tete[0],
+                                              "head_roll": ROULIS_COMP * tete[0]})
             self.c.notify("robot.move", {"vx": 0.0, "vy": 0.0, "vyaw": vyaw})
         return s
 
