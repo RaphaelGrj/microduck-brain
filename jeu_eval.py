@@ -58,6 +58,11 @@ for k in range(n):
         err = math.degrees((dep - vise + math.pi) % (2 * math.pi) - math.pi)
         dist = math.hypot(p1[0] - p0[0], p1[1] - p0[1])
         ligne.update(err=err, dist=dist, ok=dist > 0.15 and abs(err) <= 25)
+        yaw_tir = truth.trunk_yaw(j["avant_tir"]["gt"]["ducks"][0]["quat"])
+        rel = math.degrees((dep - yaw_tir + math.pi) % (2 * math.pi) - math.pi)     # depart relatif au cap du canard
+        cap_vise = math.degrees((vise - yaw_tir + math.pi) % (2 * math.pi) - math.pi)   # direction du chat vue du canard
+        ligne.update(rel=rel, cap_vise=cap_vise)
+        print(f"  cap canard au tir : le chat est a {cap_vise:+.0f} deg du cap, la balle part a {rel:+.0f} deg du cap", flush=True)
         print(f"RESULTAT : balle partie {dist:.2f} m, ecart a la direction du chat {err:+.0f} deg -> "
               f"{'SUCCES' if ligne['ok'] else 'echec'}", flush=True)
     else:

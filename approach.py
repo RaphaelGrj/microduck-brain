@@ -72,8 +72,11 @@ PROFILS_TIR = {
     # 0,5 m/s. Fenetre MESUREE le 2026-10-16 (passe_eval.sh, droite it. 2999 et gauche it. 3499, KICK_VMIN=0.22) : la balle
     # part a ~0,5 m en 1 s (pointe ~0,28 m/s), cap a moins de 35 deg, 0 chute ; succes de dx = -2 a +3 cm et dy = +-2,5 cm
     # (5 cm de large = 2 x tol), echec des +4 cm. Les valeurs ci-dessous restent donc celles du tolerant.
-    "passe": {"cible_x": {"left": 0.115, "right": 0.115}, "tol_av": {"left": 0.025, "right": 0.025},
-              "tol_ar": {"left": 0.025, "right": 0.025}},
+    # RECALE le 2026-10-25 sur le balayage kick_sweep (nominal x = 9 cm, y = 4,2 cm, pied gauche, passe it. 3499) : succes pour
+    # x de 7 a 11 cm et un decalage lateral de -0,8 a +2,5 cm ; a +3 cm (x = 12) la balle est a peine touchee. Le jeu complet
+    # tirait a x = 11,5-14 cm (ancienne fenetre du tolerant) : balle ratee 4 fois sur 8.  = (cote axe, cote exterieur).
+    "passe": {"cible_x": {"left": 0.09, "right": 0.09}, "tol_av": {"left": 0.02, "right": 0.02},
+              "tol_ar": {"left": 0.018, "right": 0.018}, "tol_y": (0.008, 0.02)},
 }
 from balle import X_MIN_BALLE, Y_MIN_BALLE   # noqa: E402,F401  zone occupee par le canard (balle.py)
 D_ENTREE_AJUST = 0.35                    # on passe en AJUSTER sous cette distance
@@ -361,7 +364,8 @@ class Approche:
         e_int = -ey if self.cote == "left" else ey          # > 0 : balle trop pres de l'axe du canard
         tol_av = self.tir["tol_av"].get(self.cote, TOL_X_AV)
         tol_ar = self.tir["tol_ar"].get(self.cote, TOL_X_AR)
-        if -tol_ar <= ex <= tol_av and -TOL_Y_EXT <= e_int <= TOL_Y_INT:
+        tol_y_int, tol_y_ext = self.tir.get("tol_y", (TOL_Y_INT, TOL_Y_EXT))
+        if -tol_ar <= ex <= tol_av and -tol_y_ext <= e_int <= tol_y_int:
             if vue or self.x_vis > X_SWING:
                 self.tirer(est, "dans la fenetre" if vue else "dans la fenetre (odometrie, balle hors de la zone de pas)")
             else:

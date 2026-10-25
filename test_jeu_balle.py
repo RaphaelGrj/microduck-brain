@@ -142,7 +142,7 @@ def test_profil_passe_existe_et_jeu_le_transmet():
     from jeu import Partie
     assert "passe" in approach.PROFILS_TIR
     t = approach.PROFILS_TIR["passe"]
-    assert set(t) == {"cible_x", "tol_av", "tol_ar"} and set(t["cible_x"]) == {"left", "right"}
+    assert {"cible_x", "tol_av", "tol_ar"} <= set(t) <= {"cible_x", "tol_av", "tol_ar", "tol_y"} and set(t["cible_x"]) == {"left", "right"}
     assert Partie(None, "chat", profil="passe").profil == "passe"
     assert Partie(None, "chat").profil is None
 
