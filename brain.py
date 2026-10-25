@@ -126,8 +126,9 @@ class Brain:
     BONJOUR_FENETRE_H = 4       # le bonjour du matin n'est dit que dans les 4 h qui suivent l'heure prevue
 
     def __init__(self, client, humeur=None, seed=None, extras=None, heures_calmes=None, horloge=time.localtime,
-                 bonjour=None, bonjour_weekend=None):
+                 bonjour=None, bonjour_weekend=None, skills_rl=False):
         self.ctx = Ctx(client)
+        self.ctx.skills_rl.actif = bool(skills_rl)      # gestes du corps appris (opt-in, skills_rl.py)
         self.ctx.extras = extras or {}          # perceptions externes partagees (ex. {"chat": VeilleChat})
         # "Heures calmes" (ROADMAP, table Humains : routine "Heure, HA" -> Nap) : optionnel (None = desactive, le
         # comportement par defaut ne change pas) - un tuple (heure_debut, heure_fin) en heure LOCALE, ex. (23, 7)

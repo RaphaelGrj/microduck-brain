@@ -6,6 +6,7 @@ import math
 import time
 
 import gestures
+import skills_rl
 
 
 DT_DEFAUT = 0.02  # une trame robot.state = 20 ms
@@ -60,6 +61,7 @@ class Ctx:
         self.client = client
         self.state = None
         self.sitting = False
+        self.skills_rl = skills_rl.SkillsRL(client)     # gestes du corps appris par RL (opt-in : Brain(skills_rl=True))
 
     def head(self, vals):
         self.tete_cmd = tuple(vals)             # derniere consigne de tete (detecteurs : main tendue, caresse)
@@ -313,6 +315,7 @@ class Geste(Etat):
     def __init__(self, nom_etat, geste, recul=False, son=None):
         self.nom = nom_etat
         self.geste = geste
+        self.rl = 0.0               # duree du skill RL lance a l'entree (0 = geste scripte)
         self.recul = recul
         self.son = son              # etiquette de robot.sound jouee a l'entree (la voix du canard)
         self._duree, self._fn = gestures.GESTES[geste]
@@ -320,11 +323,14 @@ class Geste(Etat):
     def entre(self, brain):
         if self.son:
             brain.ctx.sound(self.son)
+        self.rl = brain.ctx.skills_rl.joue(self.geste, brain.ctx.state, brain.ctx.sitting)
 
     def duree(self, brain):
-        return self._duree + 0.5
+        return (self.rl + 0.8) if self.rl else self._duree + 0.5
 
     def pas(self, brain, t):
+        if self.rl:                 # le skill RL pilote le corps : ni tete, ni pose, ni recul pour ne pas lutter contre lui
+            return
         brain.ctx.head(self._fn(min(t, self._duree)) if t < self._duree else (0, 0, 0, 0))
         corps = gestures.GESTES_CORPS.get(self.geste)
         if corps is not None:

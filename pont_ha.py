@@ -274,6 +274,8 @@ def options_cerveau(cfg):
         hc = [int(debut), int(fin)] if debut.strip().isdigit() and fin.strip().isdigit() else None
     if isinstance(hc, (list, tuple)) and len(hc) == 2 and all(isinstance(h, int) and 0 <= h < 24 for h in hc):
         options["heures_calmes"] = (hc[0], hc[1])
+    if c.get("skills_rl") is True:
+        options["skills_rl"] = True
     for cle in ("bonjour", "bonjour_weekend"):
         bj = c.get(cle)
         if isinstance(bj, int) and 0 <= bj < 24:
