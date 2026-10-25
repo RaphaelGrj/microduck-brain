@@ -64,4 +64,7 @@ class SkillsRL:
         if isinstance(r, dict) and "error" in r:
             print(f"  (skill {skill} refuse : {r['error']})", flush=True)
             return 0.0
+        if isinstance(r, dict) and (r.get("result") or {}).get("accepted") is False:   # refus poli : pas d'erreur JSON-RPC
+            print(f"  (skill {skill} non accepte : {r['result'].get('reason')})", flush=True)
+            return 0.0
         return duree

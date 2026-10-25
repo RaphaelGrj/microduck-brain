@@ -17,6 +17,8 @@ class Client:
         self.appels.append((method, params))
         if method == "robot.skills":
             return {"result": self.skills}
+        if method == "robot.do" and self.refuse == "poli":
+            return {"result": {"accepted": False, "reason": "no skill"}}
         if method == "robot.do" and self.refuse:
             return {"error": {"message": "non"}}
         return {"result": {"accepted": True}}
@@ -54,6 +56,7 @@ def test_repli_si_non_installe_chute_assis_porte_ou_refus():
     assert s.joue("non") == 0.0                      # geste sans variante RL
     assert c.do() == []
     assert SkillsRL(Client(refuse=True), actif=True).joue("surpris") == 0.0
+    assert SkillsRL(Client(refuse="poli"), actif=True).joue("surpris") == 0.0     # accepted: false, sans erreur
 
 
 def test_geste_rl_ne_commande_pas_la_tete():
