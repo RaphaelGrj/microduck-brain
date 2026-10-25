@@ -323,7 +323,7 @@ class Geste(Etat):
     def entre(self, brain):
         if self.son:
             brain.ctx.sound(self.son)
-        self.rl = brain.ctx.skills_rl.joue(self.geste, brain.ctx.state, brain.ctx.sitting)
+        self.rl = brain.ctx.skills_rl.joue(self.geste, brain.ctx.state, brain.ctx.sitting, self.nom)
 
     def duree(self, brain):
         return (self.rl + 0.8) if self.rl else self._duree + 0.5

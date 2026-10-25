@@ -82,3 +82,12 @@ def test_geste_scripte_sans_option():
 def test_option_config():
     assert options_cerveau({"cerveau": {"skills_rl": True}}) == {"skills_rl": True}
     assert "skills_rl" not in options_cerveau({"cerveau": {}})
+
+
+def test_skill_par_etat_prioritaire():
+    c = Client(skills=("pirouette", "trepigner", "startle"))
+    s = SkillsRL(c, actif=True)
+    assert s.joue("content", etat="celebre") == 3.1          # le geste "content" n a pas de skill, l etat oui
+    assert s.joue("surpris", etat="alerte") == 2.0           # l etat l emporte sur le geste (trepigner, pas startle)
+    assert s.joue("content", etat="autre") == 0.0
+    assert c.do() == ["pirouette", "trepigner"]

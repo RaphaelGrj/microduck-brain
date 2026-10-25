@@ -12,6 +12,12 @@ SKILLS_RL = {
     "ebouriffe": {"skill": "frisson", "duree_s": 1.3},
     "curieux": {"skill": "curieux", "duree_s": 1.3},
 }
+# etat du cerveau -> skill, prioritaire sur le geste de l'etat (le pas de cote n'y est PAS : il deplace le canard de
+# 12 a 30 cm de cote et le ToF ne regarde que devant, un vide a gauche passerait inapercu)
+SKILLS_ETATS = {
+    "celebre": {"skill": "pirouette", "duree_s": 3.1},      # impression terminee : tour sur place (2,1 s + 1,0 s de freinage)
+    "alerte": {"skill": "trepigner", "duree_s": 2.0},       # impression ratee : il trepigne
+}
 RAFRAICHIT_S = 30.0         # la liste des skills installes est relue au plus toutes les 30 s
 
 
@@ -47,12 +53,13 @@ class SkillsRL:
                 self._noms = set()
         return self._noms
 
-    def joue(self, geste, state=None, assis=False):
+    def joue(self, geste, state=None, assis=False, etat=None):
         """Lance le skill RL du geste. Renvoie sa duree (s), ou 0.0 si non lance (option off, non installe, assis, a
         terre, porte) : l'appelant joue alors le geste scripte."""
-        if not self.actif or assis or geste not in SKILLS_RL:
+        choix = SKILLS_ETATS.get(etat) or SKILLS_RL.get(geste)
+        if not self.actif or assis or choix is None:
             return 0.0
-        skill, duree = SKILLS_RL[geste]["skill"], SKILLS_RL[geste]["duree_s"]
+        skill, duree = choix["skill"], choix["duree_s"]
         s = (state or {}).get("safety") or {}
         if s.get("fallen") or s.get("limp") or s.get("picked_up") or skill not in self.installes():
             return 0.0

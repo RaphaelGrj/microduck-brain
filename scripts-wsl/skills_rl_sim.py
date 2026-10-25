@@ -16,7 +16,9 @@ import brain
 from poc_robotd_client import RobotdClient, SOCK_PATH
 
 POL = os.path.expanduser("~/.cache/duck-sim/policies")
-TOUS = {"startle": (f"{POL}/startle/startle.onnx", 1.2),
+TOUS = {"pirouette": (f"{POL}/pirouette/pirouette.onnx", 2.1),
+        "trepigner": (f"{POL}/stomp/stomp.onnx", 2.0),
+        "startle": (f"{POL}/startle/startle.onnx", 1.2),
           "frisson": (f"{POL}/shiver/shiver.onnx", 1.3),
           "curieux": (f"{POL}/gestes2/crouch.onnx", 1.3)}
 SKILLS = {k: v for k, v in TOUS.items() if k in sys.argv[1:]} or TOUS
@@ -55,7 +57,7 @@ class Espion:
 c = RobotdClient(SOCK_PATH)
 c.request("robot.subscribe", {})
 for nom, (chemin, duree) in SKILLS.items():
-    print("setSkill", nom, c.request("robot.setSkill", {"name": nom, "path": chemin, "duration": duree}).get("result", "ERR"))
+    print("setSkill", nom, c.request("robot.setSkill", dict({"name": nom, "path": chemin, "duration": duree}, **({"unwind": [1.0, 0.0, 0.0], "unwind_s": 1.0} if nom == "pirouette" else {}))).get("result", "ERR"))
 time.sleep(5)
 print("skills installes :", c.request("robot.skills"))
 t0 = time.monotonic()
@@ -69,7 +71,7 @@ while True:
 esp = Espion(c)
 esp.t0 = time.monotonic()
 p0 = pos()
-evts = [(2, "bruit"), (8, "personne")]
+evts = [(2, "impression_finie"), (9, "impression_echec")]
 force = {"fait": False}
 
 
@@ -79,7 +81,7 @@ def crochet(b, state):
         b._bascule("ebouriffe")
 
 try:
-    brain.run(esp, 20, evenements=evts, seed=3, a_chaque_tick=crochet, skills_rl=("--off" not in sys.argv))
+    brain.run(esp, 22, evenements=evts, seed=3, a_chaque_tick=crochet, skills_rl=("--off" not in sys.argv))
 finally:
     p1 = pos()
     if p0 and p1:
